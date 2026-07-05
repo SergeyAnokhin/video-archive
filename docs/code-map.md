@@ -1,14 +1,16 @@
 # Code Map
 
-This repository currently contains the first implementation skeleton for Video Archive: a root npm orchestrator, a Vite-based React frontend, and a minimal Python HTTP backend. Use this map to find the startup flow and the smallest files to extend first.
+Living map of the implementation files in this repository. **This file must be updated whenever code files are added, moved, or removed.**
+
+The repository is currently at the specification stage: the earlier prototype was intentionally removed, and the implementation will be recreated per [Roadmap](./roadmap.md). Right now the only implementation-related file is the root orchestrator.
 
 | Path | Role |
 | --- | --- |
-| [`package.json`](../package.json) | Root developer entrypoint that starts frontend and backend together with `npm run dev`. |
-| [`frontend/package.json`](../frontend/package.json) | Frontend scripts and React/Vite dependencies. |
-| [`frontend/vite.config.js`](../frontend/vite.config.js) | Local dev server config and `/api` proxy to the backend. |
-| [`frontend/src/App.jsx`](../frontend/src/App.jsx) | Minimal app shell that verifies backend connectivity and exposes the current bootstrap status. |
-| [`frontend/src/styles.css`](../frontend/src/styles.css) | Initial dark-theme styling for the shell UI. |
-| [`backend/package.json`](../backend/package.json) | Backend-local `npm run dev` wrapper for the Python server on Windows terminals. |
-| [`backend/app/main.py`](../backend/app/main.py) | Stdlib HTTP backend with the initial `/api/health` and `/api/app/info` endpoints. |
-| [`README.md`](../README.md) | Local setup and exact Windows terminal commands for combined and independent startup. |
+| [`package.json`](../package.json) | Root developer entrypoint; will start frontend and backend together with `npm run dev` once `frontend/` and `backend/` are recreated (Roadmap Stage 1). |
+| [`README.md`](../README.md) | Project overview, current status, and planned startup commands. |
+| [`docs/`](./) | Specification set driving the implementation. |
+
+To be added as implementation progresses (see [Tech Stack — Repository Layout](./tech-stack.md#repository-layout-target)):
+
+- `frontend/` — Vite + React + TypeScript app
+- `backend/` — FastAPI app, SQLite database, secrets file, detection model files

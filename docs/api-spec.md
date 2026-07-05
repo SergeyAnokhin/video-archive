@@ -2,15 +2,16 @@
 
 ## Overview
 
-This document defines the backend API surface for Video Archive. The API is intended for a React frontend and a local Python backend. All endpoints below are conceptual v1 endpoints and use JSON unless noted otherwise.
+This document defines the backend API surface for Video Archive. The API is intended for a React frontend and a local FastAPI backend. All endpoints below are conceptual v1 endpoints and use JSON unless noted otherwise.
 
 ## Conventions
 
 - Base path: `/api`
-- Authentication strategy is out of scope for this version
+- The backend binds to `127.0.0.1` only; authentication is out of scope for this version
 - Timestamps use ISO 8601 UTC
 - Long-running operations return a job record
 - Folder actions are recursive by default
+- Directory paths are passed as query or body parameters (`path`), never as URL path segments, to avoid slash-encoding issues
 
 ## 1. Health and App Info
 
@@ -35,7 +36,8 @@ Response fields:
 - app version
 - active source summary
 - database status
-- queue status
+- queue status (current job, if any)
+- ffmpeg availability
 
 ## 2. Source Management
 
@@ -45,9 +47,9 @@ Returns the currently configured source.
 
 ### `PUT /api/source`
 
-Creates or replaces the active source configuration.
+Creates or replaces the active source configuration. Replacing an existing source is destructive: the frontend must show a confirmation warning first, and the backend wipes all library metadata (see [Specification Section 5.2](./specification.md#52-source-switching)).
 
-Request body:
+Request body (remote protocol source):
 
 ```json
 {
@@ -61,10 +63,23 @@ Request body:
 }
 ```
 
+Request body (local source, a directory next to the backend):
+
+```json
+{
+  "name": "Local Library",
+  "protocol": "local",
+  "root_path": "./library"
+}
+```
+
+Response includes `detected_backups`: backups found in the new source's `.video-archive/backups/` folder, so the UI can immediately offer a restore.
+
 Notes:
 
-- Secrets may be routed into secret storage rather than the main database.
+- Credentials are written to the secrets file; only key references are stored in the database.
 - Only one active source is supported.
+- For `protocol: "local"`, `root_path` may be absolute or relative to the backend working directory; `host`, `port`, `username`, and `password` are not used.
 
 ### `POST /api/source/test-connection`
 
@@ -72,7 +87,7 @@ Tests a source configuration without permanently saving it.
 
 ### `POST /api/source/reconnect`
 
-Reconnects to the active source.
+Reconnects to the active source (remote protocols only).
 
 ## 3. Directory and File Browsing
 
@@ -86,23 +101,14 @@ Query parameters:
 - `depth` optional integer
 - `include_status` optional boolean
 
-### `GET /api/directories`
+### `GET /api/directories/children`
 
-Returns directory rows and derived recursive status indicators.
+Returns immediate child folders and files for one directory.
 
 Query parameters:
 
-- `path`
-- `include_children`
-- `include_counts`
-
-### `GET /api/directories/{relative_path}`
-
-Returns one directory summary.
-
-### `GET /api/directories/{relative_path}/children`
-
-Returns immediate child folders and files.
+- `path` relative directory path (empty = source root)
+- `include_status` optional boolean (derived recursive conversion/preview indicators)
 
 ### `GET /api/files`
 
@@ -110,9 +116,11 @@ Returns file list.
 
 Query parameters:
 
-- `directory`
+- `directory` relative directory path
 - `recursive`
 - `video_only`
+- `search` optional text; matches file names
+- `tags` optional comma-separated tag keys; matches assigned tags
 - `limit`
 - `offset`
 
@@ -162,10 +170,9 @@ Generates a lightweight live preview payload for the preview settings page.
 
 Request body includes:
 
-- selected layout preset
-- sample frame count
+- grid size
+- enlarged tile placements (`{row, col, span}` list)
 - timeline flow
-- large tile count
 - identity diversity setting
 
 Response:
@@ -205,7 +212,11 @@ Creates a restart or rerun job when supported.
 
 ### `DELETE /api/jobs/{job_id}`
 
-Removes a completed or failed job from the UI list if allowed by retention policy.
+Removes one job from the list.
+
+### `DELETE /api/jobs`
+
+Removes all finished (completed, failed, cancelled) jobs at once. Finished jobs are also auto-removed after 24 hours (see [Job Model](./job-model.md#retention)).
 
 ## 7. Scan and Maintenance Jobs
 
@@ -221,7 +232,7 @@ Request body:
 
 ```json
 {
-  "relative_path": "family/2024"
+  "path": "family/2024"
 }
 ```
 
@@ -243,43 +254,52 @@ Request body:
 
 ```json
 {
-  "relative_path": "family/2024",
+  "path": "family/2024",
   "profile_id": "uuid",
-  "mode": "production"
+  "mode": "production",
+  "skip_processed": true
 }
 ```
+
+- `mode`: `production` | `test` (test preserves originals, see [Specification Section 8.2](./specification.md#82-test-mode))
+- `skip_processed`: default `true`; skip files already converted
 
 ### `POST /api/jobs/convert-file`
 
 Starts conversion for one file.
-
-### `POST /api/jobs/tune-file`
-
-Starts a tuning sweep for one file.
 
 Request body:
 
 ```json
 {
   "file_id": "uuid",
-  "sweep": {
-    "dimension_values": [1000, 900, 800],
-    "quality_values": ["q1", "q2"],
-    "codec_values": ["h265"]
-  }
+  "profile_id": "uuid",
+  "mode": "test",
+  "skip_processed": false,
+  "variants": [
+    { "max_dimension": 1000, "crf": 26 },
+    { "max_dimension": 1000, "crf": 28 },
+    { "max_dimension": 800, "crf": 28 }
+  ]
 }
 ```
 
-Rules:
-
-- tuning must never replace the source
-- tuning generates separate outputs
+- `variants` is optional and allowed only with `mode: "test"`; each variant produces a separate output named `<basename>.variant-<params>.mp4`. This is the variant-comparison (former "tuning") flow.
 
 ## 9. Preview Jobs
 
 ### `POST /api/jobs/preview-directory`
 
-Starts recursive preview generation for a directory subtree.
+Starts recursive preview generation for a directory subtree (file collages plus folder previews).
+
+Request body:
+
+```json
+{
+  "path": "family/2024",
+  "skip_processed": true
+}
+```
 
 ### `POST /api/jobs/preview-file`
 
@@ -287,17 +307,52 @@ Starts preview generation for one file.
 
 ### `GET /api/files/{file_id}/preview`
 
-Returns preview asset metadata for a file.
+Returns preview asset metadata for a file (existence, path, generation time).
 
-### `GET /api/directories/{relative_path}/preview`
+### `GET /api/files/{file_id}/preview.jpg`
 
-Returns preview asset metadata for a directory.
+Serves the preview collage image itself (read through the source access layer).
 
-## 10. Tagging Jobs
+### `GET /api/directories/preview.jpg`
+
+Serves a folder preview image. Query parameter: `path`.
+
+## 10. Tagging and Tags
+
+### `GET /api/tags`
+
+Returns the tag vocabulary.
+
+Query parameters:
+
+- `query` optional prefix filter for autocomplete (matches from the first letters)
+- `active_only` optional boolean
+- `limit`
+
+### `POST /api/tags`
+
+Adds a tag to the vocabulary.
+
+### `PUT /api/tags/{tag_id}`
+
+Updates a tag (rename, activate/deactivate).
+
+### `DELETE /api/tags/{tag_id}`
+
+Removes a tag from the vocabulary; assigned `file_tags` referencing it are removed as well.
 
 ### `POST /api/jobs/tag-directory`
 
 Starts recursive tagging for a directory subtree.
+
+Request body:
+
+```json
+{
+  "path": "family/2024",
+  "skip_processed": true
+}
+```
 
 ### `POST /api/jobs/tag-file`
 
@@ -305,7 +360,7 @@ Starts tagging for one file.
 
 ### `GET /api/files/{file_id}/tags`
 
-Returns tags and confidence scores for a file.
+Returns assigned tags with relevance scores (0–100) for a file.
 
 ## 11. Playback
 
@@ -315,10 +370,13 @@ Returns the preferred playback target according to current playback settings.
 
 Response may include:
 
-- embedded stream URL
-- external path
-- external link
+- embedded stream URL (backend streaming endpoint)
+- external path or protocol link (for example a UNC path)
 - playback mode
+
+### `GET /api/files/{file_id}/stream`
+
+Streams the video file with HTTP Range support for embedded browser playback (used when playback mode is `stream`).
 
 ## 12. Logs and Events
 
@@ -353,15 +411,15 @@ Updates non-secret settings payload.
 
 ### `GET /api/settings/providers`
 
-Returns provider configuration summary.
+Returns provider configuration summary (keys masked).
 
 ### `PUT /api/settings/providers`
 
-Updates provider settings, including explicit secret changes.
+Updates provider settings; API keys are written to the secrets file.
 
 ### `GET /api/settings/export`
 
-Exports settings package including provider configuration when explicitly requested.
+Exports settings package including provider configuration and API keys when explicitly requested.
 
 ### `POST /api/settings/import`
 
@@ -369,21 +427,23 @@ Imports a settings package.
 
 ## 14. Backups
 
+Backup and restore run as jobs (`backup` / `restore` job types) and return a job record. Packages live in `.video-archive/backups/` at the source root (see [Backup Format](./backup-format.md)).
+
 ### `GET /api/backups`
 
-Returns available backups.
+Returns available backups found in the active source's technical folder.
 
 ### `POST /api/backups`
 
-Creates a manual backup.
+Creates a manual backup. Returns the created `backup` job.
 
 ### `POST /api/backups/restore`
 
-Restores a selected backup.
+Restores a selected backup. Returns the created `restore` job.
 
 ### `DELETE /api/backups/{backup_id}`
 
-Deletes a backup if manual deletion is allowed.
+Deletes a backup package.
 
 ## Error Model
 

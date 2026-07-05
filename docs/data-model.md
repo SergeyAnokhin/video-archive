@@ -2,12 +2,15 @@
 
 ## Overview
 
-This document defines the persistent data model for Video Archive. It focuses on local metadata storage, job history, cached analysis data, settings references, and backup-safe entities. Secrets are out of scope for the main database and are defined separately in [Settings Specification](./settings-spec.md).
+This document defines the persistent data model for Video Archive. It focuses on local metadata storage, job history, cached analysis data, settings references, and backup-safe entities. Secrets are out of scope for the database entirely and live in the local secrets file (see [Tech Stack](./tech-stack.md)).
 
 ## Design Rules
 
-- The database is local to the backend machine.
+- The database is SQLite, local to the backend machine.
 - The database stores metadata and cached analysis, not large binary video payloads.
+- Preview collages are **not** stored in the database; they live as JPEG files next to the videos on the source (see [Specification Section 9.5](./specification.md#95-preview-storage)).
+- Files store paths **relative to the source root** only; absolute paths are computed at runtime.
+- Files do not carry transient workflow states (`in_progress`, `failed`); execution state lives in jobs, job items, and events.
 - Directory status is derived from file records and must not rely on persisted "fully processed" flags.
 - Folder actions always apply recursively to nested subfolders.
 - Conversion, preview, tagging, and rescan remain separate job types.
@@ -28,28 +31,29 @@ This document defines the persistent data model for Video Archive. It focuses on
 
 ## 1. sources
 
-Represents the currently configured remote source connection.
+Represents the currently configured source connection, either a remote protocol source or a local directory next to the backend.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | UUID | Primary key |
 | `name` | string | User-visible label |
-| `protocol` | enum | `smb`, `ftp`, `sftp`, `webdav` |
-| `host` | string | Remote host |
-| `port` | integer nullable | Optional explicit port |
-| `root_path` | string | Remote base directory |
-| `username_ref` | string nullable | Reference to credential storage |
-| `secret_ref` | string nullable | Reference to secret storage |
+| `protocol` | enum | `local`, `smb` (`webdav` reserved as optional) |
+| `host` | string nullable | Remote host; unused for `local` |
+| `port` | integer nullable | Optional explicit port; unused for `local` |
+| `root_path` | string | Remote base directory for protocol sources, or absolute/backend-relative local path for `local` |
+| `username_ref` | string nullable | Key name in the secrets file; unused for `local` |
+| `secret_ref` | string nullable | Key name in the secrets file; unused for `local` |
 | `is_active` | boolean | Only one active source at a time |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
-| `last_connected_at` | datetime nullable | Last successful connection |
+| `last_connected_at` | datetime nullable | Last successful connection; unused for `local` |
 | `last_scan_at` | datetime nullable | Last completed scan |
 
 Rules:
 
 - Only one row should have `is_active = true`.
-- Credentials must not be stored directly in this table.
+- Credentials must not be stored in this table; `username_ref`/`secret_ref` name entries in the secrets file.
+- Replacing the active source wipes `directories`, `files`, `file_tags`, `file_similarity_signatures`, `jobs`, `job_items`, and `app_events` after an explicit user confirmation (see [Specification Section 5.2](./specification.md#52-source-switching)).
 
 ## 2. directories
 
@@ -62,14 +66,17 @@ Represents a discovered directory inside the active source.
 | `relative_path` | string | Unique within source |
 | `name` | string | Directory name |
 | `parent_relative_path` | string nullable | Root has null |
+| `has_folder_preview` | boolean | `folder-preview.jpg` exists in this directory |
+| `folder_preview_generated_at` | datetime nullable | Last successful folder preview generation |
 | `last_scanned_at` | datetime nullable | Latest scan touching this subtree |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
 
 Rules:
 
-- Directory status is computed from files under the subtree.
-- Directory rows are structural, not status aggregates.
+- Directory workflow status (conversion/preview completeness) is computed from files under the subtree.
+- `has_folder_preview` is a fact about an artifact on disk (maintained by scan and preview jobs), not an aggregate status flag.
+- The technical folder `.video-archive/` is never recorded here.
 
 ## 3. files
 
@@ -80,31 +87,28 @@ Represents a discovered file within the source.
 | `id` | UUID | Primary key |
 | `source_id` | UUID | FK -> `sources.id` |
 | `directory_id` | UUID | FK -> `directories.id` |
-| `relative_path` | string | Unique within source |
-| `path` | string | Full current source path |
+| `relative_path` | string | Unique within source; relative to source root |
 | `file_name` | string | Display name |
 | `extension` | string | Lowercase file extension |
 | `size_bytes` | bigint | Latest known size |
 | `modified_at` | datetime nullable | Source-reported modification time |
 | `discovered_at` | datetime | First discovery time |
 | `last_scanned_at` | datetime | Last scan touching this file |
-| `is_video_supported` | boolean | Eligible for video workflows |
-| `conversion_state` | enum | `not_started`, `in_progress`, `done`, `failed` |
-| `preview_state` | enum | `not_started`, `in_progress`, `done`, `failed` |
+| `is_video_supported` | boolean | Extension is in the supported list ([Tech Stack](./tech-stack.md#supported-video-extensions)) |
+| `converted_at` | datetime nullable | Last successful conversion; null = never converted |
 | `last_conversion_profile_id` | UUID nullable | FK -> `conversion_profiles.id` |
-| `last_converted_at` | datetime nullable | Last successful conversion |
-| `preview_generated_at` | datetime nullable | Last successful preview generation |
-| `has_preview_assets` | boolean | Denormalized convenience flag |
-| `last_error_code` | string nullable | Latest operational error code |
-| `last_error_message` | text nullable | Latest operational error summary |
+| `has_preview_asset` | boolean | Matching `<basename>.jpg` exists next to the file |
+| `preview_generated_at` | datetime nullable | Last successful preview generation by this app |
+| `tagged_at` | datetime nullable | Last successful tagging; null = never tagged |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
 
 Rules:
 
-- `conversion_state` and `preview_state` are independent.
-- `has_preview_assets` should agree with preview artifacts and `preview_generated_at`.
-- If a source file disappears, the row may remain until cleanup/rescan removes or tombstones it.
+- There are no per-file `in_progress`/`failed` states; a file either has a fact recorded (converted, has preview, tagged) or it does not. Errors are visible through jobs and logs.
+- A JPEG whose base name matches a video in the same directory is that video's preview asset and is not stored as an independent row.
+- A moved or renamed file is treated as removed + new; history does not follow moves in V1.
+- If a source file disappears, the row may remain until cleanup/rescan removes it.
 
 ## 4. conversion_profiles
 
@@ -117,10 +121,9 @@ Saved conversion presets.
 | `is_default` | boolean | Recommended default profile |
 | `video_codec` | string | Default `h265` for V1 |
 | `container` | string | Default `mp4` for V1 |
-| `max_dimension` | integer nullable | Largest allowed side |
-| `quality_mode` | string nullable | Encoder quality mode |
-| `quality_value` | string nullable | Preset-specific quality value |
-| `drop_audio` | boolean | V1 default may be true |
+| `max_dimension` | integer nullable | Largest allowed side; null = never resize |
+| `crf` | integer | Quality (x265 CRF); default `26`, practical range 22–32 |
+| `drop_audio` | boolean | Default `true` |
 | `extra_encoder_args` | json nullable | Reserved for advanced tuning |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
@@ -128,24 +131,31 @@ Saved conversion presets.
 Rules:
 
 - Profiles are reusable for bulk conversion.
-- Tuning results may be promoted into saved profiles later.
+- Variant-comparison results may be promoted into saved profiles.
 
 ## 5. preview_layout_presets
 
-Saved preview layout definitions.
+Saved preview layout definitions (see [Specification Section 9.2](./specification.md#92-collage-grid-layout)).
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | UUID | Primary key |
 | `name` | string | Preset name |
+| `grid_rows` | integer | Grid height in cells |
+| `grid_cols` | integer | Grid width in cells |
 | `timeline_flow` | enum | `row`, `column`, `shuffle` |
-| `sample_count` | integer | Total sampled frames |
-| `large_tile_count` | integer | Highlighted tiles |
 | `identity_diversity_enabled` | boolean | Default true |
-| `layout_definition` | json | Tile geometry and ordering |
+| `layout_definition` | json | Enlarged tile placements: list of `{row, col, span}` with span 2 or 3; must keep the grid fully covered |
+| `is_builtin` | boolean | Ships with the app (the preset gallery); built-in presets are not editable or deletable |
 | `is_default` | boolean | Preferred preset |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
+
+Notes:
+
+- The sampled frame count is derived: `grid_rows × grid_cols` minus cells absorbed by enlarged tiles.
+- The folder-preview frame count is a global preview setting, not part of layout presets.
+- Collage appearance (black background, thin gaps, file-name caption) is a rendering rule, not preset data (see [Specification Section 9.2.1](./specification.md#921-collage-appearance)).
 
 ## 6. jobs
 
@@ -154,12 +164,11 @@ Top-level task records.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | UUID | Primary key |
-| `job_type` | enum | `scan`, `convert`, `preview`, `tag`, `tune`, `rescan`, `cleanup`, `optimize_db`, `backup`, `restore` |
+| `job_type` | enum | `scan`, `rescan`, `convert`, `preview`, `tag`, `cleanup`, `optimize_db`, `backup`, `restore` |
 | `scope_type` | enum | `source`, `directory`, `file`, `maintenance` |
 | `scope_ref` | string nullable | Relative path or file id depending on scope |
 | `status` | enum | `queued`, `running`, `completed`, `failed`, `cancelled` |
-| `requested_by` | string nullable | Reserved for future attribution |
-| `parameters` | json | Job-specific config snapshot |
+| `parameters` | json | Job-specific config snapshot (profile values, mode, `skip_processed`, variants, layout, provider/model) |
 | `started_at` | datetime nullable | Execution start |
 | `finished_at` | datetime nullable | Execution finish |
 | `summary_message` | text nullable | Human-readable outcome |
@@ -168,8 +177,9 @@ Top-level task records.
 
 Rules:
 
-- Jobs are append-only for audit purposes except for status transitions and cleanup.
-- Parameters should snapshot relevant profile or settings references used at job creation time.
+- Variant comparison is a `convert` job with `parameters.mode = "test"` and a `parameters.variants` list; there is no separate job type.
+- Jobs are append-only except for status transitions and retention cleanup.
+- Finished jobs (completed/failed/cancelled) are deleted automatically 24 hours after `finished_at`, and can be deleted manually at any time (individually or all finished at once).
 
 ## 7. job_items
 
@@ -183,21 +193,26 @@ Per-file or per-subtask execution rows under a parent job.
 | `item_key` | string nullable | Fallback key if file missing |
 | `status` | enum | `queued`, `running`, `completed`, `failed`, `cancelled`, `skipped` |
 | `step_name` | string nullable | Optional substep |
-| `message` | text nullable | Status message |
+| `message` | text nullable | Status message (including error summaries) |
 | `started_at` | datetime nullable | Execution start |
 | `finished_at` | datetime nullable | Execution finish |
-| `output_ref` | string nullable | Preview, temp output, or artifact reference |
+| `output_ref` | string nullable | Relative path of produced output (converted file, preview jpg, variant file) |
+
+Notes:
+
+- `skipped` is used when the skip-processed rule bypasses an already-processed file.
+- Job items are removed together with their parent job by retention cleanup.
 
 ## 8. tag_catalog
 
-Allowed vocabulary for AI tagging.
+User-defined tag vocabulary (managed in settings; used for tagging prompts and search autocomplete).
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | UUID | Primary key |
-| `tag_key` | string | Stable key |
-| `display_name` | string | UI label |
-| `is_active` | boolean | Eligible for tagging prompts |
+| `tag_key` | string | Stable normalized key (lowercased) |
+| `display_name` | string | UI label as entered by the user |
+| `is_active` | boolean | Included in tagging prompts |
 | `sort_order` | integer | Optional UI ordering |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
@@ -211,19 +226,19 @@ Assigned tags for a specific file.
 | `id` | UUID | Primary key |
 | `file_id` | UUID | FK -> `files.id` |
 | `tag_id` | UUID | FK -> `tag_catalog.id` |
-| `confidence` | decimal | Numeric confidence score |
+| `score` | integer | Relevance score 0–100, shown as a percentage |
 | `provider_name` | string nullable | Tagging provider |
 | `model_name` | string nullable | Tagging model |
 | `assigned_at` | datetime | Timestamp |
 
 Rules:
 
-- Confidence should be stored with each assigned tag.
-- Existing tags may be replaced on rerun depending on tagging mode.
+- Only the top-N best-scoring tags are stored per file (default N = 10, configurable).
+- Re-tagging replaces the file's previous tag set.
 
 ## 10. file_similarity_signatures
 
-Cached near-duplicate signatures.
+Cached near-duplicate signatures (optional feature).
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -251,13 +266,15 @@ Lightweight log/event stream for UI log viewing.
 | `payload` | json nullable | Structured details |
 | `created_at` | datetime | Event timestamp |
 
+Retention: events older than 24 hours are pruned together with job retention cleanup. Backend console/file logs remain the long-term record.
+
 ## Derived Status Queries
 
 Directory indicators should be derived using subtree queries over `files`:
 
-- conversion incomplete if any supported file in subtree has `conversion_state != done`
-- preview incomplete if any supported file in subtree has `preview_state != done` or `has_preview_assets = false`
-- success indicators are hidden in UI; only incomplete, running, or failed states are shown
+- conversion incomplete if any supported file in subtree has `converted_at IS NULL`
+- preview incomplete if any supported file in subtree has `has_preview_asset = false`
+- complete states are hidden in UI; only incomplete states are shown (running/failed activity is visible through the jobs UI, not through file flags)
 
 ## Indexing and Cleanup Behavior
 
@@ -269,4 +286,4 @@ Directory indicators should be derived using subtree queries over `files`:
 
 - Store timestamps in UTC.
 - Prefer JSON columns only for flexible or versioned structures; stable fields should remain explicit columns.
-- Keep secret references out of the main metadata schema.
+- No secrets anywhere in this schema; only key names referencing the secrets file.

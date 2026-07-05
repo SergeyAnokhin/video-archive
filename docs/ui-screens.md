@@ -9,7 +9,13 @@ This document defines the main screens, modals, and interaction surfaces for Vid
 - Dark theme by default
 - Prioritize browsing and quick actions over advanced tuning controls
 - Move rare or advanced controls into settings, modals, or secondary panels
-- Show warning or incomplete indicators, but hide success-only indicators
+- Show incomplete indicators, but hide success-only indicators; running/failed activity is surfaced through the jobs UI, not per-file badges
+- Small, icon-only buttons for global/secondary actions (jobs, settings, theme, language) grouped in the top bar, in the spirit of the reference screenshots in [Design System](./design-system.md)
+- A compact activity indicator appears in the top bar whenever a job is queued or running: hover shows what the job is doing, click opens the jobs modal
+- A compact, non-dominant search field sits at the edge of the toolbar (tag autocomplete + file names); it must not become a central element
+- Two theme presets available (Strict default, Playful optional), switchable from the top bar without changing layout or navigation
+- Two UI languages available (English, Russian), switchable from the top bar without a reload
+- Layout must remain usable on mobile-sized viewports (see [Section 13](#13-responsive-behavior) and [Design System](./design-system.md))
 
 ## 1. Main Library Screen
 
@@ -24,12 +30,12 @@ Main regions:
 
 - directory tree
 - current folder contents
-- toolbar
+- toolbar (with compact search field)
 - optional preview visibility toggle
 
 Directory actions:
 
-- convert recursively
+- convert recursively (dialog with profile picker, test-mode checkbox, skip-processed toggle)
 - preview recursively
 - tag recursively
 - rescan recursively
@@ -41,14 +47,14 @@ File actions:
 - convert
 - preview
 - tag
-- tune
+- compare variants (test-mode sweep)
 
 Indicators:
 
 - conversion indicator
 - preview indicator
 
-Indicators appear only for incomplete, running, or failed states.
+Indicators appear only for incomplete states; their meaning is explained on hover.
 
 ## 2. Video Details Modal
 
@@ -64,13 +70,13 @@ Actions:
 - convert file
 - preview file
 - tag file
-- tune file
+- compare variants
 
 Possible content:
 
 - metadata summary
 - preview collage
-- assigned tags with confidence
+- assigned tags with relevance percentages
 - recent job history
 
 ## 3. Jobs Modal
@@ -79,10 +85,12 @@ Purpose:
 
 - monitor and control jobs
 
+Opened from the top-bar activity indicator or its icon button.
+
 Sections:
 
 - queued jobs
-- running jobs
+- running job (only one at a time; see [Job Model](./job-model.md#concurrency-model))
 - completed jobs
 - failed jobs
 
@@ -90,7 +98,10 @@ Actions:
 
 - cancel job
 - restart job where supported
-- remove job from visible list where supported
+- remove a single job from the list
+- clear all finished jobs with one button
+
+Finished jobs disappear automatically after 24 hours.
 
 ## 4. Log Viewer
 
@@ -116,19 +127,21 @@ Purpose:
 
 Controls:
 
-- sampled frame count
-- large tile count
-- layout preset picker
+- grid dimensions
+- construction-set layout editor: paint cells with two tile brushes (small / enlarged 2×2 or 3×3), quick brush switching
+- built-in preset gallery (varied large/small tile arrangements, selectable at a click)
+- Fill all / Clear all actions
+- quick save/load slots (for example 3) for custom layouts
 - timeline flow mode
 - identity diversity toggle
-- fill / clear layout actions
-- save preset
-- load preset
+- folder-preview frame count
+- save preset / load preset (named presets)
 
 Live preview:
 
-- shows layout geometry immediately
+- shows layout geometry immediately on the black collage background
 - may show representative frames or placeholders
+- includes the file-name caption placement
 
 ## 6. Conversion Profiles Screen
 
@@ -149,19 +162,19 @@ Fields:
 - codec
 - container
 - maximum dimension
-- quality parameters
-- drop audio toggle
+- CRF quality value
+- drop audio toggle (default on)
 - advanced encoder args
 
 ## 7. Tagging Settings Screen
 
 Purpose:
 
-- define tagging vocabulary and tagging behavior
+- manage the tag vocabulary and tagging behavior
 
 Controls:
 
-- allowed tag list
+- tag vocabulary editor (add, rename, deactivate, delete tags)
 - sampled frame count
 - top tag count
 - frame combination preferences
@@ -175,29 +188,34 @@ Purpose:
 
 Modes:
 
-- embedded modal playback
+- embedded modal playback (backend stream with Range support)
 - external opening by path or link
 
 ## 9. Source Settings Screen
 
 Purpose:
 
-- configure the active remote source
+- configure the active source (a local directory next to the backend, or an SMB share)
 
 Fields:
 
-- protocol
-- host
-- port
-- root path
-- username
-- password
+- protocol (`local | smb`; `webdav` optional later)
+- host (protocol sources only)
+- port (protocol sources only)
+- root path (remote base directory, or local path for `local`)
+- username (protocol sources only)
+- password (protocol sources only)
 
 Actions:
 
-- test connection
+- test connection (protocol sources only)
 - save source
-- reconnect
+- reconnect (protocol sources only)
+
+Flows:
+
+- replacing the source shows a destructive-change warning: all library metadata will be wiped
+- after connecting a source that contains backups in `.video-archive/backups/`, the UI offers to restore one
 
 ## 10. Provider Settings Screen
 
@@ -208,7 +226,7 @@ Purpose:
 Per-provider controls:
 
 - enabled flag
-- API key
+- API key (stored in the local secrets file)
 - vision model
 - optional text model
 - batch preferences if available
@@ -221,7 +239,7 @@ Purpose:
 
 Backup controls:
 
-- create backup
+- create backup (into the source's `.video-archive/backups/` folder)
 - restore backup
 - list backups
 - retention count
@@ -233,14 +251,29 @@ Maintenance controls:
 - stale record cleanup
 - database optimize
 
-## 12. Tuning Flow
+## 12. Variant Comparison Flow
 
-Tuning should be initiated from a file, not from the main folder toolbar.
+Variant comparison (former "tuning") is initiated from a file, not from the main folder toolbar. It is a test-mode conversion producing several outputs for one video (see [Specification Section 8.3](./specification.md#83-variant-comparison)).
 
-The tuning UI should support:
+The UI should support:
 
-- parameter sweeps over dimensions
-- parameter sweeps over quality values
-- parameter sweeps over codec variants
-- comparison of generated outputs
-- promotion of a successful tuning result into a reusable conversion profile
+- picking sweep values over maximum dimension
+- picking sweep values over CRF quality
+- picking codec variants
+- comparing generated outputs (they appear next to the original as `<name>.<variant>.mp4`)
+- promoting a successful variant into a reusable conversion profile
+
+## 13. Responsive Behavior
+
+Purpose:
+
+- keep the same screen and interaction structure usable from desktop down to mobile widths
+
+Rules:
+
+- on narrow viewports, the directory tree collapses into a drawer or menu instead of a persistent side panel
+- the card/file grid reflows to fewer columns, down to a single column on the smallest widths
+- secondary global icon buttons (jobs, settings, theme, language) may collapse into an overflow menu on narrow widths; the compact search field stays reachable
+- modals (jobs, video details, settings) become full-screen sheets on mobile widths instead of centered dialogs
+
+See [Design System](./design-system.md) for breakpoints and detailed visual rules.
