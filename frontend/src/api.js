@@ -74,6 +74,10 @@ export function fetchSettings() {
   return requestJson("/api/settings", undefined, "Settings load");
 }
 
+export function fetchProviderSettings() {
+  return requestJson("/api/settings/providers", undefined, "Provider settings load");
+}
+
 export function saveSettings(payload) {
   return requestJson(
     "/api/settings",
@@ -85,6 +89,20 @@ export function saveSettings(payload) {
       body: JSON.stringify(payload)
     },
     "Save settings"
+  );
+}
+
+export function saveProviderSettings(providers) {
+  return requestJson(
+    "/api/settings/providers",
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ providers })
+    },
+    "Save provider settings"
   );
 }
 
@@ -274,6 +292,20 @@ export function createPreviewFileJob(fileId) {
   );
 }
 
+export function createTagFileJob(fileId) {
+  return requestJson(
+    "/api/jobs/tag-file",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ file_id: fileId })
+    },
+    "Tag file"
+  );
+}
+
 export function fetchFilePreview(fileId) {
   return requestJson(`/api/files/${encodeURIComponent(fileId)}/preview`, undefined, "File preview");
 }
@@ -281,6 +313,10 @@ export function fetchFilePreview(fileId) {
 export function fetchDirectoryPreview(relativePath = "") {
   const query = `?relative_path=${encodeURIComponent(relativePath)}`;
   return requestJson(`/api/directories/preview${query}`, undefined, "Directory preview");
+}
+
+export function fetchFileTags(fileId) {
+  return requestJson(`/api/files/${encodeURIComponent(fileId)}/tags`, undefined, "File tags");
 }
 
 export function createTagDirectoryJob(relativePath) {

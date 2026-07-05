@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import time
 import unittest
+import uuid
 from pathlib import Path
 
 from app.conversion_profile_service import ConversionProfileService
 from app.conversion_service import ConversionService
 from app.db import initialize_database
+from app.provider_settings_service import ProviderSettingsService
 from app.job_service import JobService
 from app.library_service import LibraryService
 from app.preview_service import PreviewService
 from app.secrets import SecretStore
 from app.source_service import SourceService, parse_source_payload
+from app.tagging_service import TaggingService
 
 
 class JobServiceTests(unittest.TestCase):
@@ -144,6 +148,29 @@ class JobServiceTests(unittest.TestCase):
             self.assertIsNotNone(directory_preview)
             self.assertTrue(any(event["event_type"] == "preview.item.completed" for event in events))
 
+    def test_tag_job_stores_closed_vocabulary_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, source_service, library_service, job_service, source_root = _build_services(tmp)
+            target_dir = source_root / "clips"
+            target_dir.mkdir(parents=True)
+            (target_dir / "One.mp4").write_bytes(b"one")
+            source = source_service.get_active_source()
+            assert source is not None
+            library_service.scan_source(source, "")
+
+            job_service.start()
+            self.addCleanup(job_service.shutdown)
+
+            job = job_service.create_tag_directory_job("clips")
+            completed = _wait_for_terminal_status(job_service, job["id"])
+            files = library_service.list_files("clips")
+            tag_payload = job_service._tagging_service.get_file_tags(files[0]["id"])
+            events = job_service.list_events(job_id=job["id"], limit=50)
+
+            self.assertEqual(completed["status"], "completed")
+            self.assertEqual([tag["tag_key"] for tag in tag_payload["tags"]], ["beach", "family_time"])
+            self.assertTrue(any(event["event_type"] == "tag.item.completed" for event in events))
+
 
 def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobService, Path]:
     root = Path(tmp)
@@ -166,6 +193,32 @@ def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobS
     library_service = LibraryService(db_path, source_service)
     profile_service = ConversionProfileService(db_path)
     preview_service = FakePreviewService(db_path, root / ".local")
+    provider_settings_service = ProviderSettingsService(db_path, SecretStore(secrets_path))
+    provider_settings_service.update_settings(
+        [
+            {
+                "provider": "openrouter",
+                "enabled": True,
+                "vision_model": "openrouter/test-vision",
+                "text_model": "",
+                "prefer_batch": True,
+                "api_key": "test-openrouter-key",
+            },
+            {"provider": "gemini", "enabled": False, "vision_model": "gemini-2.0-flash", "text_model": "", "prefer_batch": True},
+            {"provider": "fal", "enabled": False, "vision_model": "fal-ai/example", "text_model": "", "prefer_batch": True},
+            {"provider": "mistral", "enabled": False, "vision_model": "pixtral-large-latest", "text_model": "", "prefer_batch": True},
+        ]
+    )
+    tagging_service = FakeTaggingService(db_path, provider_settings_service)
+    tagging_service.update_settings(
+        {
+            "provider": "openrouter",
+            "sample_count": 9,
+            "combine_frames": True,
+            "prefer_batch": True,
+            "vocabulary": ["Beach", "Family Time", "Pets"],
+        }
+    )
     job_service = JobService(
         db_path,
         source_service,
@@ -173,6 +226,7 @@ def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobS
         profile_service,
         FakeConversionService(),
         preview_service,
+        tagging_service,
     )
     return root, source_service, library_service, job_service, source_root
 
@@ -263,6 +317,59 @@ class FakePreviewService(PreviewService):
             metadata=metadata,
         )
         return {"output_ref": str(output_path), "metadata": metadata}
+
+
+class FakeTaggingService(TaggingService):
+    def tag_files(self, *, source_root: str, file_rows: list[dict], settings: dict) -> list[dict]:
+        vocabulary = settings["vocabulary"]
+        allowed = {entry["tag_key"]: entry for entry in vocabulary}
+        now = "2026-07-05T12:30:00Z"
+        results = []
+        for file_row in file_rows:
+            selected = []
+            for tag_key, confidence in (("beach", 0.93), ("family_time", 0.81), ("freeform", 0.99)):
+                if tag_key not in allowed:
+                    continue
+                selected.append(
+                    {
+                        "tag_id": allowed[tag_key]["id"],
+                        "tag_key": tag_key,
+                        "display_name": allowed[tag_key]["display_name"],
+                        "confidence": confidence,
+                    }
+                )
+            from app.db import connection
+            with connection(self._database_path) as conn, conn:
+                conn.execute("DELETE FROM file_tags WHERE file_id = ?", (file_row["id"],))
+                for tag in selected:
+                    conn.execute(
+                        """
+                        INSERT INTO file_tags (id, file_id, tag_id, confidence, provider_name, model_name, assigned_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (str(uuid.uuid4()), file_row["id"], tag["tag_id"], tag["confidence"], "openrouter", "openrouter/test-vision", now),
+                    )
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET tagging_updated_at = ?, tagging_model_info = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, json.dumps({"provider": "openrouter", "model": "openrouter/test-vision"}), now, file_row["id"]),
+                )
+
+            results.append(
+                {
+                    "file_id": file_row["id"],
+                    "relative_path": file_row["relative_path"],
+                    "status": "completed",
+                    "provider_name": "openrouter",
+                    "model_name": "openrouter/test-vision",
+                    "tags": selected,
+                    "tag_count": len(selected),
+                }
+            )
+        return results
 
 
 def _wait_for_terminal_status(job_service: JobService, job_id: str, timeout: float = 5) -> dict:

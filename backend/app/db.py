@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 MIGRATIONS: list[tuple[int, list[str]]] = [
@@ -327,6 +327,26 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             VALUES (
                 'preview',
                 '{"sample_count":9,"large_tile_count":2,"timeline_flow":"row","identity_diversity_enabled":true,"layout_preset_id":"default-preview-grid"}',
+                datetime('now'),
+                datetime('now')
+            )
+            """,
+        ],
+    ),
+    (
+        5,
+        [
+            """
+            ALTER TABLE files ADD COLUMN tagging_updated_at TEXT NULL
+            """,
+            """
+            ALTER TABLE files ADD COLUMN tagging_model_info TEXT NULL
+            """,
+            """
+            INSERT OR IGNORE INTO app_settings (section, payload, created_at, updated_at)
+            VALUES (
+                'tagging',
+                '{"provider":"openrouter","sample_count":9,"combine_frames":true,"prefer_batch":true}',
                 datetime('now'),
                 datetime('now')
             )

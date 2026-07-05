@@ -5,6 +5,7 @@ import {
   createConvertFileJob,
   createPreviewDirectoryJob,
   createPreviewFileJob,
+  createTagFileJob,
   createRescanDirectoryJob,
   createScanSourceJob,
   createTagDirectoryJob,
@@ -12,12 +13,14 @@ import {
   fallbackInfo,
   fetchDirectoryPreview,
   fetchFilePreview,
+  fetchFileTags,
   fetchJob,
   fetchJobItems,
   fetchFiles,
   fetchJobs,
   fetchLogs,
   fetchPreviewLayouts,
+  fetchProviderSettings,
   fetchSettings,
   fetchTree,
   fetchConversionProfiles,
@@ -25,6 +28,7 @@ import {
   loadAppShellData,
   reconnectSource,
   restartJob,
+  saveProviderSettings,
   saveSettings,
   saveSource,
   testSourceConnection,
@@ -49,6 +53,31 @@ const defaultPreviewSettings = {
   identity_diversity_enabled: true,
   layout_preset_id: "default-preview-grid"
 };
+
+const defaultTaggingSettings = {
+  provider: "openrouter",
+  sample_count: 9,
+  combine_frames: true,
+  prefer_batch: true,
+  vocabulary: []
+};
+
+const defaultProviderSettings = [
+  { provider: "openrouter", enabled: false, vision_model: "", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
+  { provider: "gemini", enabled: false, vision_model: "gemini-2.0-flash", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
+  { provider: "fal", enabled: false, vision_model: "", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
+  { provider: "mistral", enabled: false, vision_model: "pixtral-large-latest", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false }
+];
+
+function toTaggingForm(settings) {
+  return {
+    ...defaultTaggingSettings,
+    ...settings,
+    vocabulary: Array.isArray(settings?.vocabulary)
+      ? settings.vocabulary.map((entry) => (typeof entry === "string" ? entry : entry.display_name)).filter(Boolean)
+      : []
+  };
+}
 
 function flattenTree(nodes, depth = 0) {
   return nodes.flatMap((node) => [
@@ -145,6 +174,13 @@ function formatJobTypeLabel(value) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function formatConfidence(value) {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+  return `${Math.round(value * 100)}%`;
+}
+
 function renderIndicatorBadges(indicators) {
   return [
     indicators?.conversion
@@ -176,10 +212,13 @@ function App() {
   const [activeOverlay, setActiveOverlay] = useState(null);
   const [conversionDraft, setConversionDraft] = useState(null);
   const [previewSettings, setPreviewSettings] = useState(defaultPreviewSettings);
+  const [taggingSettings, setTaggingSettings] = useState(defaultTaggingSettings);
+  const [providerSettings, setProviderSettings] = useState(defaultProviderSettings);
   const [previewPresets, setPreviewPresets] = useState([]);
   const [previewPresetName, setPreviewPresetName] = useState("");
   const [livePreview, setLivePreview] = useState(null);
   const [libraryPreview, setLibraryPreview] = useState(null);
+  const [selectedFileTags, setSelectedFileTags] = useState(null);
   const [actionMessage, setActionMessage] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [testResult, setTestResult] = useState(null);
@@ -251,11 +290,11 @@ function App() {
   }, [activeOverlay, selectedJobId]);
 
   useEffect(() => {
-    if (activeOverlay !== "settings" || selectedSettingsSection !== "preview") {
+    if (activeOverlay !== "settings" || !["preview", "tagging", "providers"].includes(selectedSettingsSection)) {
       return;
     }
 
-    loadPreviewSettings();
+    loadSettingsSection(selectedSettingsSection);
   }, [activeOverlay, selectedSettingsSection]);
 
   useEffect(() => {
@@ -283,6 +322,14 @@ function App() {
 
     return () => window.clearTimeout(timeoutId);
   }, [activeOverlay, selectedSettingsSection, previewSettings]);
+
+  useEffect(() => {
+    if (!selectedFile?.id) {
+      setSelectedFileTags(null);
+      return;
+    }
+    loadSelectedFileTags(selectedFile.id);
+  }, [selectedFile?.id]);
 
   async function loadBootstrap(preferredDirectory = "", preserveForm = false) {
     try {
@@ -346,14 +393,33 @@ function App() {
     setJobEvents(eventsPayload.events);
   }
 
-  async function loadPreviewSettings() {
+  async function loadSettingsSection(section) {
     try {
-      const [settingsPayload, presetsPayload] = await Promise.all([fetchSettings(), fetchPreviewLayouts()]);
-      const nextSettings = settingsPayload.settings?.preview ?? defaultPreviewSettings;
-      setPreviewSettings(nextSettings);
-      setPreviewPresets(presetsPayload.presets);
-      const selectedPreset = presetsPayload.presets.find((preset) => preset.id === nextSettings.layout_preset_id);
-      setPreviewPresetName(selectedPreset?.name ?? "");
+      if (section === "preview") {
+        const [settingsPayload, presetsPayload] = await Promise.all([fetchSettings(), fetchPreviewLayouts()]);
+        const nextSettings = settingsPayload.settings?.preview ?? defaultPreviewSettings;
+        setPreviewSettings(nextSettings);
+        setPreviewPresets(presetsPayload.presets);
+        const selectedPreset = presetsPayload.presets.find((preset) => preset.id === nextSettings.layout_preset_id);
+        setPreviewPresetName(selectedPreset?.name ?? "");
+        return;
+      }
+
+      if (section === "tagging") {
+        const settingsPayload = await fetchSettings();
+        setTaggingSettings(toTaggingForm(settingsPayload.settings?.tagging ?? defaultTaggingSettings));
+        return;
+      }
+
+      if (section === "providers") {
+        const providersPayload = await fetchProviderSettings();
+        setProviderSettings(
+          defaultProviderSettings.map((base) => {
+            const current = providersPayload.providers?.find((entry) => entry.provider === base.provider);
+            return current ? { ...base, ...current, api_key: "" } : base;
+          })
+        );
+      }
     } catch (error) {
       setActionError(error.message);
     }
@@ -382,12 +448,34 @@ function App() {
     }
   }
 
+  async function loadSelectedFileTags(fileId) {
+    try {
+      const payload = await fetchFileTags(fileId);
+      setSelectedFileTags(payload.tags);
+    } catch (error) {
+      setSelectedFileTags(null);
+      if (!String(error.message).includes("does not exist")) {
+        setActionError(error.message);
+      }
+    }
+  }
+
   function updateSourceField(field, value) {
     setSourceForm((current) => ({ ...current, [field]: value }));
   }
 
   function updatePreviewSetting(field, value) {
     setPreviewSettings((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateTaggingSetting(field, value) {
+    setTaggingSettings((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateProviderSetting(providerName, field, value) {
+    setProviderSettings((current) =>
+      current.map((entry) => (entry.provider === providerName ? { ...entry, [field]: value } : entry))
+    );
   }
 
   async function handleSourceTest() {
@@ -512,6 +600,27 @@ function App() {
     }
   }
 
+  async function handleFileTagJob() {
+    if (!selectedFile) {
+      return;
+    }
+
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const payload = await createTagFileJob(selectedFile.id);
+      setActionMessage(payload.job.summary_message);
+      if (activeOverlay === "jobs") {
+        await refreshJobsOverlay(payload.job.id);
+      }
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
   async function handleSavePreviewSettings() {
     setIsWorking(true);
     setActionError(null);
@@ -520,6 +629,58 @@ function App() {
       const payload = await saveSettings({ preview: previewSettings });
       setPreviewSettings(payload.settings.preview);
       setActionMessage("Preview settings saved.");
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleSaveTaggingSettings() {
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const payload = await saveSettings({
+        tagging: {
+          provider: taggingSettings.provider,
+          sample_count: taggingSettings.sample_count,
+          combine_frames: taggingSettings.combine_frames,
+          prefer_batch: taggingSettings.prefer_batch,
+          vocabulary: taggingSettings.vocabulary
+        }
+      });
+      setTaggingSettings(toTaggingForm(payload.settings.tagging));
+      setActionMessage("Tagging settings saved.");
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleSaveProviderSettings() {
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const payload = await saveProviderSettings(
+        providerSettings.map((entry) => ({
+          provider: entry.provider,
+          enabled: entry.enabled,
+          vision_model: entry.vision_model,
+          text_model: entry.text_model,
+          prefer_batch: entry.prefer_batch,
+          api_key: entry.api_key
+        }))
+      );
+      setProviderSettings(
+        defaultProviderSettings.map((base) => {
+          const current = payload.providers.find((entry) => entry.provider === base.provider);
+          return current ? { ...base, ...current, api_key: "" } : base;
+        })
+      );
+      setActionMessage("Provider settings saved.");
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -696,9 +857,8 @@ function App() {
             <span className={`status-pill status-pill-${health.state}`}>{backendLabel}</span>
           </div>
           <p className="summary">
-            Browse one active source, run conversion and preview jobs independently, and tune
-            preview sampling and large-tile selection from a dedicated settings screen with live
-            layout feedback.
+            Browse one active source, run conversion, preview, and closed-vocabulary tagging jobs
+            independently, and tune preview or tagging behavior from dedicated settings screens.
           </p>
           {health.error ? <p className="muted">Last backend error: {health.error}</p> : null}
           {actionError ? <p className="feedback error">{actionError}</p> : null}
@@ -838,6 +998,14 @@ function App() {
               <button
                 type="button"
                 className="mini-button"
+                disabled={!source || !selectedFile || isWorking}
+                onClick={handleFileTagJob}
+              >
+                Tag file
+              </button>
+              <button
+                type="button"
+                className="mini-button"
                 disabled={!source || isWorking}
                 onClick={() => handleDirectoryJob(createPreviewDirectoryJob)}
               >
@@ -966,6 +1134,10 @@ function App() {
                 <dd>{selectedFile?.file_name ?? "-"}</dd>
               </div>
               <div>
+                <dt>Assigned tags</dt>
+                <dd>{selectedFileTags?.tags?.length ?? 0}</dd>
+              </div>
+              <div>
                 <dt>Sample count</dt>
                 <dd>{libraryPreview?.metadata?.sample_count ?? "-"}</dd>
               </div>
@@ -974,6 +1146,27 @@ function App() {
                 <dd>{liveSourceLabel}</dd>
               </div>
             </dl>
+
+            <div className="note-card">
+              <strong>Closed-vocabulary tags</strong>
+              {selectedFileTags?.tags?.length ? (
+                <>
+                  <div className="tag-pill-list">
+                    {selectedFileTags.tags.map((tag) => (
+                      <span key={`${tag.tag_key}-${tag.assigned_at}`} className="tree-badge tree-badge-in_progress">
+                        {tag.display_name} {formatConfidence(tag.confidence)}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="muted">
+                    {selectedFileTags.tagging_model_info?.provider ?? "-"} · {selectedFileTags.tagging_model_info?.model ?? "-"} ·{" "}
+                    {selectedFileTags.tagging_updated_at ? formatDate(selectedFileTags.tagging_updated_at) : "-"}
+                  </p>
+                </>
+              ) : (
+                <p>No tags stored for the selected video yet. Run a file or subtree tagging job.</p>
+              )}
+            </div>
           </aside>
         ) : null}
       </section>
@@ -1419,6 +1612,150 @@ function App() {
                           </div>
                         )}
                       </div>
+                    </div>
+                  </div>
+                ) : selectedSettingsSection === "tagging" ? (
+                  <div className="source-settings">
+                    <p>
+                      Tagging stays separate from conversion and preview. The backend only stores
+                      tags selected from this allowed vocabulary plus confidence scores.
+                    </p>
+                    <div className="form-grid">
+                      <label>
+                        <span>Provider</span>
+                        <select
+                          value={taggingSettings.provider}
+                          onChange={(event) => updateTaggingSetting("provider", event.target.value)}
+                        >
+                          <option value="openrouter">OpenRouter</option>
+                          <option value="gemini">Google Gemini</option>
+                          <option value="fal">FAL</option>
+                          <option value="mistral">Mistral</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Sample count</span>
+                        <input
+                          type="number"
+                          min="3"
+                          max="24"
+                          value={taggingSettings.sample_count}
+                          onChange={(event) => updateTaggingSetting("sample_count", Number(event.target.value))}
+                        />
+                      </label>
+                      <label className="toggle-row">
+                        <span>Combine frames</span>
+                        <input
+                          type="checkbox"
+                          checked={taggingSettings.combine_frames}
+                          onChange={(event) => updateTaggingSetting("combine_frames", event.target.checked)}
+                        />
+                      </label>
+                      <label className="toggle-row">
+                        <span>Prefer batch</span>
+                        <input
+                          type="checkbox"
+                          checked={taggingSettings.prefer_batch}
+                          onChange={(event) => updateTaggingSetting("prefer_batch", event.target.checked)}
+                        />
+                      </label>
+                      <label className="full-width">
+                        <span>Allowed vocabulary</span>
+                        <textarea
+                          rows="10"
+                          value={(taggingSettings.vocabulary ?? []).join("\n")}
+                          onChange={(event) =>
+                            updateTaggingSetting(
+                              "vocabulary",
+                              event.target.value
+                                .split("\n")
+                                .map((entry) => entry.trim())
+                                .filter(Boolean)
+                            )
+                          }
+                          placeholder="One tag per line"
+                        />
+                      </label>
+                    </div>
+                    <div className="inline-actions">
+                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSaveTaggingSettings}>
+                        Save tagging settings
+                      </button>
+                    </div>
+                    <div className="note-card">
+                      <strong>Closed vocabulary only</strong>
+                      <p>
+                        The model can only return tags from this list. Any out-of-vocabulary labels
+                        are discarded before storage.
+                      </p>
+                    </div>
+                  </div>
+                ) : selectedSettingsSection === "providers" ? (
+                  <div className="source-settings">
+                    <p>
+                      Configure backend-only provider access here. API keys stay out of the main
+                      metadata database and are stored separately.
+                    </p>
+                    <div className="provider-settings-list">
+                      {providerSettings.map((provider) => (
+                        <div key={provider.provider} className="note-card">
+                          <div className="panel-header compact-header">
+                            <div>
+                              <strong>{provider.provider === "gemini" ? "Google Gemini" : provider.provider.toUpperCase()}</strong>
+                              <p className="muted">
+                                {provider.api_key_configured ? "API key stored" : "API key not stored"}
+                              </p>
+                            </div>
+                            <label className="toggle-row">
+                              <span>Enabled</span>
+                              <input
+                                type="checkbox"
+                                checked={provider.enabled}
+                                onChange={(event) => updateProviderSetting(provider.provider, "enabled", event.target.checked)}
+                              />
+                            </label>
+                          </div>
+                          <div className="form-grid">
+                            <label>
+                              <span>Vision model</span>
+                              <input
+                                value={provider.vision_model}
+                                onChange={(event) => updateProviderSetting(provider.provider, "vision_model", event.target.value)}
+                              />
+                            </label>
+                            <label>
+                              <span>Text model</span>
+                              <input
+                                value={provider.text_model}
+                                onChange={(event) => updateProviderSetting(provider.provider, "text_model", event.target.value)}
+                                placeholder="Optional"
+                              />
+                            </label>
+                            <label>
+                              <span>API key</span>
+                              <input
+                                type="password"
+                                value={provider.api_key}
+                                onChange={(event) => updateProviderSetting(provider.provider, "api_key", event.target.value)}
+                                placeholder={provider.api_key_configured ? "Leave blank to keep stored key" : ""}
+                              />
+                            </label>
+                            <label className="toggle-row">
+                              <span>Prefer batch</span>
+                              <input
+                                type="checkbox"
+                                checked={provider.prefer_batch}
+                                onChange={(event) => updateProviderSetting(provider.provider, "prefer_batch", event.target.checked)}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="inline-actions">
+                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSaveProviderSettings}>
+                        Save provider settings
+                      </button>
                     </div>
                   </div>
                 ) : (

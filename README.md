@@ -43,15 +43,16 @@ Implemented today:
 - saved conversion profile bootstrap with a default `H.265` / `MP4` profile
 - real conversion jobs for file and recursive directory scopes with temp output, lightweight validation, production replacement, and separate test outputs
 - real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, persisted preview assets, and directory collage generation
+- real closed-vocabulary tagging jobs for file and recursive directory scopes with configurable sampled-frame count, stored confidence scores, provider-backed inference, and provider-side batch preference
 - preview settings persistence with saved presets, live layout preview, and a dedicated preview section in the settings UI
-- frontend source settings flow with test, save, reconnect, scan, rescan, tree, file listing, preview display, and a jobs modal with detail, items, and live event updates
+- tagging settings persistence with allowed vocabulary editing, provider selection, batch preference, and separate provider configuration with API keys stored outside the main database
+- frontend source settings flow with test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, tree/file actions, and a jobs modal with detail, items, and live event updates
 
 Not implemented yet:
 
 - protocol-native remote enumeration beyond backend-accessible source paths
-- real AI tagging outputs
 - non-placeholder tune processing
-- most non-preview settings persistence and backups
+- backup and maintenance settings workflows
 - UI localization with Russian and English support
 
 ## Local Run
@@ -136,6 +137,17 @@ Real preview jobs use local Python imaging and detection libraries on the backen
 - `Pillow`
 
 Preview generation does not require cloud AI providers. Face prioritization uses OpenCV's local Haar cascade, and figure prioritization uses OpenCV's local HOG person detector.
+
+### Tagging runtime dependencies
+
+Real tagging jobs reuse the local video frame sampler and then call one configured vision provider:
+
+- OpenRouter
+- Google Gemini
+- FAL
+- Mistral
+
+The backend stores provider API keys in `backend/.local/secrets.json`, keeps provider metadata in the main settings payload, and saves only allowed closed-vocabulary tags plus confidence scores in SQLite.
 
 ## Project Structure
 

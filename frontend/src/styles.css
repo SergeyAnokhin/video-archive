@@ -259,6 +259,10 @@ textarea:disabled {
   margin-bottom: 18px;
 }
 
+.compact-header {
+  margin-bottom: 12px;
+}
+
 .panel-header h2,
 .settings-detail h3,
 .empty-state h3 {
@@ -624,6 +628,12 @@ textarea:disabled {
   gap: 16px;
 }
 
+.provider-settings-list,
+.tag-pill-list {
+  display: grid;
+  gap: 12px;
+}
+
 .toggle-row {
   align-content: end;
 }
@@ -669,13 +679,19 @@ textarea:disabled {
 }
 
 .form-grid input,
-.form-grid select {
+.form-grid select,
+.form-grid textarea {
   width: 100%;
   padding: 11px 12px;
   border-radius: 14px;
   border: 1px solid var(--border-soft);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-main);
+}
+
+.form-grid textarea {
+  resize: vertical;
+  min-height: 180px;
 }
 
 .note-card {
@@ -687,6 +703,13 @@ textarea:disabled {
 
 .note-card p {
   margin-bottom: 0;
+}
+
+.tag-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .note-card-success {

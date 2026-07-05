@@ -94,6 +94,8 @@ Represents a discovered file within the source.
 | `last_conversion_profile_id` | UUID nullable | FK -> `conversion_profiles.id` |
 | `last_converted_at` | datetime nullable | Last successful conversion |
 | `preview_generated_at` | datetime nullable | Last successful preview generation |
+| `tagging_updated_at` | datetime nullable | Last successful closed-vocabulary tagging run |
+| `tagging_model_info` | json nullable | Provider, model, and tagging snapshot metadata |
 | `has_preview_assets` | boolean | Denormalized convenience flag |
 | `last_error_code` | string nullable | Latest operational error code |
 | `last_error_message` | text nullable | Latest operational error summary |
@@ -104,6 +106,7 @@ Rules:
 
 - `conversion_state` and `preview_state` are independent.
 - `has_preview_assets` should agree with preview artifacts and `preview_generated_at`.
+- `tagging_updated_at` and `tagging_model_info` should be cleared when the source file changes and old tags are invalidated.
 - If a source file disappears, the row may remain until cleanup/rescan removes or tombstones it.
 
 ## 4. conversion_profiles

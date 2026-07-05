@@ -14,8 +14,10 @@ from .errors import ApiError
 from .job_service import JobService
 from .library_service import LibraryService, normalize_relative_path
 from .preview_service import PreviewService
+from .provider_settings_service import ProviderSettingsService
 from .secrets import SecretStore
 from .source_service import SourceService, parse_source_payload
+from .tagging_service import TaggingService
 
 
 APP_STATE: AppState | None = None
@@ -64,8 +66,17 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             if path == "/api/settings":
                 self._write_json(
                     HTTPStatus.OK,
-                    {"settings": {"preview": _require_app_state().preview_service.get_settings()}},
+                    {
+                        "settings": {
+                            "preview": _require_app_state().preview_service.get_settings(),
+                            "tagging": _require_app_state().tagging_service.get_settings(),
+                        }
+                    },
                 )
+                return
+
+            if path == "/api/settings/providers":
+                self._write_json(HTTPStatus.OK, {"providers": _require_app_state().provider_settings_service.get_settings()})
                 return
 
             if path == "/api/preview-layouts":
@@ -76,6 +87,12 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 file_id = path.removeprefix("/api/files/").removesuffix("/preview")
                 preview = _require_app_state().preview_service.get_file_preview(file_id)
                 self._write_json(HTTPStatus.OK, {"preview": preview})
+                return
+
+            if path.startswith("/api/files/") and path.endswith("/tags"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/tags")
+                tags = _require_app_state().tagging_service.get_file_tags(file_id)
+                self._write_json(HTTPStatus.OK, {"tags": tags})
                 return
 
             if path == "/api/directories/preview":
@@ -154,11 +171,29 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
 
             if path == "/api/settings":
                 payload = self._read_json_body()
-                preview_payload = payload.get("preview")
-                if not isinstance(preview_payload, dict):
-                    raise ApiError("invalid_request", "Field 'preview' must be a JSON object.", status=400)
-                settings = _require_app_state().preview_service.update_settings(preview_payload)
-                self._write_json(HTTPStatus.OK, {"settings": {"preview": settings}})
+                response_settings: dict[str, dict] = {}
+                if "preview" in payload:
+                    preview_payload = payload.get("preview")
+                    if not isinstance(preview_payload, dict):
+                        raise ApiError("invalid_request", "Field 'preview' must be a JSON object.", status=400)
+                    response_settings["preview"] = _require_app_state().preview_service.update_settings(preview_payload)
+                if "tagging" in payload:
+                    tagging_payload = payload.get("tagging")
+                    if not isinstance(tagging_payload, dict):
+                        raise ApiError("invalid_request", "Field 'tagging' must be a JSON object.", status=400)
+                    response_settings["tagging"] = _require_app_state().tagging_service.update_settings(tagging_payload)
+                if not response_settings:
+                    raise ApiError("invalid_request", "Request must include 'preview' or 'tagging' settings.", status=400)
+                self._write_json(HTTPStatus.OK, {"settings": response_settings})
+                return
+
+            if path == "/api/settings/providers":
+                payload = self._read_json_body()
+                providers_payload = payload.get("providers")
+                if not isinstance(providers_payload, list):
+                    raise ApiError("invalid_request", "Field 'providers' must be an array.", status=400)
+                providers = _require_app_state().provider_settings_service.update_settings(providers_payload)
+                self._write_json(HTTPStatus.OK, {"providers": providers})
                 return
 
             if path.startswith("/api/preview-layouts/"):
@@ -376,10 +411,13 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
 def create_app_state() -> AppState:
     config = load_config()
     initialize_database(config.database_path)
-    source_service = SourceService(config.database_path, SecretStore(config.secrets_path))
+    secret_store = SecretStore(config.secrets_path)
+    source_service = SourceService(config.database_path, secret_store)
     library_service = LibraryService(config.database_path, source_service)
     conversion_profile_service = ConversionProfileService(config.database_path)
     preview_service = PreviewService(config.database_path, config.data_dir)
+    provider_settings_service = ProviderSettingsService(config.database_path, secret_store)
+    tagging_service = TaggingService(config.database_path, provider_settings_service)
     job_service = JobService(
         config.database_path,
         source_service,
@@ -387,6 +425,7 @@ def create_app_state() -> AppState:
         conversion_profile_service,
         ConversionService(),
         preview_service,
+        tagging_service,
     )
     job_service.start()
     return AppState(
@@ -395,6 +434,8 @@ def create_app_state() -> AppState:
         library_service=library_service,
         conversion_profile_service=conversion_profile_service,
         preview_service=preview_service,
+        provider_settings_service=provider_settings_service,
+        tagging_service=tagging_service,
         job_service=job_service,
     )
 

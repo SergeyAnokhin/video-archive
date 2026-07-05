@@ -12,6 +12,7 @@ from .errors import ApiError
 from .library_service import LibraryService, normalize_relative_path
 from .preview_service import PreviewService
 from .source_service import SourceService
+from .tagging_service import TaggingService
 from .time_utils import utc_now
 
 
@@ -33,6 +34,7 @@ class JobService:
         conversion_profile_service: ConversionProfileService,
         conversion_service: ConversionService,
         preview_service: PreviewService,
+        tagging_service: TaggingService,
     ) -> None:
         self._database_path = database_path
         self._source_service = source_service
@@ -40,6 +42,7 @@ class JobService:
         self._conversion_profile_service = conversion_profile_service
         self._conversion_service = conversion_service
         self._preview_service = preview_service
+        self._tagging_service = tagging_service
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
         self._worker_thread: threading.Thread | None = None
@@ -265,14 +268,15 @@ class JobService:
             item_specs=item_specs,
         )
 
-    def create_tag_directory_job(self, relative_path: str) -> dict:
+    def create_tag_directory_job(self, relative_path: str, *, tagging_settings: dict | None = None) -> dict:
         normalized_path = normalize_relative_path(relative_path)
         item_specs = self._build_directory_item_specs(normalized_path)
+        tagging_settings = tagging_settings or self._tagging_service.resolve_settings_snapshot()
         return self._create_job(
             job_type="tag",
             scope_type="directory",
             scope_ref=normalized_path,
-            parameters={"relative_path": normalized_path, "recursive": True},
+            parameters={"relative_path": normalized_path, "recursive": True, "tagging": tagging_settings},
             item_specs=item_specs,
         )
 
@@ -304,13 +308,14 @@ class JobService:
             item_specs=[self._file_item_spec(file_row)],
         )
 
-    def create_tag_file_job(self, file_id: str) -> dict:
+    def create_tag_file_job(self, file_id: str, *, tagging_settings: dict | None = None) -> dict:
         file_row = self._require_file(file_id)
+        tagging_settings = tagging_settings or self._tagging_service.resolve_settings_snapshot()
         return self._create_job(
             job_type="tag",
             scope_type="file",
             scope_ref=file_id,
-            parameters={"file_id": file_id, "relative_path": file_row["relative_path"]},
+            parameters={"file_id": file_id, "relative_path": file_row["relative_path"], "tagging": tagging_settings},
             item_specs=[self._file_item_spec(file_row)],
         )
 
@@ -398,8 +403,8 @@ class JobService:
             return self.create_preview_directory_job(parameters.get("relative_path", ""), preview_settings=parameters.get("preview"))
         if job_type == "tag":
             if job["scope_type"] == "file":
-                return self.create_tag_file_job(parameters["file_id"])
-            return self.create_tag_directory_job(parameters.get("relative_path", ""))
+                return self.create_tag_file_job(parameters["file_id"], tagging_settings=parameters.get("tagging"))
+            return self.create_tag_directory_job(parameters.get("relative_path", ""), tagging_settings=parameters.get("tagging"))
         if job_type == "tune":
             return self.create_tune_file_job(parameters["file_id"], parameters.get("sweep"))
         raise ApiError("job_not_restartable", "This job type cannot be restarted in the current implementation.", status=409)
@@ -497,6 +502,8 @@ class JobService:
                 summary_message = self._execute_convert_job(job)
             elif job["job_type"] == "preview":
                 summary_message = self._execute_preview_job(job)
+            elif job["job_type"] == "tag":
+                summary_message = self._execute_tag_job(job)
             else:
                 summary_message = self._execute_placeholder_job(job)
             self._complete_job(job["id"], summary_message)
@@ -716,6 +723,84 @@ class JobService:
         if completed == 0:
             return "Preview job completed with no eligible files."
         return f"Preview job completed for {completed} item(s)."
+
+    def _execute_tag_job(self, job: dict) -> str:
+        source = self._require_active_source()
+        tagging_settings = job["parameters"].get("tagging")
+        if not isinstance(tagging_settings, dict):
+            tagging_settings = self._tagging_service.resolve_settings_snapshot()
+        items = self.list_job_items(job["id"])
+        file_rows: list[dict] = []
+        item_by_file_id: dict[str, dict] = {}
+
+        for item in items:
+            if self._job_cancel_requested(job["id"]):
+                raise _JobCancelled()
+            if not item["file_id"]:
+                self._set_job_item_status(item["id"], "skipped", item["message"] or "No eligible file found.")
+                continue
+            file_row = self._get_file_for_preview(item["file_id"])
+            file_rows.append(file_row)
+            item_by_file_id[file_row["id"]] = item
+            self._set_job_item_status(item["id"], "running", f"Classifying tags for {file_row['relative_path']}...")
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="tag.item.started",
+                message=f"Started tagging for {file_row['relative_path']}.",
+                payload={
+                    "provider": tagging_settings.get("provider"),
+                    "sample_count": tagging_settings.get("sample_count"),
+                    "prefer_batch": tagging_settings.get("prefer_batch"),
+                },
+            )
+
+        results = self._tagging_service.tag_files(
+            source_root=source["root_path"],
+            file_rows=file_rows,
+            settings=tagging_settings,
+        )
+
+        completed = 0
+        failed = 0
+        for result in results:
+            item = item_by_file_id.get(result["file_id"])
+            if item is None:
+                continue
+            if result["status"] != "completed":
+                failed += 1
+                self._set_job_item_status(item["id"], "failed", result.get("error_message") or "Tagging failed.")
+                self._append_event(
+                    job_id=job["id"],
+                    file_id=result["file_id"],
+                    level="error",
+                    event_type="tag.item.failed",
+                    message=f"Tagging failed for {result['relative_path']}: {result.get('error_message') or 'Unknown error'}",
+                    payload={"error_code": result.get("error_code")},
+                )
+                continue
+
+            completed += 1
+            self._set_job_item_status(item["id"], "completed", f"Tagged {result['relative_path']} with {result['tag_count']} tag(s).")
+            self._append_event(
+                job_id=job["id"],
+                file_id=result["file_id"],
+                level="info",
+                event_type="tag.item.completed",
+                message=f"Tagged {result['relative_path']} with {result['tag_count']} tag(s).",
+                payload={
+                    "provider": result["provider_name"],
+                    "model": result["model_name"],
+                    "tags": result["tags"],
+                },
+            )
+
+        if failed:
+            raise ApiError("tagging_job_failed", f"Tagging failed for {failed} item(s); {completed} completed successfully.", status=500)
+        if completed == 0:
+            return "Tagging job completed with no eligible files."
+        return f"Tagging job completed for {completed} item(s)."
 
     def _execute_placeholder_job(self, job: dict) -> str:
         items = self.list_job_items(job["id"])

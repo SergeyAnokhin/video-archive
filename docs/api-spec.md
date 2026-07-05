@@ -322,6 +322,13 @@ Starts tagging for one file.
 
 Returns tags and confidence scores for a file.
 
+Current implementation returns:
+
+- file identity fields
+- stored tags ordered by confidence
+- `tagging_updated_at`
+- `tagging_model_info` with provider and model
+
 ## 11. Playback
 
 ### `GET /api/files/{file_id}/playback`
@@ -368,6 +375,11 @@ Current foundation behavior:
 
 Returns non-secret settings payload for the frontend.
 
+Current implementation returns:
+
+- `preview`
+- `tagging`
+
 ### `PUT /api/settings`
 
 Updates non-secret settings payload.
@@ -375,6 +387,14 @@ Updates non-secret settings payload.
 ### `GET /api/settings/providers`
 
 Returns provider configuration summary.
+
+Current implementation returns one entry each for `openrouter`, `gemini`, `fal`, and `mistral`, including:
+
+- `enabled`
+- `vision_model`
+- optional `text_model`
+- `prefer_batch`
+- `api_key_configured`
 
 ### `PUT /api/settings/providers`
 
@@ -424,4 +444,4 @@ Recommended response structure:
 - Endpoints returning directory status should compute recursive progress from files.
 - Job creation endpoints should snapshot relevant profile or settings data into job parameters.
 - The frontend should assume long-running work is asynchronous and job-backed.
-- In the current implementation, `convert` endpoints run real backend conversion work backed by saved conversion profiles. `preview`, `tag`, and `tune` still create real queued jobs, items, and events but remain placeholder-only.
+- In the current implementation, `convert`, `preview`, and `tag` endpoints run real backend work backed by saved settings snapshots. `tune` still creates real queued jobs, items, and events but remains placeholder-only.

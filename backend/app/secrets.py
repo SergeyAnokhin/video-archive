@@ -29,6 +29,21 @@ class SecretStore:
             return None
         return self._read().get(ref)
 
+    def upsert_provider_api_key(self, provider_name: str, api_key: str | None) -> str | None:
+        ref = f"provider:{provider_name}:api_key"
+        secrets = self._read()
+        if api_key is None:
+            return ref if ref in secrets else None
+        normalized = api_key.strip()
+        if not normalized:
+            return ref if ref in secrets else None
+        secrets[ref] = normalized
+        self._write(secrets)
+        return ref
+
+    def get_provider_api_key(self, provider_name: str) -> str | None:
+        return self.get(f"provider:{provider_name}:api_key")
+
     def _read(self) -> dict[str, str]:
         if not self._path.exists():
             return {}

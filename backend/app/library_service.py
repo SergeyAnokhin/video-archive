@@ -493,6 +493,7 @@ class LibraryService:
                     preview_generated_at = None
                     preview_asset_path = None
                     conn.execute("DELETE FROM preview_assets WHERE asset_kind = 'file' AND file_id = ?", (existing["id"],))
+                    conn.execute("DELETE FROM file_tags WHERE file_id = ?", (existing["id"],))
 
                 conn.execute(
                     """
@@ -504,7 +505,8 @@ class LibraryService:
                         large_tile_timestamps = CASE WHEN ? THEN NULL ELSE large_tile_timestamps END,
                         face_detection_summary = CASE WHEN ? THEN NULL ELSE face_detection_summary END,
                         body_detection_summary = CASE WHEN ? THEN NULL ELSE body_detection_summary END,
-                        preview_asset_path = ?, last_error_code = NULL,
+                        preview_asset_path = ?, tagging_updated_at = CASE WHEN ? THEN NULL ELSE tagging_updated_at END,
+                        tagging_model_info = CASE WHEN ? THEN NULL ELSE tagging_model_info END, last_error_code = NULL,
                         last_error_message = NULL, updated_at = ?
                     WHERE id = ?
                     """,
@@ -527,6 +529,8 @@ class LibraryService:
                         int(changed),
                         int(changed),
                         preview_asset_path,
+                        int(changed),
+                        int(changed),
                         now,
                         existing["id"],
                     ),
@@ -536,6 +540,7 @@ class LibraryService:
             for relative_path in missing_files:
                 file_row = existing_files[relative_path]
                 conn.execute("DELETE FROM preview_assets WHERE asset_kind = 'file' AND file_id = ?", (file_row["id"],))
+                conn.execute("DELETE FROM file_tags WHERE file_id = ?", (file_row["id"],))
                 conn.execute(
                     "DELETE FROM files WHERE source_id = ? AND relative_path = ?",
                     (source["id"], relative_path),

@@ -93,15 +93,17 @@ Supported strategies:
 
 Tagging settings should include:
 
+- selected provider for tagging jobs
 - allowed tag vocabulary
 - sampled frame count
 - whether to combine multiple frames into one image for classification
-- top tag count target
-- confidence handling preferences if needed later
+- whether to prefer provider-side batch requests for multi-video jobs
 
 Default expectation:
 
 - sampled frame count default is `9`
+- combined-frame classification enabled by default
+- batch preference enabled by default
 
 ## 6. AI Provider Settings
 
@@ -118,7 +120,12 @@ Each provider entry may include:
 - API key
 - default vision model
 - optional default text model
-- batch mode preferences if available
+- batch mode preference if available
+
+Implementation note:
+
+- provider metadata is stored in the main settings payload
+- API keys are stored separately in local secret storage and exposed back to the UI only as `api_key_configured`
 
 Rules:
 
