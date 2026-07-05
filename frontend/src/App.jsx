@@ -2004,6 +2004,7 @@ function App() {
                         </select>
                       </label>
                       {sourceForm.protocol !== "local" ? (
+                      <>
                       <label>
                         <span>Host</span>
                         <input
@@ -2043,6 +2044,7 @@ function App() {
                           placeholder={source?.has_password ? "Leave blank to keep saved password" : ""}
                         />
                       </label>
+                      </>
                       ) : null}
                     </div>
 
