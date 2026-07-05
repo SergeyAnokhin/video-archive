@@ -19,6 +19,7 @@ Implemented today:
 - backend source scan and browse endpoints:
   - `GET /api/tree`
   - `GET /api/files`
+  - `GET /api/conversion-profiles`
   - `GET /api/jobs`
   - `GET /api/jobs/{job_id}`
   - `GET /api/jobs/{job_id}/items`
@@ -39,12 +40,13 @@ Implemented today:
 - backend local secret file storage outside the main metadata database
 - persisted directory and file metadata from scan results
 - backend async job queue foundation with persistent job items and structured app events
+- saved conversion profile bootstrap with a default `H.265` / `MP4` profile
+- real conversion jobs for file and recursive directory scopes with temp output, lightweight validation, production replacement, and separate test outputs
 - frontend source settings flow with test, save, reconnect, scan, rescan, tree, file listing, and a jobs modal with detail, items, and live event updates
 
 Not implemented yet:
 
 - protocol-native remote enumeration beyond backend-accessible source paths
-- heavy conversion execution
 - real preview asset generation
 - real AI tagging outputs
 - non-placeholder tune processing
@@ -119,6 +121,10 @@ Optional local overrides can be placed in `backend/.env.local`. Start from [`bac
 ```powershell
 npm.cmd run test --prefix backend
 ```
+
+### Conversion runtime dependency
+
+Real conversion jobs now call `ffmpeg` and `ffprobe` from the backend machine. Those binaries must be available on `PATH` for production or test conversion runs to succeed.
 
 ## Project Structure
 

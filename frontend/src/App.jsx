@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   cancelJob,
   createConvertDirectoryJob,
+  createConvertFileJob,
   createPreviewDirectoryJob,
   createRescanDirectoryJob,
   createScanSourceJob,
@@ -13,6 +14,7 @@ import {
   fetchJobs,
   fetchLogs,
   fetchTree,
+  fetchConversionProfiles,
   loadAppShellData,
   reconnectSource,
   restartJob,
@@ -97,6 +99,15 @@ function formatDirectoryLabel(path) {
   return path ? path : "Library root";
 }
 
+function formatProfileLabel(profile) {
+  const parts = [`${profile.video_codec.toUpperCase()} -> ${profile.container.toUpperCase()}`];
+  if (profile.max_dimension) {
+    parts.push(`max ${profile.max_dimension}px`);
+  }
+  parts.push(profile.drop_audio ? "no audio" : "audio kept");
+  return `${profile.name} (${parts.join(", ")})`;
+}
+
 function formatJobScope(job) {
   if (!job) {
     return "-";
@@ -136,21 +147,24 @@ function App() {
   const [tree, setTree] = useState([]);
   const [files, setFiles] = useState([]);
   const [jobs, setJobs] = useState([]);
+  const [conversionProfiles, setConversionProfiles] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
   const [jobItems, setJobItems] = useState([]);
   const [jobEvents, setJobEvents] = useState([]);
   const [selectedDirectory, setSelectedDirectory] = useState("");
+  const [selectedFileId, setSelectedFileId] = useState(null);
   const [selectedSettingsSection, setSelectedSettingsSection] = useState("source");
   const [previewVisible, setPreviewVisible] = useState(true);
   const [activeOverlay, setActiveOverlay] = useState(null);
+  const [conversionDraft, setConversionDraft] = useState(null);
   const [actionMessage, setActionMessage] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [isWorking, setIsWorking] = useState(false);
 
   const treeItems = useMemo(() => flattenTree(tree), [tree]);
-  const selectedFile = files[0] ?? null;
+  const selectedFile = files.find((file) => file.id === selectedFileId) ?? files[0] ?? null;
   const liveSourceLabel = source?.name ?? info.active_source?.name ?? "No active source";
   const liveSourceMeta = source
     ? `${source.protocol.toUpperCase()} - ${source.host} - ${source.root_path}`
@@ -166,6 +180,19 @@ function App() {
   useEffect(() => {
     loadBootstrap();
   }, []);
+
+  useEffect(() => {
+    if (!files.length) {
+      if (selectedFileId !== null) {
+        setSelectedFileId(null);
+      }
+      return;
+    }
+
+    if (!selectedFileId || !files.some((file) => file.id === selectedFileId)) {
+      setSelectedFileId(files[0].id);
+    }
+  }, [files, selectedFileId]);
 
   useEffect(() => {
     if (activeOverlay !== "jobs") {
@@ -364,6 +391,75 @@ function App() {
     }
   }
 
+  async function ensureConversionProfiles() {
+    if (conversionProfiles.length) {
+      return conversionProfiles;
+    }
+    const payload = await fetchConversionProfiles();
+    setConversionProfiles(payload.profiles);
+    return payload.profiles;
+  }
+
+  async function openConvertDialog(scope) {
+    setActionError(null);
+    try {
+      const profiles = await ensureConversionProfiles();
+      const defaultProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
+      if (!defaultProfile) {
+        throw new Error("No saved conversion profiles are available.");
+      }
+
+      setConversionDraft({
+        scope,
+        fileId: scope === "file" ? selectedFile?.id ?? null : null,
+        relativePath: selectedDirectory,
+        fileName: scope === "file" ? selectedFile?.file_name ?? "" : "",
+        profileId: defaultProfile.id,
+        mode: "production"
+      });
+      setActiveOverlay("convert");
+    } catch (error) {
+      setActionError(error.message);
+    }
+  }
+
+  function updateConversionDraft(field, value) {
+    setConversionDraft((current) => (current ? { ...current, [field]: value } : current));
+  }
+
+  async function submitConversionJob() {
+    if (!conversionDraft) {
+      return;
+    }
+
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const payload =
+        conversionDraft.scope === "file"
+          ? await createConvertFileJob(conversionDraft.fileId, {
+              profileId: conversionDraft.profileId,
+              mode: conversionDraft.mode
+            })
+          : await createConvertDirectoryJob(conversionDraft.relativePath, {
+              profileId: conversionDraft.profileId,
+              mode: conversionDraft.mode
+            });
+      setActionMessage(payload.job.summary_message);
+      setActiveOverlay(null);
+      setConversionDraft(null);
+      await refreshLibrary(selectedDirectory);
+      if (activeOverlay === "jobs") {
+        await refreshJobsOverlay(payload.job.id);
+      }
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
   async function openJobsOverlay() {
     setActiveOverlay("jobs");
     setActionError(null);
@@ -538,9 +634,17 @@ function App() {
                 type="button"
                 className="mini-button"
                 disabled={!source || isWorking}
-                onClick={() => handleDirectoryJob(createConvertDirectoryJob)}
+                onClick={() => openConvertDialog("directory")}
               >
                 Convert subtree
+              </button>
+              <button
+                type="button"
+                className="mini-button"
+                disabled={!source || !selectedFile || isWorking}
+                onClick={() => openConvertDialog("file")}
+              >
+                Convert file
               </button>
               <button
                 type="button"
@@ -580,7 +684,11 @@ function App() {
           <div className="file-list">
             {files.length ? (
               files.map((file) => (
-                <article key={file.id} className="file-row">
+                <article
+                  key={file.id}
+                  className={`file-row ${selectedFile?.id === file.id ? "active" : ""}`}
+                  onClick={() => setSelectedFileId(file.id)}
+                >
                   <div>
                     <strong>{file.file_name}</strong>
                     <p className="row-subtitle">{file.relative_path}</p>
@@ -629,8 +737,8 @@ function App() {
               <div className="preview-meta">
                 <strong>{selectedFile?.file_name ?? "No file selected"}</strong>
                 <p>
-                  The browsing flow now loads real persisted file metadata. Preview generation
-                  remains a separate action and stays unimplemented here.
+                  Conversion now uses saved profiles with production or test mode. Preview
+                  generation remains a separate action and stays unimplemented here.
                 </p>
               </div>
             </div>
@@ -643,6 +751,10 @@ function App() {
               <div>
                 <dt>Visible files</dt>
                 <dd>{files.length}</dd>
+              </div>
+              <div>
+                <dt>Selected file</dt>
+                <dd>{selectedFile?.file_name ?? "-"}</dd>
               </div>
               <div>
                 <dt>Active source</dt>
@@ -789,6 +901,73 @@ function App() {
                   <p>Queued scan, rescan, convert, preview, tag, and tune jobs will appear here.</p>
                 </div>
               )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeOverlay === "convert" && conversionDraft ? (
+        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
+          <section className="overlay panel modal-shell convert-shell" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Conversion</p>
+                <h2>{conversionDraft.scope === "file" ? "Selected file" : "Selected folder"}</h2>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
+                Close
+              </button>
+            </div>
+
+            <div className="convert-layout">
+              <div className="note-card">
+                <strong>
+                  {conversionDraft.scope === "file"
+                    ? conversionDraft.fileName || "Selected file"
+                    : formatDirectoryLabel(conversionDraft.relativePath)}
+                </strong>
+                <p>
+                  Production mode writes a temp file, validates it quickly, and replaces the
+                  source only on success. Test mode writes a separate output and preserves the
+                  source file.
+                </p>
+              </div>
+
+              <div className="form-grid">
+                <label className="full-width">
+                  <span>Saved profile</span>
+                  <select
+                    value={conversionDraft.profileId}
+                    onChange={(event) => updateConversionDraft("profileId", event.target.value)}
+                  >
+                    {conversionProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {formatProfileLabel(profile)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  <span>Mode</span>
+                  <select
+                    value={conversionDraft.mode}
+                    onChange={(event) => updateConversionDraft("mode", event.target.value)}
+                  >
+                    <option value="production">Production replace source</option>
+                    <option value="test">Test keep source</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="inline-actions">
+                <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="primary-button" disabled={isWorking} onClick={submitConversionJob}>
+                  Start conversion
+                </button>
+              </div>
             </div>
           </section>
         </div>

@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlparse
 
 from .app_state import AppState
 from .config import load_config
+from .conversion_profile_service import ConversionProfileService
+from .conversion_service import ConversionService
 from .db import initialize_database
 from .errors import ApiError
 from .job_service import JobService
@@ -48,6 +50,13 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                         "directory": normalize_relative_path(directory),
                         "files": _require_app_state().library_service.list_files(directory=directory),
                     },
+                )
+                return
+
+            if path == "/api/conversion-profiles":
+                self._write_json(
+                    HTTPStatus.OK,
+                    {"profiles": _require_app_state().conversion_profile_service.list_profiles()},
                 )
                 return
 
@@ -146,8 +155,13 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 return
 
             if path == "/api/jobs/convert-directory":
-                relative_path = normalize_relative_path(self._read_json_body().get("relative_path"))
-                job = _require_app_state().job_service.create_convert_directory_job(relative_path)
+                payload = self._read_json_body()
+                relative_path = normalize_relative_path(payload.get("relative_path"))
+                job = _require_app_state().job_service.create_convert_directory_job(
+                    relative_path,
+                    profile_id=_read_optional_string(payload, "profile_id"),
+                    mode=_read_conversion_mode(payload.get("mode")),
+                )
                 self._write_json(HTTPStatus.OK, {"job": job})
                 return
 
@@ -164,7 +178,12 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 return
 
             if path == "/api/jobs/convert-file":
-                job = _require_app_state().job_service.create_convert_file_job(_read_required_string(self._read_json_body(), "file_id"))
+                payload = self._read_json_body()
+                job = _require_app_state().job_service.create_convert_file_job(
+                    _read_required_string(payload, "file_id"),
+                    profile_id=_read_optional_string(payload, "profile_id"),
+                    mode=_read_conversion_mode(payload.get("mode")),
+                )
                 self._write_json(HTTPStatus.OK, {"job": job})
                 return
 
@@ -289,9 +308,22 @@ def create_app_state() -> AppState:
     initialize_database(config.database_path)
     source_service = SourceService(config.database_path, SecretStore(config.secrets_path))
     library_service = LibraryService(config.database_path, source_service)
-    job_service = JobService(config.database_path, source_service, library_service)
+    conversion_profile_service = ConversionProfileService(config.database_path)
+    job_service = JobService(
+        config.database_path,
+        source_service,
+        library_service,
+        conversion_profile_service,
+        ConversionService(),
+    )
     job_service.start()
-    return AppState(config=config, source_service=source_service, library_service=library_service, job_service=job_service)
+    return AppState(
+        config=config,
+        source_service=source_service,
+        library_service=library_service,
+        conversion_profile_service=conversion_profile_service,
+        job_service=job_service,
+    )
 
 
 def main() -> None:
@@ -363,6 +395,27 @@ def _read_required_string(payload: dict, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ApiError("invalid_request", f"Field '{key}' must be a non-empty string.", status=400)
     return value.strip()
+
+
+def _read_optional_string(payload: dict, key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ApiError("invalid_request", f"Field '{key}' must be a string when provided.", status=400)
+    normalized = value.strip()
+    return normalized or None
+
+
+def _read_conversion_mode(value: object) -> str:
+    if value is None:
+        return "production"
+    if not isinstance(value, str):
+        raise ApiError("invalid_request", "Field 'mode' must be a string when provided.", status=400)
+    normalized = value.strip().lower()
+    if normalized not in {"production", "test"}:
+        raise ApiError("invalid_request", "Field 'mode' must be 'production' or 'test'.", status=400)
+    return normalized
 
 
 if __name__ == "__main__":

@@ -258,6 +258,16 @@ Request body:
 
 Starts conversion for one file.
 
+Request body:
+
+```json
+{
+  "file_id": "uuid",
+  "profile_id": "default-h265-mp4",
+  "mode": "test"
+}
+```
+
 ### `POST /api/jobs/tune-file`
 
 Starts a tuning sweep for one file.
@@ -414,4 +424,4 @@ Recommended response structure:
 - Endpoints returning directory status should compute recursive progress from files.
 - Job creation endpoints should snapshot relevant profile or settings data into job parameters.
 - The frontend should assume long-running work is asynchronous and job-backed.
-- In the current foundation, `convert`, `preview`, `tag`, and `tune` endpoints create real queued jobs, items, and events, but heavy media processing is still placeholder-only.
+- In the current implementation, `convert` endpoints run real backend conversion work backed by saved conversion profiles. `preview`, `tag`, and `tune` still create real queued jobs, items, and events but remain placeholder-only.

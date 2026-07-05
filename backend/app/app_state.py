@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .config import AppConfig
+from .conversion_profile_service import ConversionProfileService
 from .db import get_schema_version
 from .job_service import JobService
 from .library_service import LibraryService
@@ -14,6 +15,7 @@ class AppState:
     config: AppConfig
     source_service: SourceService
     library_service: LibraryService
+    conversion_profile_service: ConversionProfileService
     job_service: JobService
 
     def app_info(self) -> dict:

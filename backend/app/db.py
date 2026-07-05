@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 MIGRATIONS: list[tuple[int, list[str]]] = [
@@ -230,6 +230,26 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """
             CREATE INDEX IF NOT EXISTS idx_app_events_created_at
             ON app_events(created_at)
+            """,
+        ],
+    ),
+    (
+        3,
+        [
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_conversion_profiles_one_default
+            ON conversion_profiles(is_default)
+            WHERE is_default = 1
+            """,
+            """
+            INSERT OR IGNORE INTO conversion_profiles (
+                id, name, is_default, video_codec, container, max_dimension,
+                quality_mode, quality_value, drop_audio, extra_encoder_args,
+                created_at, updated_at
+            ) VALUES (
+                'default-h265-mp4', 'Default H.265 MP4', 1, 'h265', 'mp4', NULL,
+                NULL, NULL, 1, NULL, datetime('now'), datetime('now')
+            )
             """,
         ],
     ),

@@ -346,10 +346,16 @@ textarea:disabled {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
+  cursor: pointer;
 }
 
 .file-row:hover {
   border-color: var(--border-soft);
+}
+
+.file-row.active {
+  border-color: rgba(122, 184, 255, 0.34);
+  background: rgba(77, 140, 255, 0.08);
 }
 
 .row-subtitle {
@@ -575,6 +581,15 @@ textarea:disabled {
 
 .settings-shell {
   width: min(1120px, 100%);
+}
+
+.convert-shell {
+  width: min(760px, 100%);
+}
+
+.convert-layout {
+  display: grid;
+  gap: 18px;
 }
 
 .settings-layout {

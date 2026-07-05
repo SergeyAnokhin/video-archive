@@ -144,7 +144,8 @@ Examples:
 Current foundation note:
 
 - `scan` and `rescan` perform real metadata refresh work.
-- `convert`, `preview`, `tag`, and `tune` already use the same persisted queue, item, and event model, but their heavy processing steps are still placeholder-only in the current implementation.
+- `convert` now performs real temp-output conversion, lightweight validation, and production or test output handling through the persisted queue, item, and event model.
+- `preview`, `tag`, and `tune` still use the same persisted queue, item, and event model, but their heavy processing steps remain placeholder-only.
 
 ## Retention
 

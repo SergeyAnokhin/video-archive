@@ -66,6 +66,10 @@ export function fetchFiles(directory = "") {
   return requestJson(`/api/files${query}`, undefined, "File list");
 }
 
+export function fetchConversionProfiles() {
+  return requestJson("/api/conversion-profiles", undefined, "Conversion profiles");
+}
+
 export function fetchJobs(limit = 20) {
   return requestJson(`/api/jobs?limit=${limit}`, undefined, "Jobs load");
 }
@@ -150,7 +154,7 @@ export function createRescanDirectoryJob(relativePath) {
   );
 }
 
-export function createConvertDirectoryJob(relativePath) {
+export function createConvertDirectoryJob(relativePath, { profileId, mode } = {}) {
   return requestJson(
     "/api/jobs/convert-directory",
     {
@@ -158,9 +162,23 @@ export function createConvertDirectoryJob(relativePath) {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ relative_path: relativePath })
+      body: JSON.stringify({ relative_path: relativePath, profile_id: profileId ?? null, mode: mode ?? "production" })
     },
     "Convert directory"
+  );
+}
+
+export function createConvertFileJob(fileId, { profileId, mode } = {}) {
+  return requestJson(
+    "/api/jobs/convert-file",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ file_id: fileId, profile_id: profileId ?? null, mode: mode ?? "production" })
+    },
+    "Convert file"
   );
 }
 

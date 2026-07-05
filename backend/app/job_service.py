@@ -5,6 +5,8 @@ import threading
 import uuid
 from pathlib import Path
 
+from .conversion_profile_service import ConversionProfileService
+from .conversion_service import ConversionService
 from .db import connection
 from .errors import ApiError
 from .library_service import LibraryService, normalize_relative_path
@@ -22,10 +24,19 @@ class _JobCancelled(Exception):
 
 
 class JobService:
-    def __init__(self, database_path: Path, source_service: SourceService, library_service: LibraryService) -> None:
+    def __init__(
+        self,
+        database_path: Path,
+        source_service: SourceService,
+        library_service: LibraryService,
+        conversion_profile_service: ConversionProfileService,
+        conversion_service: ConversionService,
+    ) -> None:
         self._database_path = database_path
         self._source_service = source_service
         self._library_service = library_service
+        self._conversion_profile_service = conversion_profile_service
+        self._conversion_service = conversion_service
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
         self._worker_thread: threading.Thread | None = None
@@ -221,14 +232,21 @@ class JobService:
             item_specs=[{"item_key": item_key, "message": message}],
         )
 
-    def create_convert_directory_job(self, relative_path: str) -> dict:
+    def create_convert_directory_job(self, relative_path: str, *, profile_id: str | None = None, mode: str = "production") -> dict:
         normalized_path = normalize_relative_path(relative_path)
+        profile = self._conversion_profile_service.resolve_profile(profile_id)
         item_specs = self._build_directory_item_specs(normalized_path)
         return self._create_job(
             job_type="convert",
             scope_type="directory",
             scope_ref=normalized_path,
-            parameters={"relative_path": normalized_path, "recursive": True, "mode": "production"},
+            parameters={
+                "relative_path": normalized_path,
+                "recursive": True,
+                "mode": mode,
+                "profile_id": profile["id"],
+                "profile": profile,
+            },
             item_specs=item_specs,
         )
 
@@ -254,13 +272,20 @@ class JobService:
             item_specs=item_specs,
         )
 
-    def create_convert_file_job(self, file_id: str) -> dict:
+    def create_convert_file_job(self, file_id: str, *, profile_id: str | None = None, mode: str = "production") -> dict:
         file_row = self._require_file(file_id)
+        profile = self._conversion_profile_service.resolve_profile(profile_id)
         return self._create_job(
             job_type="convert",
             scope_type="file",
             scope_ref=file_id,
-            parameters={"file_id": file_id, "relative_path": file_row["relative_path"], "mode": "production"},
+            parameters={
+                "file_id": file_id,
+                "relative_path": file_row["relative_path"],
+                "mode": mode,
+                "profile_id": profile["id"],
+                "profile": profile,
+            },
             item_specs=[self._file_item_spec(file_row)],
         )
 
@@ -352,8 +377,16 @@ class JobService:
             return self.create_rescan_job(parameters.get("relative_path", ""))
         if job_type == "convert":
             if job["scope_type"] == "file":
-                return self.create_convert_file_job(parameters["file_id"])
-            return self.create_convert_directory_job(parameters.get("relative_path", ""))
+                return self.create_convert_file_job(
+                    parameters["file_id"],
+                    profile_id=parameters.get("profile_id"),
+                    mode=parameters.get("mode", "production"),
+                )
+            return self.create_convert_directory_job(
+                parameters.get("relative_path", ""),
+                profile_id=parameters.get("profile_id"),
+                mode=parameters.get("mode", "production"),
+            )
         if job_type == "preview":
             if job["scope_type"] == "file":
                 return self.create_preview_file_job(parameters["file_id"])
@@ -455,6 +488,8 @@ class JobService:
 
             if job["job_type"] in {"scan", "rescan"}:
                 summary_message = self._execute_scan_job(job)
+            elif job["job_type"] == "convert":
+                summary_message = self._execute_convert_job(job)
             else:
                 summary_message = self._execute_placeholder_job(job)
             self._complete_job(job["id"], summary_message)
@@ -494,6 +529,95 @@ class JobService:
             )
 
         return f"Scanned {summary['directories_scanned']} directories and {summary['files_scanned']} files."
+
+    def _execute_convert_job(self, job: dict) -> str:
+        source = self._require_active_source()
+        profile = job["parameters"].get("profile")
+        if not isinstance(profile, dict):
+            profile = self._conversion_profile_service.resolve_profile(job["parameters"].get("profile_id"))
+        mode = job["parameters"].get("mode", "production")
+        items = self.list_job_items(job["id"])
+        completed = 0
+        failed = 0
+
+        for item in items:
+            if self._job_cancel_requested(job["id"]):
+                raise _JobCancelled()
+            if not item["file_id"]:
+                self._set_job_item_status(item["id"], "skipped", item["message"] or "No eligible file found.")
+                continue
+
+            file_row = self._get_file_for_conversion(item["file_id"])
+            item_label = file_row["relative_path"]
+            self._set_job_item_status(item["id"], "running", f"Converting {item_label} with profile {profile['name']}...")
+            self._set_file_conversion_state(
+                file_id=file_row["id"],
+                state="in_progress",
+                profile_id=profile["id"],
+                error_code=None,
+                error_message=None,
+            )
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="convert.item.started",
+                message=f"Started {mode} conversion for {item_label} using profile {profile['name']}.",
+                payload={"mode": mode, "profile_id": profile["id"]},
+            )
+            try:
+                result = self._conversion_service.convert_file(
+                    source_root=source["root_path"],
+                    file_row=file_row,
+                    profile=profile,
+                    mode=mode,
+                )
+            except ApiError as exc:
+                failed += 1
+                self._set_job_item_status(item["id"], "failed", exc.message)
+                self._set_file_conversion_state(
+                    file_id=file_row["id"],
+                    state="failed",
+                    profile_id=profile["id"],
+                    error_code=exc.code,
+                    error_message=exc.message,
+                )
+                self._append_event(
+                    job_id=job["id"],
+                    file_id=file_row["id"],
+                    level="error",
+                    event_type="convert.item.failed",
+                    message=f"Conversion failed for {item_label}: {exc.message}",
+                    payload={"mode": mode, "profile_id": profile["id"], "error_code": exc.code},
+                )
+                continue
+
+            self._record_successful_conversion(
+                file_id=file_row["id"],
+                result=result,
+                profile_id=profile["id"],
+            )
+            self._set_job_item_status(
+                item["id"],
+                "completed",
+                f"{mode.capitalize()} conversion completed for {result['relative_path']}.",
+                output_ref=result["output_ref"],
+            )
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="convert.item.completed",
+                message=f"Completed {mode} conversion for {result['relative_path']}.",
+                payload={"mode": mode, "profile_id": profile["id"], "output_ref": result["output_ref"]},
+            )
+            completed += 1
+
+        if failed:
+            raise ApiError("conversion_job_failed", f"Conversion failed for {failed} item(s); {completed} completed successfully.", status=500)
+        if completed == 0:
+            return "Conversion job completed with no eligible files."
+        return f"Conversion job completed for {completed} item(s) in {mode} mode using profile {profile['name']}."
 
     def _execute_placeholder_job(self, job: dict) -> str:
         items = self.list_job_items(job["id"])
@@ -590,17 +714,18 @@ class JobService:
             )
             self._insert_event(conn, job_id=job_id, level="warning", event_type="job.cancelled", message=message)
 
-    def _set_job_item_status(self, item_id: str, status: str, message: str) -> None:
+    def _set_job_item_status(self, item_id: str, status: str, message: str, *, output_ref: str | None = None) -> None:
         now = utc_now()
         with connection(self._database_path) as conn, conn:
             conn.execute(
                 """
                 UPDATE job_items
                 SET status = ?, message = ?, started_at = COALESCE(started_at, ?),
-                    finished_at = CASE WHEN ? IN ('completed', 'failed', 'cancelled', 'skipped') THEN ? ELSE NULL END
+                    finished_at = CASE WHEN ? IN ('completed', 'failed', 'cancelled', 'skipped') THEN ? ELSE NULL END,
+                    output_ref = COALESCE(?, output_ref)
                 WHERE id = ?
                 """,
-                (status, message, now, status, now, item_id),
+                (status, message, now, status, now, output_ref, item_id),
             )
 
     def _job_cancel_requested(self, job_id: str) -> bool:
@@ -704,6 +829,69 @@ class JobService:
         if not row["is_video_supported"]:
             raise ApiError("unsupported_file", "Selected file is not eligible for video workflows.", status=400)
         return row
+
+    def _get_file_for_conversion(self, file_id: str):
+        with connection(self._database_path) as conn:
+            row = conn.execute(
+                """
+                SELECT id, directory_id, relative_path, path, file_name, extension, is_video_supported
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+        if not row["is_video_supported"]:
+            raise ApiError("unsupported_file", "Selected file is not eligible for video workflows.", status=400)
+        return row
+
+    def _set_file_conversion_state(
+        self,
+        *,
+        file_id: str,
+        state: str,
+        profile_id: str,
+        error_code: str | None,
+        error_message: str | None,
+    ) -> None:
+        now = utc_now()
+        with connection(self._database_path) as conn, conn:
+            conn.execute(
+                """
+                UPDATE files
+                SET conversion_state = ?, last_conversion_profile_id = ?, last_error_code = ?,
+                    last_error_message = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (state, profile_id, error_code, error_message, now, file_id),
+            )
+
+    def _record_successful_conversion(self, *, file_id: str, result: dict, profile_id: str) -> None:
+        now = utc_now()
+        with connection(self._database_path) as conn, conn:
+            conn.execute(
+                """
+                UPDATE files
+                SET relative_path = ?, path = ?, file_name = ?, extension = ?, size_bytes = ?,
+                    modified_at = ?, conversion_state = 'done', last_conversion_profile_id = ?,
+                    last_converted_at = ?, last_error_code = NULL, last_error_message = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    result["relative_path"],
+                    result["path"],
+                    result["file_name"],
+                    result["extension"],
+                    result["size_bytes"],
+                    result["modified_at"],
+                    profile_id,
+                    now,
+                    now,
+                    file_id,
+                ),
+            )
 
     def _require_active_source(self) -> dict:
         source = self._source_service.get_active_source()
