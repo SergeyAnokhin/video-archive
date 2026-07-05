@@ -2,13 +2,31 @@
 
 This repository currently contains the first real source setup, browsing flow, conversion workflow, tuning workflow, preview-generation workflow, playback workflow, and closed-vocabulary AI tagging workflow for Video Archive: a root npm orchestrator, a Vite-based React UI with source, preview, playback, tagging, and provider settings, and a stdlib Python backend with local config loading, SQLite schema initialization, source configuration storage, saved conversion profiles, preview presets/settings, playback settings, tagging/provider settings, an async job queue, real conversion workers, real tuning workers, real preview workers, real tagging workers, persistent job items/events, and persisted tree/file metadata. Use this map to find the startup flow and the smallest files to extend first.
 
+## Common Edit Points
+
+| Change area | Start here | Also verify |
+| --- | --- | --- |
+| Source settings changes | [`../frontend/src/features/source/SourceSettingsSection.jsx`](../frontend/src/features/source/SourceSettingsSection.jsx) | [`../frontend/src/features/source/sourceHelpers.js`](../frontend/src/features/source/sourceHelpers.js), [`../frontend/src/api.js`](../frontend/src/api.js), [`../backend/app/source_service.py`](../backend/app/source_service.py) |
+| Source API or backend contract changes | [`../frontend/src/api.js`](../frontend/src/api.js) | [`../backend/app/main.py`](../backend/app/main.py), [`../backend/app/source_service.py`](../backend/app/source_service.py), [`../backend/app/library_service.py`](../backend/app/library_service.py) |
+| Playback-related changes | [`../frontend/src/App.jsx`](../frontend/src/App.jsx) | [`../frontend/src/components/modals/FileDetailsModal.jsx`](../frontend/src/components/modals/FileDetailsModal.jsx), [`../backend/app/playback_settings_service.py`](../backend/app/playback_settings_service.py), [`../backend/app/main.py`](../backend/app/main.py) |
+| Preview or tagging settings changes | [`../frontend/src/App.jsx`](../frontend/src/App.jsx) | [`../frontend/src/api.js`](../frontend/src/api.js), [`../backend/app/preview_service.py`](../backend/app/preview_service.py), [`../backend/app/tagging_service.py`](../backend/app/tagging_service.py) |
+| Jobs modal or job-status browsing changes | [`../frontend/src/components/modals/JobsModal.jsx`](../frontend/src/components/modals/JobsModal.jsx) | [`../frontend/src/App.jsx`](../frontend/src/App.jsx), [`../backend/app/job_service.py`](../backend/app/job_service.py) |
+| File detail or tune modal changes | [`../frontend/src/components/modals/FileDetailsModal.jsx`](../frontend/src/components/modals/FileDetailsModal.jsx), [`../frontend/src/components/modals/TuneModal.jsx`](../frontend/src/components/modals/TuneModal.jsx) | [`../frontend/src/App.jsx`](../frontend/src/App.jsx), [`../backend/app/conversion_profile_service.py`](../backend/app/conversion_profile_service.py), [`../backend/app/job_service.py`](../backend/app/job_service.py) |
+
+See [`frontend-map.md`](frontend-map.md) for the frontend-only version of this routing map.
+
 | Path | Role |
 | --- | --- |
 | [`package.json`](../package.json) | Root developer entrypoint that starts frontend and backend together with `npm run dev`. |
 | [`frontend/package.json`](../frontend/package.json) | Frontend scripts and React/Vite dependencies. |
 | [`frontend/vite.config.js`](../frontend/vite.config.js) | Local dev server config and `/api` proxy to the backend. |
-| [`frontend/src/App.jsx`](../frontend/src/App.jsx) | Main frontend flow for source setup, including remote source fields, local-folder browsing, preview/playback/tagging/provider settings, conversion profile creation, tree browsing, file listing, the video details modal, embedded playback modal, dedicated log viewer, tuning workflow modal, preview display, and the jobs modal with detail/items/live log updates. |
+| [`frontend/src/App.jsx`](../frontend/src/App.jsx) | Frontend shell/orchestration for bootstrap loading, library browsing, overlay state, log viewer, conversion dialog, playback modal, preview/tagging/playback/provider/profile settings sections, and cross-feature handlers. |
 | [`frontend/src/api.js`](../frontend/src/api.js) | Frontend API helper for the live backend calls used by source setup, backend-local directory browsing, preview/playback/tagging/provider settings, tree/file loading, file detail + playback loading, conversion profile loading/creation, tuning job creation, job detail loading, and job control actions. |
+| [`frontend/src/features/source/SourceSettingsSection.jsx`](../frontend/src/features/source/SourceSettingsSection.jsx) | Extracted source settings form, local-folder browser UI, and source action buttons. |
+| [`frontend/src/features/source/sourceHelpers.js`](../frontend/src/features/source/sourceHelpers.js) | Source defaults/state shaping plus shared form, source payload, and tuning/profile helper functions still used by the shell. |
+| [`frontend/src/components/modals/FileDetailsModal.jsx`](../frontend/src/components/modals/FileDetailsModal.jsx) | File detail modal with preview, metadata, tag display, and file-level action entry points. |
+| [`frontend/src/components/modals/JobsModal.jsx`](../frontend/src/components/modals/JobsModal.jsx) | Jobs modal with recent-job list, per-job detail, item list, and event stream. |
+| [`frontend/src/components/modals/TuneModal.jsx`](../frontend/src/components/modals/TuneModal.jsx) | Tune modal with sweep controls, tuning outputs, and "save as profile" entry point. |
 | [`frontend/src/mockData.js`](../frontend/src/mockData.js) | Small placeholder data that still backs static settings navigation labels and any remaining shell-only UI copy. |
 | [`frontend/src/styles.css`](../frontend/src/styles.css) | Dark-theme layout and component styling for the current application shell and modal surfaces. |
 | [`backend/package.json`](../backend/package.json) | Backend-local `npm run dev` wrapper for the Python server on Windows terminals. |

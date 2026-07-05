@@ -6,29 +6,29 @@ import {
   createConvertFileJob,
   createPreviewDirectoryJob,
   createPreviewFileJob,
+  createTagDirectoryJob,
   createTagFileJob,
   createRescanDirectoryJob,
   createScanSourceJob,
-  createTagDirectoryJob,
   createTuneFileJob,
   createPreviewLayout,
   fallbackInfo,
   fetchConversionProfiles,
   fetchDirectoryPreview,
   fetchFileDetails,
-  fetchLocalDirectories,
   fetchFilePreview,
   fetchFileTags,
+  fetchFiles,
   fetchJobs,
   fetchJob,
   fetchJobItems,
+  fetchLocalDirectories,
   fetchLogs,
   fetchPlaybackTarget,
   fetchPreviewLayouts,
   fetchProviderSettings,
   fetchSettings,
   fetchTree,
-  fetchFiles,
   generateLivePreview,
   loadAppShellData,
   reconnectSource,
@@ -39,140 +39,31 @@ import {
   testSourceConnection,
   updatePreviewLayout
 } from "./api";
+import FileDetailsModal from "./components/modals/FileDetailsModal";
+import JobsModal from "./components/modals/JobsModal";
+import TuneModal from "./components/modals/TuneModal";
+import {
+  buildProfilePayloadFromVariant,
+  buildTuneSweep,
+  defaultPlaybackSettings,
+  defaultPreviewSettings,
+  defaultProviderSettings,
+  defaultTaggingSettings,
+  defaultTuneDraft,
+  emptyLocalDirectoryBrowser,
+  emptyLogFilters,
+  emptyProfileDraft,
+  emptySourceForm,
+  flattenTree,
+  formatDirectoryLabel,
+  formatSourceSummary,
+  isLocalProtocol,
+  toSourceForm,
+  toSourcePayload,
+  toTaggingForm
+} from "./features/source/sourceHelpers";
+import SourceSettingsSection from "./features/source/SourceSettingsSection";
 import { settingsSections } from "./mockData";
-
-const emptySourceForm = {
-  name: "",
-  protocol: "smb",
-  host: "",
-  port: "",
-  root_path: "",
-  username: "",
-  password: ""
-};
-
-const emptyLocalDirectoryBrowser = {
-  path: "",
-  parent_path: null,
-  directories: []
-};
-
-const defaultPreviewSettings = {
-  sample_count: 9,
-  large_tile_count: 2,
-  timeline_flow: "row",
-  identity_diversity_enabled: true,
-  layout_preset_id: "default-preview-grid"
-};
-
-const defaultPlaybackSettings = {
-  mode: "embedded",
-  external_strategy: "file_uri"
-};
-
-const defaultTaggingSettings = {
-  provider: "openrouter",
-  sample_count: 9,
-  combine_frames: true,
-  prefer_batch: true,
-  vocabulary: []
-};
-
-const defaultProviderSettings = [
-  { provider: "openrouter", enabled: false, vision_model: "", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
-  { provider: "gemini", enabled: false, vision_model: "gemini-2.0-flash", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
-  { provider: "fal", enabled: false, vision_model: "", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
-  { provider: "mistral", enabled: false, vision_model: "pixtral-large-latest", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false }
-];
-
-const emptyProfileDraft = {
-  name: "",
-  video_codec: "h265",
-  container: "mp4",
-  max_dimension: "",
-  quality_mode: "crf",
-  quality_value: "",
-  drop_audio: true,
-  extra_encoder_args: "",
-  is_default: false
-};
-
-const emptyLogFilters = {
-  jobId: "",
-  fileId: "",
-  level: ""
-};
-
-const defaultTuneDraft = {
-  dimensionsText: "1000, 900, 800",
-  qualitiesText: "20, 24, 28",
-  codecs: {
-    h264: false,
-    h265: true,
-    av1: false
-  },
-  dropAudio: true
-};
-
-function toTaggingForm(settings) {
-  return {
-    ...defaultTaggingSettings,
-    ...settings,
-    vocabulary: Array.isArray(settings?.vocabulary)
-      ? settings.vocabulary.map((entry) => (typeof entry === "string" ? entry : entry.display_name)).filter(Boolean)
-      : []
-  };
-}
-
-function flattenTree(nodes, depth = 0) {
-  return nodes.flatMap((node) => [
-    { ...node, depth },
-    ...(node.children ? flattenTree(node.children, depth + 1) : [])
-  ]);
-}
-
-function toSourceForm(source) {
-  if (!source) {
-    return emptySourceForm;
-  }
-
-  return {
-    name: source.name ?? "",
-    protocol: source.protocol ?? "smb",
-    host: source.host ?? "",
-    port: source.port ?? "",
-    root_path: source.root_path ?? "",
-    username: source.username ?? "",
-    password: ""
-  };
-}
-
-function toSourcePayload(form) {
-  const isLocal = form.protocol === "local";
-  return {
-    name: form.name.trim(),
-    protocol: form.protocol,
-    host: isLocal ? null : form.host.trim(),
-    port: isLocal || form.port === "" ? null : Number(form.port),
-    root_path: form.root_path.trim(),
-    username: isLocal ? null : form.username.trim() || null,
-    password: isLocal ? null : form.password.trim() || null
-  };
-}
-
-function isLocalProtocol(protocol) {
-  return protocol === "local";
-}
-
-function formatSourceSummary(source) {
-  if (!source) {
-    return "Configure one active source to enable scan and browsing";
-  }
-  if (isLocalProtocol(source.protocol)) {
-    return `LOCAL - ${source.root_path}`;
-  }
-  return `${source.protocol.toUpperCase()} - ${source.host} - ${source.root_path}`;
-}
 
 function formatStatusLabel(value) {
   return value.replaceAll("_", " ");
@@ -199,10 +90,6 @@ function formatDate(value) {
   }
 
   return new Date(value).toLocaleString();
-}
-
-function formatDirectoryLabel(path) {
-  return path ? path : "Library root";
 }
 
 function formatProfileLabel(profile) {
@@ -250,48 +137,6 @@ function renderIndicatorBadges(indicators) {
       ? { key: "preview", label: "preview", state: indicators.preview.state, title: indicators.preview.message }
       : null
   ].filter(Boolean);
-}
-
-function parseCommaNumberList(value) {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => Number(entry))
-    .filter((entry) => Number.isInteger(entry) && entry > 0);
-}
-
-function parseCommaStringList(value) {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function buildTuneSweep(draft) {
-  const codecs = Object.entries(draft.codecs)
-    .filter(([, enabled]) => enabled)
-    .map(([codec]) => codec);
-  return {
-    dimensions: parseCommaNumberList(draft.dimensionsText),
-    quality_values: parseCommaStringList(draft.qualitiesText),
-    codecs: codecs.length ? codecs : ["h265"],
-    drop_audio: draft.dropAudio
-  };
-}
-
-function buildProfilePayloadFromVariant(name, variant, isDefault = false) {
-  return {
-    name,
-    is_default: isDefault,
-    video_codec: variant.video_codec,
-    container: "mp4",
-    max_dimension: variant.max_dimension,
-    quality_mode: variant.quality_mode,
-    quality_value: variant.quality_value,
-    drop_audio: variant.drop_audio,
-    extra_encoder_args: ""
-  };
 }
 
 function App() {
@@ -355,6 +200,13 @@ function App() {
         ? "Connecting backend"
         : "Backend offline";
   const sourceFormIsLocal = isLocalProtocol(sourceForm.protocol);
+  const tuningVariants = useMemo(() => {
+    const variantsById = new Map((tuningJob?.parameters?.variants ?? []).map((variant) => [variant.id, variant]));
+    return tuningItems.map((item) => ({
+      item,
+      variant: variantsById.get(item.item_key) ?? null
+    }));
+  }, [tuningItems, tuningJob]);
 
   useEffect(() => {
     loadBootstrap();
@@ -645,45 +497,41 @@ function App() {
 
     try {
       if (fileId) {
-        const filePayload = await fetchFilePreview(fileId);
-        if (filePayload.preview) {
-          setLibraryPreview({ scope: "file", ...filePayload.preview });
+        const payload = await fetchFilePreview(fileId);
+        if (payload.preview) {
+          setLibraryPreview({ ...payload.preview, scope: "file" });
           return;
         }
       }
-      const directoryPayload = await fetchDirectoryPreview(directoryPath);
-      setLibraryPreview(directoryPayload.preview ? { scope: "directory", ...directoryPayload.preview } : null);
+
+      const payload = await fetchDirectoryPreview(directoryPath);
+      setLibraryPreview(payload.preview ? { ...payload.preview, scope: "directory" } : null);
     } catch (error) {
-      setLibraryPreview(null);
-      if (!String(error.message).includes("not available")) {
-        setActionError(error.message);
-      }
+      setActionError(error.message);
     }
   }
 
   async function loadSelectedFileTags(fileId) {
     try {
       const payload = await fetchFileTags(fileId);
-      setSelectedFileTags(payload.tags);
+      setSelectedFileTags(payload);
     } catch (error) {
       setSelectedFileTags(null);
-      if (!String(error.message).includes("does not exist")) {
-        setActionError(error.message);
-      }
+      setActionError(error.message);
     }
   }
 
   async function loadSelectedFileContext(fileId) {
     try {
-      const [filePayload, previewPayload, tagsPayload, logsPayload] = await Promise.all([
+      const [detailsPayload, previewPayload, tagsPayload, logsPayload] = await Promise.all([
         fetchFileDetails(fileId),
-        fetchFilePreview(fileId).catch(() => ({ preview: null })),
-        fetchFileTags(fileId).catch(() => ({ tags: null })),
-        fetchLogs({ fileId, limit: 50 })
+        fetchFilePreview(fileId),
+        fetchFileTags(fileId),
+        fetchLogs({ fileId, limit: 150 })
       ]);
-      setSelectedFileDetails(filePayload.file);
-      setSelectedFilePreview(previewPayload.preview);
-      setSelectedFileTags(tagsPayload.tags ?? null);
+      setSelectedFileDetails(detailsPayload.file);
+      setSelectedFilePreview(previewPayload.preview ?? null);
+      setSelectedFileTags(tagsPayload);
       setSelectedFileLogs(logsPayload.events);
     } catch (error) {
       setActionError(error.message);
@@ -708,13 +556,11 @@ function App() {
   function updateSourceField(field, value) {
     setSourceForm((current) => {
       const next = { ...current, [field]: value };
-      if (field === "protocol") {
-        if (value === "local") {
-          next.host = "";
-          next.port = "";
-          next.username = "";
-          next.password = "";
-        }
+      if (field === "protocol" && value === "local") {
+        next.host = "";
+        next.port = "";
+        next.username = "";
+        next.password = "";
       }
       return next;
     });
@@ -1156,6 +1002,15 @@ function App() {
     await loadSelectedFileContext(selectedFile.id);
   }
 
+  function openTuneModal() {
+    setTuneDraft(defaultTuneDraft);
+    setTuningJobId(null);
+    setTuningJob(null);
+    setTuningItems([]);
+    setTuningEvents([]);
+    setActiveOverlay("tune");
+  }
+
   async function openJobsOverlay() {
     setActiveOverlay("jobs");
     setActionError(null);
@@ -1271,14 +1126,6 @@ function App() {
       setIsWorking(false);
     }
   }
-
-  const tuningVariants = useMemo(() => {
-    const variantsById = new Map((tuningJob?.parameters?.variants ?? []).map((variant) => [variant.id, variant]));
-    return tuningItems.map((item) => ({
-      item,
-      variant: variantsById.get(item.item_key) ?? null
-    }));
-  }, [tuningItems, tuningJob]);
 
   return (
     <main className="app-shell">
@@ -1530,7 +1377,7 @@ function App() {
                     ))}
                   </div>
                   <p className="muted">
-                    {selectedFileTags.tagging_model_info?.provider ?? "-"} · {selectedFileTags.tagging_model_info?.model ?? "-"} ·{" "}
+                    {selectedFileTags.tagging_model_info?.provider ?? "-"} - {selectedFileTags.tagging_model_info?.model ?? "-"} -{" "}
                     {selectedFileTags.tagging_updated_at ? formatDate(selectedFileTags.tagging_updated_at) : "-"}
                   </p>
                 </>
@@ -1542,154 +1389,26 @@ function App() {
         ) : null}
       </section>
 
-      {activeOverlay === "details" ? (
-        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
-          <section className="overlay panel modal-shell details-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">Video details</p>
-                <h2>{selectedFile?.file_name ?? "Selected file"}</h2>
-              </div>
-              <div className="inline-actions">
-                <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
-                  Close
-                </button>
-              </div>
-            </div>
-
-            {selectedFileDetails ? (
-              <div className="details-grid">
-                <div className="details-main">
-                  <div className="preview-canvas details-preview">
-                    {selectedFilePreview?.image_data_url ? (
-                      <img className="preview-image" src={selectedFilePreview.image_data_url} alt="Selected video preview" />
-                    ) : (
-                      <span>No file preview stored yet.</span>
-                    )}
-                  </div>
-
-                  <div className="note-card">
-                    <strong>File actions</strong>
-                    <div className="inline-actions split-actions">
-                      <button type="button" className="mini-button" disabled={isWorking} onClick={() => handleOpenPlayback(selectedFile)}>
-                        Playback
-                      </button>
-                      <button type="button" className="mini-button" disabled={isWorking} onClick={() => openConvertDialog("file", selectedFile)}>
-                        Convert file
-                      </button>
-                      <button type="button" className="mini-button" disabled={isWorking} onClick={() => handleFilePreviewJob(selectedFile.id)}>
-                        Preview file
-                      </button>
-                      <button type="button" className="mini-button" disabled={isWorking} onClick={() => handleFileTagJob(selectedFile.id)}>
-                        Tag file
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-button"
-                        disabled={isWorking}
-                        onClick={() => {
-                          setTuneDraft(defaultTuneDraft);
-                          setTuningJobId(null);
-                          setTuningJob(null);
-                          setTuningItems([]);
-                          setTuningEvents([]);
-                          setActiveOverlay("tune");
-                        }}
-                      >
-                        Tune file
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-button"
-                        onClick={() => openLogViewer({ jobId: "", fileId: selectedFile.id, level: "" })}
-                      >
-                        Filter logs
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="job-events-block">
-                    <h4>Recent file activity</h4>
-                    <pre className="log-console details-log-console">
-                      {selectedFileLogs.length
-                        ? selectedFileLogs
-                            .map((event) => `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.message}`)
-                            .join("\n")
-                        : "No file-specific events yet."}
-                    </pre>
-                  </div>
-                </div>
-
-                <div className="details-side">
-                  <dl className="meta-list">
-                    <div>
-                      <dt>Relative path</dt>
-                      <dd>{selectedFileDetails.relative_path}</dd>
-                    </div>
-                    <div>
-                      <dt>Absolute path</dt>
-                      <dd className="break-value">{selectedFileDetails.path}</dd>
-                    </div>
-                    <div>
-                      <dt>Size</dt>
-                      <dd>{formatBytes(selectedFileDetails.size_bytes)}</dd>
-                    </div>
-                    <div>
-                      <dt>Modified</dt>
-                      <dd>{formatDate(selectedFileDetails.modified_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>Discovered</dt>
-                      <dd>{formatDate(selectedFileDetails.discovered_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>Convert state</dt>
-                      <dd>{formatStatusLabel(selectedFileDetails.conversion_state)}</dd>
-                    </div>
-                    <div>
-                      <dt>Preview state</dt>
-                      <dd>{formatStatusLabel(selectedFileDetails.preview_state)}</dd>
-                    </div>
-                    <div>
-                      <dt>Last converted</dt>
-                      <dd>{formatDate(selectedFileDetails.last_converted_at)}</dd>
-                    </div>
-                    <div>
-                      <dt>Preview generated</dt>
-                      <dd>{formatDate(selectedFileDetails.preview_generated_at)}</dd>
-                    </div>
-                  </dl>
-
-                  <div className="note-card">
-                    <strong>Assigned tags</strong>
-                    {selectedFileTags?.tags?.length ? (
-                      <>
-                        <div className="tag-pill-list">
-                          {selectedFileTags.tags.map((tag) => (
-                            <span key={`${tag.tag_key}-${tag.assigned_at}`} className="tree-badge tree-badge-in_progress">
-                              {tag.display_name} {formatConfidence(tag.confidence)}
-                            </span>
-                          ))}
-                        </div>
-                        <p className="muted">
-                          {selectedFileTags.tagging_model_info?.provider ?? "-"} · {selectedFileTags.tagging_model_info?.model ?? "-"}
-                        </p>
-                      </>
-                    ) : (
-                      <p>No tags stored yet.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="empty-state compact">
-                <h3>Loading file details</h3>
-                <p>Fetching metadata, preview, tags, and recent file activity.</p>
-              </div>
-            )}
-          </section>
-        </div>
-      ) : null}
+      <FileDetailsModal
+        isOpen={activeOverlay === "details"}
+        selectedFile={selectedFile}
+        selectedFileDetails={selectedFileDetails}
+        selectedFilePreview={selectedFilePreview}
+        selectedFileTags={selectedFileTags}
+        selectedFileLogs={selectedFileLogs}
+        isWorking={isWorking}
+        onClose={() => setActiveOverlay(null)}
+        onOpenPlayback={handleOpenPlayback}
+        onOpenConvertDialog={openConvertDialog}
+        onPreviewFile={handleFilePreviewJob}
+        onTagFile={handleFileTagJob}
+        onOpenTune={openTuneModal}
+        onOpenLogViewer={openLogViewer}
+        formatBytes={formatBytes}
+        formatConfidence={formatConfidence}
+        formatDate={formatDate}
+        formatStatusLabel={formatStatusLabel}
+      />
 
       {activeOverlay === "playback" && playbackTarget ? (
         <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
@@ -1760,131 +1479,23 @@ function App() {
         </div>
       ) : null}
 
-      {activeOverlay === "jobs" ? (
-        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
-          <section className="overlay panel modal-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">Tasks and jobs</p>
-                <h2>Recent jobs</h2>
-              </div>
-              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
-                Close
-              </button>
-            </div>
-            <div className="jobs-grid">
-              {jobs.length ? (
-                <>
-                  <div className="job-list">
-                    {jobs.map((job) => (
-                      <button key={job.id} type="button" className={`job-card job-select-card ${selectedJobId === job.id ? "active" : ""}`} onClick={() => refreshJobsOverlay(job.id)}>
-                        <div className="job-header">
-                          <strong>{formatJobTypeLabel(job.job_type)}</strong>
-                          <span className={`state-pill state-${job.status}`}>{job.status}</span>
-                        </div>
-                        <p>{formatJobScope(job)}</p>
-                        <p className="muted">{job.summary_message || "No summary available."}</p>
-                        <p className="muted">Items {job.item_counts.completed}/{job.item_counts.total}</p>
-                      </button>
-                    ))}
-                  </div>
-                  <section className="job-detail panel">
-                    {selectedJob ? (
-                      <>
-                        <div className="job-detail-header">
-                          <div>
-                            <p className="section-kicker">Job detail</p>
-                            <h3>
-                              {formatJobTypeLabel(selectedJob.job_type)} · {formatJobScope(selectedJob)}
-                            </h3>
-                          </div>
-                          <div className="inline-actions">
-                            <button type="button" className="ghost-button" onClick={() => refreshJobsOverlay(selectedJob.id)}>
-                              Refresh
-                            </button>
-                            <button type="button" className="ghost-button" disabled={!["queued", "running"].includes(selectedJob.status)} onClick={() => handleCancelJob(selectedJob.id)}>
-                              Cancel
-                            </button>
-                            <button type="button" className="ghost-button" disabled={!["completed", "failed", "cancelled"].includes(selectedJob.status)} onClick={() => handleRestartJob(selectedJob.id)}>
-                              Restart
-                            </button>
-                            <button
-                              type="button"
-                              className="ghost-button"
-                              onClick={() => openLogViewer({ jobId: selectedJob.id, fileId: "", level: "" })}
-                            >
-                              Open in logs
-                            </button>
-                          </div>
-                        </div>
-                        <div className="job-meta-grid">
-                          <div>
-                            <span className="muted">Status</span>
-                            <strong>{selectedJob.status}</strong>
-                          </div>
-                          <div>
-                            <span className="muted">Queued</span>
-                            <strong>{selectedJob.item_counts.queued}</strong>
-                          </div>
-                          <div>
-                            <span className="muted">Running</span>
-                            <strong>{selectedJob.item_counts.running}</strong>
-                          </div>
-                          <div>
-                            <span className="muted">Completed</span>
-                            <strong>{selectedJob.item_counts.completed}</strong>
-                          </div>
-                          <div>
-                            <span className="muted">Failed</span>
-                            <strong>{selectedJob.item_counts.failed}</strong>
-                          </div>
-                          <div>
-                            <span className="muted">Cancelled</span>
-                            <strong>{selectedJob.item_counts.cancelled}</strong>
-                          </div>
-                        </div>
-                        <p className="muted">{selectedJob.summary_message || "No summary available."}</p>
-                        <div className="job-items-block">
-                          <h4>Items</h4>
-                          <div className="job-items-list">
-                            {jobItems.map((item) => (
-                              <article key={item.id} className="job-item-row">
-                                <div>
-                                  <strong>{item.file_name || item.item_key || "Scope item"}</strong>
-                                  <p className="row-subtitle">{item.relative_path || item.message || "-"}</p>
-                                </div>
-                                <span className={`state-pill state-${item.status}`}>{item.status}</span>
-                              </article>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="job-events-block">
-                          <h4>Events</h4>
-                          <pre className="log-console">
-                            {jobEvents.length
-                              ? jobEvents.map((event) => `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.message}`).join("\n")
-                              : "No events yet."}
-                          </pre>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="empty-state compact">
-                        <h3>No job selected</h3>
-                        <p>Select a job to inspect its items and event stream.</p>
-                      </div>
-                    )}
-                  </section>
-                </>
-              ) : (
-                <div className="empty-state compact">
-                  <h3>No jobs yet</h3>
-                  <p>Queued scan, rescan, convert, preview, tag, and tune jobs will appear here.</p>
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <JobsModal
+        isOpen={activeOverlay === "jobs"}
+        jobs={jobs}
+        selectedJobId={selectedJobId}
+        selectedJob={selectedJob}
+        jobItems={jobItems}
+        jobEvents={jobEvents}
+        onClose={() => setActiveOverlay(null)}
+        onSelectJob={refreshJobsOverlay}
+        onRefreshJob={refreshJobsOverlay}
+        onCancelJob={handleCancelJob}
+        onRestartJob={handleRestartJob}
+        onOpenLogViewer={openLogViewer}
+        formatDate={formatDate}
+        formatJobScope={formatJobScope}
+        formatJobTypeLabel={formatJobTypeLabel}
+      />
 
       {activeOverlay === "convert" && conversionDraft ? (
         <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
@@ -1946,118 +1557,27 @@ function App() {
         </div>
       ) : null}
 
-      {activeOverlay === "tune" ? (
-        <div className="overlay-backdrop" onClick={() => setActiveOverlay("details")}>
-          <section className="overlay panel modal-shell tuning-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">Tuning workflow</p>
-                <h2>{selectedFile?.file_name ?? "Selected file"}</h2>
-              </div>
-              <button type="button" className="ghost-button" onClick={() => setActiveOverlay("details")}>
-                Back to details
-              </button>
-            </div>
-
-            <div className="tuning-grid">
-              <div className="tuning-config">
-                <p>
-                  Tuning always creates separate outputs. It never replaces the source file and is
-                  limited to one video at a time.
-                </p>
-                <div className="form-grid">
-                  <label className="full-width">
-                    <span>Dimension sweep</span>
-                    <input value={tuneDraft.dimensionsText} onChange={(event) => updateTuneDraft("dimensionsText", event.target.value)} placeholder="1000, 900, 800" />
-                  </label>
-                  <label className="full-width">
-                    <span>Quality sweep</span>
-                    <input value={tuneDraft.qualitiesText} onChange={(event) => updateTuneDraft("qualitiesText", event.target.value)} placeholder="20, 24, 28" />
-                  </label>
-                  <label className="full-width">
-                    <span>Codec sweep</span>
-                    <div className="checkbox-grid">
-                      <label className="toggle-chip">
-                        <input type="checkbox" checked={tuneDraft.codecs.h264} onChange={(event) => updateTuneCodec("h264", event.target.checked)} />
-                        <span>H.264</span>
-                      </label>
-                      <label className="toggle-chip">
-                        <input type="checkbox" checked={tuneDraft.codecs.h265} onChange={(event) => updateTuneCodec("h265", event.target.checked)} />
-                        <span>H.265</span>
-                      </label>
-                      <label className="toggle-chip">
-                        <input type="checkbox" checked={tuneDraft.codecs.av1} onChange={(event) => updateTuneCodec("av1", event.target.checked)} />
-                        <span>AV1</span>
-                      </label>
-                    </div>
-                  </label>
-                  <label className="toggle-row">
-                    <span>Drop audio</span>
-                    <input type="checkbox" checked={tuneDraft.dropAudio} onChange={(event) => updateTuneDraft("dropAudio", event.target.checked)} />
-                  </label>
-                </div>
-                <div className="inline-actions">
-                  <button type="button" className="primary-button" disabled={isWorking} onClick={handleRunTune}>
-                    Start tuning run
-                  </button>
-                </div>
-              </div>
-
-              <div className="tuning-results">
-                <div className="panel-header compact-header">
-                  <div>
-                    <strong>Generated outputs</strong>
-                    <p className="muted">{tuningJob?.summary_message ?? "No tuning run started yet."}</p>
-                  </div>
-                </div>
-                {tuningVariants.length ? (
-                  <div className="tuning-result-list">
-                    {tuningVariants.map(({ item, variant }) => (
-                      <article key={item.id} className="job-item-row tuning-result-row">
-                        <div>
-                          <strong>{variant?.label ?? item.item_key}</strong>
-                          <p className="row-subtitle break-value">{item.output_ref || item.message}</p>
-                        </div>
-                        <div className="inline-actions">
-                          <span className={`state-pill state-${item.status}`}>{item.status}</span>
-                          <button
-                            type="button"
-                            className="mini-button"
-                            disabled={item.status !== "completed" || !variant}
-                            onClick={() =>
-                              setPromotionDraft({
-                                variant,
-                                name: `Tuned ${variant?.label ?? "Profile"}`,
-                                isDefault: false
-                              })
-                            }
-                          >
-                            Save as profile
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-state compact">
-                    <h3>No tuning outputs yet</h3>
-                    <p>Run a sweep to compare separate dimension, quality, and codec outputs.</p>
-                  </div>
-                )}
-
-                <div className="job-events-block">
-                  <h4>Run events</h4>
-                  <pre className="log-console details-log-console">
-                    {tuningEvents.length
-                      ? tuningEvents.map((event) => `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.message}`).join("\n")
-                      : "No tuning events yet."}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <TuneModal
+        isOpen={activeOverlay === "tune"}
+        selectedFile={selectedFile}
+        tuneDraft={tuneDraft}
+        tuningJob={tuningJob}
+        tuningVariants={tuningVariants}
+        tuningEvents={tuningEvents}
+        isWorking={isWorking}
+        onClose={() => setActiveOverlay("details")}
+        onUpdateTuneDraft={updateTuneDraft}
+        onUpdateTuneCodec={updateTuneCodec}
+        onRunTune={handleRunTune}
+        onPromoteVariant={(variant) =>
+          setPromotionDraft({
+            variant,
+            name: `Tuned ${variant?.label ?? "Profile"}`,
+            isDefault: false
+          })
+        }
+        formatDate={formatDate}
+      />
 
       {promotionDraft ? (
         <div className="overlay-backdrop" onClick={() => setPromotionDraft(null)}>
@@ -2084,7 +1604,7 @@ function App() {
             <div className="note-card">
               <strong>{promotionDraft.variant.label}</strong>
               <p>
-                Codec {promotionDraft.variant.video_codec.toUpperCase()} · Max dimension {promotionDraft.variant.max_dimension ?? "source"} ·{" "}
+                Codec {promotionDraft.variant.video_codec.toUpperCase()} - Max dimension {promotionDraft.variant.max_dimension ?? "source"} -{" "}
                 {promotionDraft.variant.quality_value ? `CRF ${promotionDraft.variant.quality_value}` : "default quality"}
               </p>
             </div>
@@ -2120,131 +1640,22 @@ function App() {
               <section className="settings-detail">
                 <h3>{settingsSections.find((section) => section.id === selectedSettingsSection)?.label}</h3>
                 {selectedSettingsSection === "source" ? (
-                  <div className="source-settings">
-                    <p>
-                      Video Archive supports one active source at a time. Use a remote protocol for server-backed libraries or switch to a local folder when you want to test directly on this machine.
-                    </p>
-                    <div className="form-grid">
-                      <label>
-                        <span>Name</span>
-                        <input value={sourceForm.name} onChange={(event) => updateSourceField("name", event.target.value)} />
-                      </label>
-                      <label>
-                        <span>Protocol</span>
-                        <select value={sourceForm.protocol} onChange={(event) => updateSourceField("protocol", event.target.value)}>
-                          <option value="local">Local folder</option>
-                          <option value="smb">SMB</option>
-                          <option value="ftp">FTP</option>
-                          <option value="sftp">SFTP</option>
-                          <option value="webdav">WebDAV</option>
-                        </select>
-                      </label>
-                      <label className="full-width">
-                        <span>Root path</span>
-                        <input
-                          value={sourceForm.root_path}
-                          onChange={(event) => updateSourceField("root_path", event.target.value)}
-                          placeholder={sourceFormIsLocal ? "C:\\Videos\\Test Library" : "Accessible path or UNC share"}
-                        />
-                      </label>
-                      {sourceFormIsLocal ? null : (
-                        <>
-                          <label>
-                            <span>Host</span>
-                            <input value={sourceForm.host} onChange={(event) => updateSourceField("host", event.target.value)} />
-                          </label>
-                          <label>
-                            <span>Port</span>
-                            <input value={sourceForm.port} onChange={(event) => updateSourceField("port", event.target.value)} placeholder="Default" />
-                          </label>
-                          <label>
-                            <span>Username</span>
-                            <input value={sourceForm.username} onChange={(event) => updateSourceField("username", event.target.value)} />
-                          </label>
-                          <label>
-                            <span>Password</span>
-                            <input type="password" value={sourceForm.password} onChange={(event) => updateSourceField("password", event.target.value)} placeholder={source?.has_password ? "Leave blank to keep saved password" : ""} />
-                          </label>
-                        </>
-                      )}
-                    </div>
-                    <div className="inline-actions">
-                      {sourceFormIsLocal ? (
-                        <button type="button" className="ghost-button" disabled={isWorking} onClick={() => loadLocalDirectoryBrowser(localDirectoryBrowser.path || sourceForm.root_path || "")}>
-                          Browse local folders
-                        </button>
-                      ) : null}
-                      <button type="button" className="ghost-button" disabled={isWorking} onClick={handleSourceTest}>
-                        Test connection
-                      </button>
-                      <button type="button" className="ghost-button" disabled={!source || isWorking} onClick={handleReconnect}>
-                        Reconnect
-                      </button>
-                      <button type="button" className="ghost-button" disabled={!source || isWorking} onClick={handleScanSource}>
-                        Scan source
-                      </button>
-                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSourceSave}>
-                        Save source
-                      </button>
-                    </div>
-                    {sourceFormIsLocal && isLocalDirectoryBrowserOpen ? (
-                      <div className="note-card local-directory-browser">
-                        <div className="panel-header compact-header">
-                          <div>
-                            <strong>Local folder browser</strong>
-                            <p className="muted">{localDirectoryBrowser.path || "This PC"}</p>
-                          </div>
-                          <div className="inline-actions">
-                            <button
-                              type="button"
-                              className="ghost-button"
-                              disabled={isWorking || !localDirectoryBrowser.parent_path}
-                              onClick={() => loadLocalDirectoryBrowser(localDirectoryBrowser.parent_path || "")}
-                            >
-                              Up
-                            </button>
-                            <button
-                              type="button"
-                              className="primary-button"
-                              disabled={isWorking || !localDirectoryBrowser.path}
-                              onClick={() => handleSelectLocalDirectory(localDirectoryBrowser.path)}
-                            >
-                              Use this folder
-                            </button>
-                          </div>
-                        </div>
-                        <div className="local-directory-list">
-                          {localDirectoryBrowser.directories.map((entry) => (
-                            <button
-                              key={entry.path}
-                              type="button"
-                              className="tree-item local-directory-item"
-                              onClick={() => loadLocalDirectoryBrowser(entry.path)}
-                            >
-                              <span>{entry.name}</span>
-                              <span className="row-subtitle">{entry.path}</span>
-                            </button>
-                          ))}
-                          {!localDirectoryBrowser.directories.length ? (
-                            <div className="settings-placeholder compact-placeholder">
-                              <span>No child directories found here.</span>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                    {testResult ? (
-                      <div className={`note-card ${testResult.ok ? "note-card-success" : "note-card-warning"}`}>
-                        <strong>{testResult.ok ? "Ready to scan" : "Connection partial"}</strong>
-                        <p>{testResult.message}</p>
-                        <p className="muted">
-                          {testResult.protocol === "local"
-                            ? testResult.root_path
-                            : `${testResult.host}:${testResult.port} - ${testResult.root_path}`}
-                        </p>
-                      </div>
-                    ) : null}
-                  </div>
+                  <SourceSettingsSection
+                    source={source}
+                    sourceForm={sourceForm}
+                    sourceFormIsLocal={sourceFormIsLocal}
+                    isWorking={isWorking}
+                    localDirectoryBrowser={localDirectoryBrowser}
+                    isLocalDirectoryBrowserOpen={isLocalDirectoryBrowserOpen}
+                    testResult={testResult}
+                    onUpdateSourceField={updateSourceField}
+                    onLoadLocalDirectoryBrowser={loadLocalDirectoryBrowser}
+                    onSelectLocalDirectory={handleSelectLocalDirectory}
+                    onSourceTest={handleSourceTest}
+                    onReconnect={handleReconnect}
+                    onScanSource={handleScanSource}
+                    onSourceSave={handleSourceSave}
+                  />
                 ) : selectedSettingsSection === "profiles" ? (
                   <div className="source-settings">
                     <p>Profiles stay reusable and separate from tuning runs. Tuning can promote a winning output here later.</p>
