@@ -1,8 +1,0 @@
-{
-  "name": "video-archive-backend",
-  "private": true,
-  "version": "0.1.0",
-  "scripts": {
-    "dev": "python -m app.main"
-  }
-}
