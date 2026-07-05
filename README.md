@@ -10,6 +10,12 @@ Implemented today:
 - frontend shell with backend connectivity check
 - backend `GET /api/health`
 - backend `GET /api/app/info`
+- backend source configuration endpoints:
+  - `GET /api/source`
+  - `PUT /api/source`
+  - `POST /api/source/test-connection`
+- backend local SQLite schema initialization on startup
+- backend local secret file storage outside the main metadata database
 
 Not implemented yet:
 
@@ -65,10 +71,31 @@ The backend-local npm wrapper runs:
 python -m app.main
 ```
 
+### Backend local data and config
+
+On first startup, the backend creates local development state under `backend/.local/`:
+
+- `video_archive.db` for metadata
+- `secrets.json` for source credentials stored outside the main metadata database
+
+Optional local overrides can be placed in `backend/.env.local`. Start from [`backend/.env.example`](backend/.env.example) and set values such as:
+
+- `VIDEO_ARCHIVE_HOST`
+- `VIDEO_ARCHIVE_PORT`
+- `VIDEO_ARCHIVE_DATA_DIR`
+- `VIDEO_ARCHIVE_DB_PATH`
+- `VIDEO_ARCHIVE_SECRETS_PATH`
+
+### Run backend tests
+
+```powershell
+npm.cmd run test --prefix backend
+```
+
 ## Project Structure
 
 - [`frontend/`](frontend/) contains the Vite + React application.
-- [`backend/`](backend/) contains the minimal Python HTTP service.
+- [`backend/`](backend/) contains the Python HTTP backend, local schema initialization, and backend tests.
 - [`docs/code-map.md`](docs/code-map.md) maps the current implementation files.
 - [`docs/`](docs/) contains the product and architecture specifications that guide the next implementation stages.
 
