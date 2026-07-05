@@ -70,6 +70,20 @@ export function fetchConversionProfiles() {
   return requestJson("/api/conversion-profiles", undefined, "Conversion profiles");
 }
 
+export function createConversionProfile(payload) {
+  return requestJson(
+    "/api/conversion-profiles",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    },
+    "Create conversion profile"
+  );
+}
+
 export function fetchSettings() {
   return requestJson("/api/settings", undefined, "Settings load");
 }
@@ -164,10 +178,16 @@ export function fetchJobItems(jobId) {
   return requestJson(`/api/jobs/${encodeURIComponent(jobId)}/items`, undefined, "Job items");
 }
 
-export function fetchLogs({ jobId, limit = 100 } = {}) {
+export function fetchLogs({ jobId, fileId, level, limit = 100 } = {}) {
   const params = new URLSearchParams();
   if (jobId) {
     params.set("job_id", jobId);
+  }
+  if (fileId) {
+    params.set("file_id", fileId);
+  }
+  if (level) {
+    params.set("level", level);
   }
   params.set("limit", String(limit));
   const query = params.toString();
@@ -304,6 +324,28 @@ export function createTagFileJob(fileId) {
     },
     "Tag file"
   );
+}
+
+export function createTuneFileJob(fileId, sweep) {
+  return requestJson(
+    "/api/jobs/tune-file",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ file_id: fileId, sweep })
+    },
+    "Tune file"
+  );
+}
+
+export function fetchFileDetails(fileId) {
+  return requestJson(`/api/files/${encodeURIComponent(fileId)}`, undefined, "File details");
+}
+
+export function fetchPlaybackTarget(fileId) {
+  return requestJson(`/api/files/${encodeURIComponent(fileId)}/playback`, undefined, "Playback target");
 }
 
 export function fetchFilePreview(fileId) {

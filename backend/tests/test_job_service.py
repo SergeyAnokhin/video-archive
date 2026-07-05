@@ -171,6 +171,36 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual([tag["tag_key"] for tag in tag_payload["tags"]], ["beach", "family_time"])
             self.assertTrue(any(event["event_type"] == "tag.item.completed" for event in events))
 
+    def test_tune_job_generates_separate_outputs_for_variants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, source_service, library_service, job_service, source_root = _build_services(tmp)
+            target_dir = source_root / "clips"
+            target_dir.mkdir(parents=True)
+            source_file = target_dir / "One.mp4"
+            source_file.write_bytes(b"original")
+            source = source_service.get_active_source()
+            assert source is not None
+            library_service.scan_source(source, "")
+            file_id = library_service.list_files("clips")[0]["id"]
+
+            job_service.start()
+            self.addCleanup(job_service.shutdown)
+
+            job = job_service.create_tune_file_job(
+                file_id,
+                {"dimensions": [1000, 800], "quality_values": ["22"], "codecs": ["h264", "h265"]},
+            )
+            completed = _wait_for_terminal_status(job_service, job["id"])
+            items = job_service.list_job_items(job["id"])
+            events = job_service.list_events(job_id=job["id"], limit=100)
+
+            self.assertEqual(completed["status"], "completed")
+            self.assertEqual(len(items), 4)
+            self.assertTrue(all(item["status"] == "completed" for item in items))
+            self.assertTrue(source_file.exists())
+            self.assertTrue(all(item["output_ref"] for item in items))
+            self.assertTrue(any(event["event_type"] == "tune.item.completed" for event in events))
+
 
 def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobService, Path]:
     root = Path(tmp)

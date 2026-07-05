@@ -19,6 +19,9 @@ Implemented today:
 - backend source scan and browse endpoints:
   - `GET /api/tree`
   - `GET /api/files`
+  - `GET /api/files/{file_id}`
+  - `GET /api/files/{file_id}/playback`
+  - `GET /api/files/{file_id}/content`
   - `GET /api/conversion-profiles`
   - `GET /api/jobs`
   - `GET /api/jobs/{job_id}`
@@ -34,6 +37,7 @@ Implemented today:
   - `POST /api/jobs/preview-file`
   - `POST /api/jobs/tag-file`
   - `POST /api/jobs/tune-file`
+  - `POST /api/conversion-profiles`
   - `POST /api/jobs/{job_id}/cancel`
   - `POST /api/jobs/{job_id}/restart`
 - backend local SQLite schema initialization on startup
@@ -41,17 +45,19 @@ Implemented today:
 - persisted directory and file metadata from scan results
 - backend async job queue foundation with persistent job items and structured app events
 - saved conversion profile bootstrap with a default `H.265` / `MP4` profile
+- saved conversion profiles can now also be created from the UI and from successful tuning results
 - real conversion jobs for file and recursive directory scopes with temp output, lightweight validation, production replacement, and separate test outputs
+- real tuning jobs for a single file with dimension, quality, and codec sweeps that always write separate outputs and can be promoted into saved conversion profiles
 - real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, persisted preview assets, and directory collage generation
 - real closed-vocabulary tagging jobs for file and recursive directory scopes with configurable sampled-frame count, stored confidence scores, provider-backed inference, and provider-side batch preference
 - preview settings persistence with saved presets, live layout preview, and a dedicated preview section in the settings UI
+- playback settings persistence with embedded modal playback and external file-link opening when supported by the local environment
 - tagging settings persistence with allowed vocabulary editing, provider selection, batch preference, and separate provider configuration with API keys stored outside the main database
-- frontend source settings flow with test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, tree/file actions, and a jobs modal with detail, items, and live event updates
+- frontend source settings flow with test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, playback settings, conversion profile creation, a video details modal, a dedicated log viewer, a tuning workflow modal, and a jobs modal with detail, items, and live event updates
 
 Not implemented yet:
 
 - protocol-native remote enumeration beyond backend-accessible source paths
-- non-placeholder tune processing
 - backup and maintenance settings workflows
 - UI localization with Russian and English support
 

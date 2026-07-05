@@ -212,6 +212,40 @@ class LibraryService:
             for row in rows
         ]
 
+    def get_file(self, file_id: str) -> dict:
+        with connection(self._database_path) as conn:
+            row = conn.execute(
+                """
+                SELECT id, relative_path, path, file_name, extension, size_bytes, modified_at,
+                       discovered_at, last_scanned_at, is_video_supported, conversion_state, preview_state,
+                       has_preview_assets, last_converted_at, preview_generated_at, last_error_code, last_error_message
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+        return {
+            "id": row["id"],
+            "relative_path": row["relative_path"],
+            "path": row["path"],
+            "file_name": row["file_name"],
+            "extension": row["extension"],
+            "size_bytes": row["size_bytes"],
+            "modified_at": row["modified_at"],
+            "discovered_at": row["discovered_at"],
+            "last_scanned_at": row["last_scanned_at"],
+            "is_video_supported": bool(row["is_video_supported"]),
+            "conversion_state": row["conversion_state"],
+            "preview_state": row["preview_state"],
+            "has_preview_assets": bool(row["has_preview_assets"]),
+            "last_converted_at": row["last_converted_at"],
+            "preview_generated_at": row["preview_generated_at"],
+            "last_error_code": row["last_error_code"],
+            "last_error_message": row["last_error_message"],
+        }
+
     def create_scan_job(self) -> dict:
         source = self._require_active_source()
         return self._run_scan_job(source=source, job_type="scan", scope_type="source", scope_ref=None, scan_path="")

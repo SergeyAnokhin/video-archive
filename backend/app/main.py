@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .app_state import AppState
@@ -13,6 +15,7 @@ from .db import initialize_database
 from .errors import ApiError
 from .job_service import JobService
 from .library_service import LibraryService, normalize_relative_path
+from .playback_settings_service import PlaybackSettingsService
 from .preview_service import PreviewService
 from .provider_settings_service import ProviderSettingsService
 from .secrets import SecretStore
@@ -69,6 +72,7 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                     {
                         "settings": {
                             "preview": _require_app_state().preview_service.get_settings(),
+                            "playback": _require_app_state().playback_settings_service.get_settings(),
                             "tagging": _require_app_state().tagging_service.get_settings(),
                         }
                     },
@@ -89,10 +93,28 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.OK, {"preview": preview})
                 return
 
+            if path.startswith("/api/files/") and path.endswith("/playback"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/playback")
+                file_row = _require_app_state().library_service.get_file(file_id)
+                settings = _require_app_state().playback_settings_service.get_settings()
+                self._write_json(HTTPStatus.OK, {"playback": _build_playback_payload(file_row, settings)})
+                return
+
+            if path.startswith("/api/files/") and path.endswith("/content"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/content")
+                file_row = _require_app_state().library_service.get_file(file_id)
+                self._serve_file_content(Path(file_row["path"]))
+                return
+
             if path.startswith("/api/files/") and path.endswith("/tags"):
                 file_id = path.removeprefix("/api/files/").removesuffix("/tags")
                 tags = _require_app_state().tagging_service.get_file_tags(file_id)
                 self._write_json(HTTPStatus.OK, {"tags": tags})
+                return
+
+            if path.startswith("/api/files/"):
+                file_id = path.removeprefix("/api/files/")
+                self._write_json(HTTPStatus.OK, {"file": _require_app_state().library_service.get_file(file_id)})
                 return
 
             if path == "/api/directories/preview":
@@ -177,13 +199,18 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                     if not isinstance(preview_payload, dict):
                         raise ApiError("invalid_request", "Field 'preview' must be a JSON object.", status=400)
                     response_settings["preview"] = _require_app_state().preview_service.update_settings(preview_payload)
+                if "playback" in payload:
+                    playback_payload = payload.get("playback")
+                    if not isinstance(playback_payload, dict):
+                        raise ApiError("invalid_request", "Field 'playback' must be a JSON object.", status=400)
+                    response_settings["playback"] = _require_app_state().playback_settings_service.update_settings(playback_payload)
                 if "tagging" in payload:
                     tagging_payload = payload.get("tagging")
                     if not isinstance(tagging_payload, dict):
                         raise ApiError("invalid_request", "Field 'tagging' must be a JSON object.", status=400)
                     response_settings["tagging"] = _require_app_state().tagging_service.update_settings(tagging_payload)
                 if not response_settings:
-                    raise ApiError("invalid_request", "Request must include 'preview' or 'tagging' settings.", status=400)
+                    raise ApiError("invalid_request", "Request must include 'preview', 'playback', or 'tagging' settings.", status=400)
                 self._write_json(HTTPStatus.OK, {"settings": response_settings})
                 return
 
@@ -279,6 +306,11 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.OK, {"preview": preview})
                 return
 
+            if path == "/api/conversion-profiles":
+                profile = _require_app_state().conversion_profile_service.create_profile(self._read_json_body())
+                self._write_json(HTTPStatus.OK, {"profile": profile})
+                return
+
             if path == "/api/jobs/tag-file":
                 job = _require_app_state().job_service.create_tag_file_job(_read_required_string(self._read_json_body(), "file_id"))
                 self._write_json(HTTPStatus.OK, {"job": job})
@@ -328,6 +360,51 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
+
+    def _serve_file_content(self, file_path: Path) -> None:
+        if not file_path.exists() or not file_path.is_file():
+            raise ApiError("file_not_found", "Playback file is not available.", status=404)
+
+        file_size = file_path.stat().st_size
+        content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        range_header = self.headers.get("Range")
+        start = 0
+        end = file_size - 1
+        status = HTTPStatus.OK
+
+        if range_header and range_header.startswith("bytes="):
+            range_value = range_header.removeprefix("bytes=").strip()
+            start_text, _, end_text = range_value.partition("-")
+            if start_text:
+                start = max(0, int(start_text))
+            if end_text:
+                end = min(file_size - 1, int(end_text))
+            if start > end or start >= file_size:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{file_size}")
+                self.end_headers()
+                return
+            status = HTTPStatus.PARTIAL_CONTENT
+
+        content_length = (end - start) + 1
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(content_length))
+        self.send_header("Cache-Control", "no-store")
+        if status == HTTPStatus.PARTIAL_CONTENT:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.end_headers()
+
+        with file_path.open("rb") as handle:
+            handle.seek(start)
+            remaining = content_length
+            while remaining > 0:
+                data = handle.read(min(64 * 1024, remaining))
+                if not data:
+                    break
+                self.wfile.write(data)
+                remaining -= len(data)
 
     def log_message(self, format: str, *args) -> None:
         print(f"{self.address_string()} - {format % args}")
@@ -415,6 +492,7 @@ def create_app_state() -> AppState:
     source_service = SourceService(config.database_path, secret_store)
     library_service = LibraryService(config.database_path, source_service)
     conversion_profile_service = ConversionProfileService(config.database_path)
+    playback_settings_service = PlaybackSettingsService(config.database_path)
     preview_service = PreviewService(config.database_path, config.data_dir)
     provider_settings_service = ProviderSettingsService(config.database_path, secret_store)
     tagging_service = TaggingService(config.database_path, provider_settings_service)
@@ -433,6 +511,7 @@ def create_app_state() -> AppState:
         source_service=source_service,
         library_service=library_service,
         conversion_profile_service=conversion_profile_service,
+        playback_settings_service=playback_settings_service,
         preview_service=preview_service,
         provider_settings_service=provider_settings_service,
         tagging_service=tagging_service,
@@ -530,6 +609,33 @@ def _read_conversion_mode(value: object) -> str:
     if normalized not in {"production", "test"}:
         raise ApiError("invalid_request", "Field 'mode' must be 'production' or 'test'.", status=400)
     return normalized
+
+
+def _build_playback_payload(file_row: dict, settings: dict) -> dict:
+    path = Path(file_row["path"])
+    file_uri = _to_file_uri(path)
+    return {
+        "file_id": file_row["id"],
+        "file_name": file_row["file_name"],
+        "path": str(path),
+        "mode": settings["mode"],
+        "external_strategy": settings["external_strategy"],
+        "embedded_url": f"/api/files/{file_row['id']}/content",
+        "external_url": file_uri,
+        "external_supported": file_uri is not None,
+    }
+
+
+def _to_file_uri(path: Path) -> str | None:
+    try:
+        return path.resolve().as_uri()
+    except ValueError:
+        raw = str(path).replace("\\", "/")
+        if raw.startswith("//"):
+            return f"file:{raw}"
+        if len(raw) >= 2 and raw[1] == ":":
+            return f"file:///{raw[0]}:{raw[2:]}"
+        return None
 
 
 if __name__ == "__main__":

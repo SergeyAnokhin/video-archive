@@ -321,12 +321,26 @@ class JobService:
 
     def create_tune_file_job(self, file_id: str, sweep: dict | None = None) -> dict:
         file_row = self._require_file(file_id)
+        normalized_sweep, variants = _build_tuning_variants(sweep)
         return self._create_job(
             job_type="tune",
             scope_type="file",
             scope_ref=file_id,
-            parameters={"file_id": file_id, "relative_path": file_row["relative_path"], "sweep": sweep or {}},
-            item_specs=[self._file_item_spec(file_row)],
+            parameters={
+                "file_id": file_id,
+                "relative_path": file_row["relative_path"],
+                "sweep": normalized_sweep,
+                "variants": variants,
+            },
+            item_specs=[
+                {
+                    "file_id": file_row["id"],
+                    "item_key": variant["id"],
+                    "step_name": "tune",
+                    "message": f"Queued {variant['label']}.",
+                }
+                for variant in variants
+            ],
         )
 
     def cancel_job(self, job_id: str) -> dict:
@@ -504,6 +518,8 @@ class JobService:
                 summary_message = self._execute_preview_job(job)
             elif job["job_type"] == "tag":
                 summary_message = self._execute_tag_job(job)
+            elif job["job_type"] == "tune":
+                summary_message = self._execute_tune_job(job)
             else:
                 summary_message = self._execute_placeholder_job(job)
             self._complete_job(job["id"], summary_message)
@@ -801,6 +817,83 @@ class JobService:
         if completed == 0:
             return "Tagging job completed with no eligible files."
         return f"Tagging job completed for {completed} item(s)."
+
+    def _execute_tune_job(self, job: dict) -> str:
+        source = self._require_active_source()
+        items = self.list_job_items(job["id"])
+        variants = {
+            variant["id"]: variant
+            for variant in job["parameters"].get("variants", [])
+            if isinstance(variant, dict) and isinstance(variant.get("id"), str)
+        }
+        completed = 0
+        failed = 0
+
+        for item in items:
+            if self._job_cancel_requested(job["id"]):
+                raise _JobCancelled()
+            if not item["file_id"]:
+                self._set_job_item_status(item["id"], "skipped", item["message"] or "No eligible file found.")
+                continue
+
+            variant = variants.get(item["item_key"])
+            if variant is None:
+                failed += 1
+                self._set_job_item_status(item["id"], "failed", "Tuning variant is missing from the job payload.")
+                continue
+
+            file_row = self._get_file_for_conversion(item["file_id"])
+            item_label = f"{file_row['relative_path']} [{variant['label']}]"
+            self._set_job_item_status(item["id"], "running", f"Generating tuning output for {item_label}...")
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="tune.item.started",
+                message=f"Started tuning output for {item_label}.",
+                payload={"variant_id": variant["id"], "profile": variant["profile"]},
+            )
+            try:
+                result = self._conversion_service.convert_file(
+                    source_root=source["root_path"],
+                    file_row=file_row,
+                    profile=variant["profile"],
+                    mode="test",
+                )
+            except ApiError as exc:
+                failed += 1
+                self._set_job_item_status(item["id"], "failed", exc.message)
+                self._append_event(
+                    job_id=job["id"],
+                    file_id=file_row["id"],
+                    level="error",
+                    event_type="tune.item.failed",
+                    message=f"Tuning output failed for {item_label}: {exc.message}",
+                    payload={"variant_id": variant["id"], "error_code": exc.code},
+                )
+                continue
+
+            self._set_job_item_status(
+                item["id"],
+                "completed",
+                f"Tuning output ready for {item_label}.",
+                output_ref=result["output_ref"],
+            )
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="tune.item.completed",
+                message=f"Tuning output completed for {item_label}.",
+                payload={"variant_id": variant["id"], "output_ref": result["output_ref"], "profile": variant["profile"]},
+            )
+            completed += 1
+
+        if failed:
+            raise ApiError("tuning_job_failed", f"Tuning failed for {failed} variant(s); {completed} completed successfully.", status=500)
+        if completed == 0:
+            return "Tuning job completed with no generated outputs."
+        return f"Tuning job completed for {completed} output variant(s)."
 
     def _execute_placeholder_job(self, job: dict) -> str:
         items = self.list_job_items(job["id"])
@@ -1213,3 +1306,110 @@ class JobService:
             "item_key": file_row["relative_path"],
             "message": f"Queued for {file_row['relative_path']}.",
         }
+
+
+def _build_tuning_variants(sweep: dict | None) -> tuple[dict, list[dict]]:
+    payload = sweep if isinstance(sweep, dict) else {}
+    dimensions = _normalize_tuning_dimensions(payload.get("dimensions"))
+    qualities = _normalize_tuning_qualities(payload.get("quality_values"))
+    codecs = _normalize_tuning_codecs(payload.get("codecs"))
+    drop_audio = bool(payload.get("drop_audio", True))
+    normalized = {
+        "dimensions": dimensions,
+        "quality_values": qualities,
+        "codecs": codecs,
+        "drop_audio": drop_audio,
+    }
+
+    variants: list[dict] = []
+    variant_index = 1
+    for codec in codecs:
+        for dimension in dimensions:
+            for quality in qualities:
+                label_parts = [_format_tuning_codec(codec), f"{dimension}px" if dimension is not None else "source size"]
+                label_parts.append(f"CRF {quality}" if quality is not None else "default quality")
+                label = " / ".join(label_parts)
+                variants.append(
+                    {
+                        "id": f"variant-{variant_index:02d}",
+                        "label": label,
+                        "video_codec": codec,
+                        "max_dimension": dimension,
+                        "quality_mode": "crf" if quality is not None else None,
+                        "quality_value": quality,
+                        "drop_audio": drop_audio,
+                        "profile": {
+                            "name": f"Tune {label}",
+                            "video_codec": codec,
+                            "container": "mp4",
+                            "max_dimension": dimension,
+                            "quality_mode": "crf" if quality is not None else None,
+                            "quality_value": quality,
+                            "drop_audio": drop_audio,
+                            "extra_encoder_args": None,
+                        },
+                    }
+                )
+                variant_index += 1
+
+    if len(variants) > 24:
+        raise ApiError("invalid_request", "Tuning sweep is too large. Keep it to 24 output variants or fewer.", status=400)
+    return normalized, variants
+
+
+def _normalize_tuning_dimensions(value) -> list[int | None]:
+    if value is None:
+        return [None]
+    if not isinstance(value, list):
+        raise ApiError("invalid_request", "Tuning dimensions must be an array.", status=400)
+    cleaned: list[int | None] = []
+    for entry in value:
+        if entry is None:
+            cleaned.append(None)
+            continue
+        if isinstance(entry, bool) or not isinstance(entry, int) or entry < 1:
+            raise ApiError("invalid_request", "Tuning dimensions must contain positive integers.", status=400)
+        cleaned.append(entry)
+    return cleaned or [None]
+
+
+def _normalize_tuning_qualities(value) -> list[str | None]:
+    if value is None:
+        return [None]
+    if not isinstance(value, list):
+        raise ApiError("invalid_request", "Tuning quality values must be an array.", status=400)
+    cleaned: list[str | None] = []
+    for entry in value:
+        if entry is None:
+            cleaned.append(None)
+            continue
+        text = str(entry).strip()
+        if text:
+            cleaned.append(text)
+    return cleaned or [None]
+
+
+def _normalize_tuning_codecs(value) -> list[str]:
+    allowed = {"h264", "h265", "av1"}
+    if value is None:
+        return ["h265"]
+    if not isinstance(value, list):
+        raise ApiError("invalid_request", "Tuning codecs must be an array.", status=400)
+    cleaned: list[str] = []
+    for entry in value:
+        text = str(entry).strip().lower()
+        if text == "hevc":
+            text = "h265"
+        if text not in allowed:
+            raise ApiError("invalid_request", "Tuning codecs must be H.264, H.265, or AV1.", status=400)
+        if text not in cleaned:
+            cleaned.append(text)
+    return cleaned or ["h265"]
+
+
+def _format_tuning_codec(codec: str) -> str:
+    return {
+        "h264": "H.264",
+        "h265": "H.265",
+        "av1": "AV1",
+    }.get(codec, codec.upper())

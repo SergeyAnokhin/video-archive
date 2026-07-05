@@ -164,8 +164,10 @@ def _normalize_profile_payload(payload: dict) -> dict:
 
     video_codec = str(payload.get("video_codec") or "h265").strip().lower()
     container = str(payload.get("container") or "mp4").strip().lower().lstrip(".")
-    if video_codec not in {"h265", "hevc"}:
-        raise ApiError("invalid_request", "Only H.265 profiles are supported in this step.", status=400)
+    if video_codec == "hevc":
+        video_codec = "h265"
+    if video_codec not in {"h264", "h265", "av1"}:
+        raise ApiError("invalid_request", "Supported codecs are H.264, H.265, and AV1.", status=400)
     if container != "mp4":
         raise ApiError("invalid_request", "Only MP4 output is supported in this step.", status=400)
 
@@ -193,7 +195,7 @@ def _normalize_profile_payload(payload: dict) -> dict:
     return {
         "name": name.strip(),
         "is_default": is_default,
-        "video_codec": "h265",
+        "video_codec": video_codec,
         "container": "mp4",
         "max_dimension": max_dimension,
         "quality_mode": quality_mode.strip() if isinstance(quality_mode, str) and quality_mode.strip() else None,

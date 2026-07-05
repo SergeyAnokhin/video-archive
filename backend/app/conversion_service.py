@@ -11,12 +11,19 @@ from .errors import ApiError
 
 
 CODEC_ALIASES = {
+    "h264": {"h264", "avc1"},
     "h265": {"hevc", "h265"},
-    "hevc": {"hevc", "h265"},
+    "av1": {"av1"},
 }
 
 CONTAINER_ALIASES = {
     "mp4": {"mp4", "mov,mp4,m4a,3gp,3g2,mj2"},
+}
+
+ENCODER_BY_CODEC = {
+    "h264": "libx264",
+    "h265": "libx265",
+    "av1": "libsvtav1",
 }
 
 
@@ -71,7 +78,7 @@ class ConversionService:
             "-map",
             "0:v:0",
             "-c:v",
-            "libx265",
+            ENCODER_BY_CODEC.get(str(profile.get("video_codec") or "h265").lower(), "libx265"),
             "-movflags",
             "+faststart",
         ]

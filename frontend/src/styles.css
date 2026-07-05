@@ -598,9 +598,143 @@ textarea:disabled {
   width: min(760px, 100%);
 }
 
+.details-shell,
+.logs-shell,
+.tuning-shell {
+  width: min(1180px, 100%);
+}
+
+.playback-shell {
+  width: min(980px, 100%);
+}
+
+.promote-shell {
+  width: min(680px, 100%);
+}
+
 .convert-layout {
   display: grid;
   gap: 18px;
+}
+
+.details-grid,
+.tuning-grid,
+.profiles-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+  gap: 18px;
+}
+
+.details-main,
+.details-side,
+.tuning-results,
+.tuning-config {
+  display: grid;
+  gap: 16px;
+}
+
+.details-preview {
+  min-height: 300px;
+}
+
+.split-actions {
+  justify-content: flex-start;
+}
+
+.break-value {
+  word-break: break-word;
+}
+
+.video-player-shell {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  background: #02060e;
+}
+
+.video-player {
+  display: block;
+  width: 100%;
+  max-height: 72vh;
+  background: #000;
+}
+
+.log-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.log-filter-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.log-filter-grid label span {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.log-filter-grid input,
+.log-filter-grid select {
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+}
+
+.align-end {
+  align-items: end;
+}
+
+.tall-console {
+  min-height: 420px;
+  max-height: 65vh;
+}
+
+.details-log-console {
+  max-height: 280px;
+}
+
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.toggle-chip input {
+  width: auto;
+}
+
+.tuning-result-list,
+.profile-list {
+  display: grid;
+  gap: 12px;
+}
+
+.tuning-result-row,
+.profile-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .settings-layout {
@@ -741,7 +875,11 @@ textarea:disabled {
   .workspace.without-preview,
   .settings-layout,
   .jobs-grid,
-  .preview-settings-grid {
+  .preview-settings-grid,
+  .details-grid,
+  .tuning-grid,
+  .profiles-grid,
+  .log-filter-grid {
     grid-template-columns: 1fr;
   }
 
