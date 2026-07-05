@@ -11,7 +11,7 @@ from .secrets import SecretStore
 from .time_utils import utc_now
 
 
-SUPPORTED_PROTOCOLS = {"smb", "ftp", "sftp", "webdav"}
+SUPPORTED_PROTOCOLS = {"smb", "ftp", "sftp", "webdav", "local"}
 DEFAULT_PORTS = {
     "smb": 445,
     "ftp": 21,
@@ -121,6 +121,23 @@ class SourceService:
         return None if row is None else row["secret_ref"]
 
     def test_connection(self, payload: SourcePayload, connector=None) -> dict:
+        if payload.protocol == "local":
+            root_path = Path(payload.root_path)
+            root_accessible = root_path.exists() and root_path.is_dir()
+            return {
+                "ok": root_accessible,
+                "protocol": payload.protocol,
+                "host": "localhost",
+                "port": None,
+                "root_path": payload.root_path,
+                "root_accessible": root_accessible,
+                "message": (
+                    "Local directory is accessible."
+                    if root_accessible
+                    else "Local directory does not exist or is not accessible."
+                ),
+            }
+
         connector = connector or _test_socket_connection
         port = payload.port or DEFAULT_PORTS[payload.protocol]
         connector(payload.host, port)
@@ -172,7 +189,6 @@ def parse_source_payload(raw: dict) -> SourcePayload:
 
     name = _require_non_empty_string(raw, "name")
     protocol = _require_non_empty_string(raw, "protocol").lower()
-    host = _require_non_empty_string(raw, "host")
     root_path = _require_non_empty_string(raw, "root_path")
     username = _optional_string(raw.get("username"))
     password = _optional_string(raw.get("password"))
@@ -181,15 +197,24 @@ def parse_source_payload(raw: dict) -> SourcePayload:
     if protocol not in SUPPORTED_PROTOCOLS:
         raise ApiError(
             "invalid_source_protocol",
-            "Protocol must be one of: smb, ftp, sftp, webdav.",
+            "Protocol must be one of: smb, ftp, sftp, webdav, local.",
             status=400,
         )
 
-    if port is not None:
-        if isinstance(port, bool) or not isinstance(port, int):
-            raise ApiError("invalid_source_port", "Port must be an integer when provided.", status=400)
-        if port < 1 or port > 65535:
-            raise ApiError("invalid_source_port", "Port must be between 1 and 65535.", status=400)
+    if protocol == "local":
+        # Local sources don't need host, port, or credentials
+        raw_host = raw.get("host")
+        host = raw_host.strip() if isinstance(raw_host, str) and raw_host.strip() else "localhost"
+        port = None
+        username = None
+        password = None
+    else:
+        host = _require_non_empty_string(raw, "host")
+        if port is not None:
+            if isinstance(port, bool) or not isinstance(port, int):
+                raise ApiError("invalid_source_port", "Port must be an integer when provided.", status=400)
+            if port < 1 or port > 65535:
+                raise ApiError("invalid_source_port", "Port must be between 1 and 65535.", status=400)
 
     return SourcePayload(
         name=name,

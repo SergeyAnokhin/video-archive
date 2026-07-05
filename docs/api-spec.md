@@ -65,6 +65,10 @@ Notes:
 
 - Secrets may be routed into secret storage rather than the main database.
 - Only one active source is supported.
+- When `protocol` is `"local"`, the `host` field is optional (defaults to `"localhost"`),
+  `port` and credentials (`username`/`password`) are ignored. Only `name`, `protocol`,
+  and `root_path` are required. The root path must be a directory accessible from the
+  backend machine.
 
 ### `POST /api/source/test-connection`
 

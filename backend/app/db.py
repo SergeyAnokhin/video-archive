@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 MIGRATIONS: list[tuple[int, list[str]]] = [
@@ -370,6 +370,37 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    (
+        7,
+        [
+            """
+            CREATE TABLE IF NOT EXISTS sources_v7 (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                protocol TEXT NOT NULL CHECK (protocol IN ('smb', 'ftp', 'sftp', 'webdav', 'local')),
+                host TEXT NOT NULL,
+                port INTEGER NULL,
+                root_path TEXT NOT NULL,
+                username_ref TEXT NULL,
+                secret_ref TEXT NULL,
+                is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_connected_at TEXT NULL,
+                last_scan_at TEXT NULL
+            )
+            """,
+            """
+            INSERT INTO sources_v7 SELECT * FROM sources
+            """,
+            """
+            DROP TABLE sources
+            """,
+            """
+            ALTER TABLE sources_v7 RENAME TO sources
+            """,
+        ],
+    ),
 ]
 
 
@@ -415,6 +446,22 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
 
     for version, statements in MIGRATIONS:
         if version <= current_version:
+            continue
+
+        if version == 7:
+            # Migration 7 recreates the sources table with a relaxed CHECK constraint.
+            # Temporarily disable FK enforcement so DROP TABLE + RENAME can complete.
+            conn.execute("PRAGMA foreign_keys = OFF")
+            try:
+                with conn:
+                    for statement in statements:
+                        conn.execute(statement)
+                    conn.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, datetime('now'))",
+                        (version,),
+                    )
+            finally:
+                conn.execute("PRAGMA foreign_keys = ON")
             continue
 
         with conn:

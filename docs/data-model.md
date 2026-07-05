@@ -34,8 +34,8 @@ Represents the currently configured remote source connection.
 | --- | --- | --- |
 | `id` | UUID | Primary key |
 | `name` | string | User-visible label |
-| `protocol` | enum | `smb`, `ftp`, `sftp`, `webdav` |
-| `host` | string | Remote host |
+|| `protocol` | enum | `smb`, `ftp`, `sftp`, `webdav`, `local` |
+|| `host` | string | Remote host (or `"localhost"` for local sources) |
 | `port` | integer nullable | Optional explicit port |
 | `root_path` | string | Remote base directory |
 | `username_ref` | string nullable | Reference to credential storage |
@@ -50,6 +50,8 @@ Rules:
 
 - Only one row should have `is_active = true`.
 - Credentials must not be stored directly in this table.
+- For `protocol = 'local'`, the `host` field stores `"localhost"` and `port`, `username_ref`,
+  and `secret_ref` are unused.
 
 ## 2. directories
 

@@ -61,6 +61,11 @@ class PlaybackSettingsService:
 
 
 def _build_external_link(source: dict, relative_path: str) -> str:
+    if source.get("protocol") == "local":
+        from urllib.parse import quote as _q
+        root = source.get("root_path", "").rstrip("/\\")
+        return f"file:///{_q(root.lstrip('/'))}/{_q(relative_path)}"
+
     quoted_path = quote(relative_path)
     port_segment = f":{source['port']}" if source.get("port") else ""
     return f"{source['protocol']}://{source['host']}{port_segment}/{quoted_path}"

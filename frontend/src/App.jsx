@@ -249,7 +249,9 @@ function App() {
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? files[0] ?? null;
   const liveSourceLabel = source?.name ?? info.active_source?.name ?? "No active source";
   const liveSourceMeta = source
-    ? `${source.protocol.toUpperCase()} - ${source.host} - ${source.root_path}`
+    ? source.protocol === "local"
+      ? `LOCAL - ${source.root_path}`
+      : `${source.protocol.toUpperCase()} - ${source.host} - ${source.root_path}`
     : "Configure one active source to enable scan and browsing";
   const queueSummary = `${info.queue.running_jobs} running - ${info.queue.queued_jobs} queued`;
   const backendLabel =
@@ -1976,8 +1978,9 @@ function App() {
                 {selectedSettingsSection === "source" ? (
                   <div className="source-settings">
                     <p>
-                      Video Archive supports one active source at a time. Test connectivity, save the
-                      source, then scan it to populate the library tree.
+                      {sourceForm.protocol === "local"
+                        ? "For a local directory accessible from the backend machine, just provide a name and the folder path. No credentials needed."
+                        : "Video Archive supports one active source at a time. Test connectivity, save the source, then scan it to populate the library tree."}
                     </p>
                     <div className="form-grid">
                       <label>
@@ -1997,8 +2000,10 @@ function App() {
                           <option value="ftp">FTP</option>
                           <option value="sftp">SFTP</option>
                           <option value="webdav">WebDAV</option>
+                          <option value="local">Local directory</option>
                         </select>
                       </label>
+                      {sourceForm.protocol !== "local" ? (
                       <label>
                         <span>Host</span>
                         <input
@@ -2038,6 +2043,7 @@ function App() {
                           placeholder={source?.has_password ? "Leave blank to keep saved password" : ""}
                         />
                       </label>
+                      ) : null}
                     </div>
 
                     <div className="inline-actions">
