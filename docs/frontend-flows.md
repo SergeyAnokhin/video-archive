@@ -1,0 +1,19 @@
+# Frontend Flows
+
+This page is the short router for the main frontend flows that cross multiple files. Start from the first file in each row and only open the follow-up files if the change crosses the boundary described there.
+
+| Flow | Start here | Then follow | Verify after change |
+| --- | --- | --- | --- |
+| Modal ownership and overlay switching | [`../frontend/src/App.jsx`](../frontend/src/App.jsx) | [`../frontend/src/components/modals/`](../frontend/src/components/modals/), [`../frontend/src/components/settings/SettingsModal.jsx`](../frontend/src/components/settings/SettingsModal.jsx) | The intended overlay opens, closes, and returns to the right previous state. |
+| Jobs flow: open jobs, poll summary, inspect items, stream events | [`../frontend/src/App.jsx`](../frontend/src/App.jsx) | [`../frontend/src/components/modals/JobsModal.jsx`](../frontend/src/components/modals/JobsModal.jsx), [`../frontend/src/api.js`](../frontend/src/api.js), [`../backend/app/job_service.py`](../backend/app/job_service.py) | Jobs refresh, the selected job stays stable, and new events append without duplicates. |
+| Settings flow: nav, section loading, save actions | [`../frontend/src/components/settings/SettingsModal.jsx`](../frontend/src/components/settings/SettingsModal.jsx) | [`../frontend/src/App.jsx`](../frontend/src/App.jsx), [`../frontend/src/features/source/SourceSettingsSection.jsx`](../frontend/src/features/source/SourceSettingsSection.jsx), [`../frontend/src/api.js`](../frontend/src/api.js) | Opening a section still loads the matching data and save buttons update the correct backend payload. |
+| Playback flow: file action to modal or external open | [`../frontend/src/App.jsx`](../frontend/src/App.jsx) | [`../frontend/src/components/modals/FileDetailsModal.jsx`](../frontend/src/components/modals/FileDetailsModal.jsx), [`../backend/app/playback_settings_service.py`](../backend/app/playback_settings_service.py), [`../backend/app/main.py`](../backend/app/main.py) | Embedded mode still opens the modal player, external mode still resolves the backend-provided target. |
+| Preview summary flow: selected file/folder to right-side preview panel | [`../frontend/src/components/layout/LibraryPreviewPanel.jsx`](../frontend/src/components/layout/LibraryPreviewPanel.jsx) | [`../frontend/src/App.jsx`](../frontend/src/App.jsx), [`../backend/app/preview_service.py`](../backend/app/preview_service.py) | Changing folder or selected file still refreshes the correct preview scope. |
+| Log viewer flow: open with preset filters, stream live events | [`../frontend/src/components/modals/LogViewerModal.jsx`](../frontend/src/components/modals/LogViewerModal.jsx) | [`../frontend/src/App.jsx`](../frontend/src/App.jsx), [`../frontend/src/api.js`](../frontend/src/api.js), [`../backend/app/main.py`](../backend/app/main.py) | Filter presets still populate the modal and the stream scrolls to the newest entries. |
+
+## Quick Rules
+
+- If the change is presentational and the data already exists, start in the extracted component, not in `App.jsx`.
+- If the change affects when data loads, which modal opens, or which background refresh runs, start in `App.jsx`.
+- If the change touches a save button or modal action, inspect both the component and [`../frontend/src/api.js`](../frontend/src/api.js).
+- If the UI and docs disagree, trust the current code path and update this file in the same change.

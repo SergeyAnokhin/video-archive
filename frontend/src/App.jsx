@@ -39,9 +39,15 @@ import {
   testSourceConnection,
   updatePreviewLayout
 } from "./api";
+import AppHeader from "./components/layout/AppHeader";
+import DirectoryTreePanel from "./components/layout/DirectoryTreePanel";
+import FileBrowserPanel from "./components/layout/FileBrowserPanel";
+import LibraryPreviewPanel from "./components/layout/LibraryPreviewPanel";
 import FileDetailsModal from "./components/modals/FileDetailsModal";
 import JobsModal from "./components/modals/JobsModal";
+import LogViewerModal from "./components/modals/LogViewerModal";
 import TuneModal from "./components/modals/TuneModal";
+import SettingsModal from "./components/settings/SettingsModal";
 import {
   buildProfilePayloadFromVariant,
   buildTuneSweep,
@@ -62,7 +68,6 @@ import {
   toSourcePayload,
   toTaggingForm
 } from "./features/source/sourceHelpers";
-import SourceSettingsSection from "./features/source/SourceSettingsSection";
 import { settingsSections } from "./mockData";
 
 function formatStatusLabel(value) {
@@ -1129,263 +1134,74 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar panel">
-        <div className="brand-block">
-          <p className="eyebrow">Video Archive</p>
-          <div className="brand-row">
-            <h1>Library</h1>
-            <span className={`status-pill status-pill-${health.state}`}>{backendLabel}</span>
-          </div>
-          <p className="summary">
-            Browse one active source, keep the main library light, and move playback, tuning, logs,
-            and deeper file actions into dedicated modal flows.
-          </p>
-          {health.error ? <p className="muted">Last backend error: {health.error}</p> : null}
-          {actionError ? <p className="feedback error">{actionError}</p> : null}
-          {actionMessage ? <p className="feedback">{actionMessage}</p> : null}
-        </div>
-
-        <div className="toolbar">
-          <div className="toolbar-card">
-            <span className="toolbar-label">Source</span>
-            <strong>{liveSourceLabel}</strong>
-            <span className="toolbar-meta">{liveSourceMeta}</span>
-          </div>
-
-          <div className="toolbar-card compact">
-            <span className="toolbar-label">Queue</span>
-            <strong>{queueSummary}</strong>
-            <span className="toolbar-meta">Runtime {info.queue.status}</span>
-          </div>
-
-          <div className="toolbar-actions">
-            <button type="button" className="ghost-button" onClick={() => setPreviewVisible((value) => !value)}>
-              {previewVisible ? "Hide preview" : "Show preview"}
-            </button>
-            <button type="button" className="ghost-button" disabled={!source || isWorking} onClick={handleScanSource}>
-              Scan source
-            </button>
-            <button type="button" className="ghost-button" onClick={() => openLogViewer()}>
-              Logs
-            </button>
-            <button type="button" className="ghost-button" onClick={openJobsOverlay}>
-              Jobs
-            </button>
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => {
-                setSelectedSettingsSection("preview");
-                setActiveOverlay("settings");
-              }}
-            >
-              Settings
-            </button>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        health={health}
+        backendLabel={backendLabel}
+        actionError={actionError}
+        actionMessage={actionMessage}
+        liveSourceLabel={liveSourceLabel}
+        liveSourceMeta={liveSourceMeta}
+        queueSummary={queueSummary}
+        queueStatus={info.queue.status}
+        previewVisible={previewVisible}
+        source={source}
+        isWorking={isWorking}
+        onTogglePreview={() => setPreviewVisible((value) => !value)}
+        onScanSource={handleScanSource}
+        onOpenLogs={() => openLogViewer()}
+        onOpenJobs={openJobsOverlay}
+        onOpenSettings={() => {
+          setSelectedSettingsSection("preview");
+          setActiveOverlay("settings");
+        }}
+      />
 
       <section className={`workspace ${previewVisible ? "with-preview" : "without-preview"}`}>
-        <aside className="panel tree-panel">
-          <div className="panel-header">
-            <div>
-              <p className="section-kicker">Directories</p>
-              <h2>Tree</h2>
-            </div>
-            <button type="button" className="mini-button" disabled={!source || isWorking} onClick={handleScanSource}>
-              Rescan source
-            </button>
-          </div>
+        <DirectoryTreePanel
+          treeItems={treeItems}
+          selectedDirectory={selectedDirectory}
+          source={source}
+          isWorking={isWorking}
+          onScanSource={handleScanSource}
+          onSelectDirectory={handleSelectDirectory}
+          renderIndicatorBadges={renderIndicatorBadges}
+        />
 
-          <div className="tree-list">
-            {treeItems.length ? (
-              treeItems.map((node) => {
-                const badges = renderIndicatorBadges(node.indicators);
-                return (
-                  <button
-                    key={node.id}
-                    type="button"
-                    className={`tree-item ${selectedDirectory === node.path ? "active" : ""}`}
-                    style={{ paddingLeft: `${16 + node.depth * 16}px` }}
-                    onClick={() => handleSelectDirectory(node.path)}
-                  >
-                    <span>{node.path ? node.name : "Source root"}</span>
-                    <span className="tree-badges">
-                      {badges.map((badge) => (
-                        <span key={badge.key} className={`tree-badge tree-badge-${badge.state}`} title={badge.title}>
-                          {badge.label}
-                        </span>
-                      ))}
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="empty-state compact">
-                <h3>No scanned tree yet</h3>
-                <p>Save an active source, then run a source scan to populate the directory tree.</p>
-              </div>
-            )}
-          </div>
-        </aside>
-
-        <section className="panel file-panel">
-          <div className="panel-header">
-            <div>
-              <p className="section-kicker">Current folder</p>
-              <h2>{formatDirectoryLabel(selectedDirectory)}</h2>
-              <p className="muted">Primary toolbar stays focused on subtree work and lightweight file entry points.</p>
-            </div>
-            <div className="inline-actions">
-              <button type="button" className="mini-button" disabled={!source || !selectedFile || isWorking} onClick={openDetailsModal}>
-                Details
-              </button>
-              <button type="button" className="mini-button" disabled={!source || !selectedFile || isWorking} onClick={() => handleOpenPlayback()}>
-                Open playback
-              </button>
-              <button type="button" className="mini-button" disabled={!source || isWorking} onClick={() => openConvertDialog("directory")}>
-                Convert subtree
-              </button>
-              <button type="button" className="mini-button" disabled={!source || isWorking} onClick={() => handleDirectoryJob(createPreviewDirectoryJob)}>
-                Preview subtree
-              </button>
-              <button type="button" className="mini-button" disabled={!source || isWorking} onClick={() => handleDirectoryJob(createTagDirectoryJob)}>
-                Tag subtree
-              </button>
-              <button type="button" className="mini-button" disabled={!source || isWorking} onClick={handleRescanDirectory}>
-                Rescan subtree
-              </button>
-            </div>
-          </div>
-
-          <div className="list-header">
-            <span>Name</span>
-            <span>Type</span>
-            <span>Size</span>
-            <span>Modified</span>
-            <span>Status</span>
-          </div>
-
-          <div className="file-list">
-            {files.length ? (
-              files.map((file) => (
-                <article
-                  key={file.id}
-                  className={`file-row ${selectedFile?.id === file.id ? "active" : ""}`}
-                  onClick={() => setSelectedFileId(file.id)}
-                  onDoubleClick={openDetailsModal}
-                >
-                  <div>
-                    <strong>{file.file_name}</strong>
-                    <p className="row-subtitle">{file.relative_path}</p>
-                  </div>
-                  <span>{file.extension || "-"}</span>
-                  <span>{formatBytes(file.size_bytes)}</span>
-                  <span>{formatDate(file.modified_at)}</span>
-                  <div className="state-stack">
-                    <span className={`state-pill state-${file.conversion_state}`}>Convert {formatStatusLabel(file.conversion_state)}</span>
-                    <span className={`state-pill state-${file.preview_state}`}>Preview {formatStatusLabel(file.preview_state)}</span>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="empty-state">
-                <h3>No files in this folder</h3>
-                <p>This folder either has no files yet or has not been discovered by a completed scan.</p>
-              </div>
-            )}
-          </div>
-        </section>
+        <FileBrowserPanel
+          selectedDirectory={selectedDirectory}
+          source={source}
+          selectedFile={selectedFile}
+          isWorking={isWorking}
+          files={files}
+          onOpenDetails={openDetailsModal}
+          onOpenPlayback={() => handleOpenPlayback()}
+          onOpenConvertDirectory={() => openConvertDialog("directory")}
+          onPreviewDirectory={() => handleDirectoryJob(createPreviewDirectoryJob)}
+          onTagDirectory={() => handleDirectoryJob(createTagDirectoryJob)}
+          onRescanDirectory={handleRescanDirectory}
+          onSelectFile={setSelectedFileId}
+          formatDirectoryLabel={formatDirectoryLabel}
+          formatBytes={formatBytes}
+          formatDate={formatDate}
+          formatStatusLabel={formatStatusLabel}
+        />
 
         {previewVisible ? (
-          <aside className="panel preview-panel">
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">Preview</p>
-                <h2>{libraryPreview?.scope === "directory" ? "Directory collage" : "Selected asset"}</h2>
-              </div>
-              <button
-                type="button"
-                className="mini-button"
-                onClick={() => {
-                  setSelectedSettingsSection("preview");
-                  setActiveOverlay("settings");
-                }}
-              >
-                Preview settings
-              </button>
-            </div>
-
-            <div className="preview-card">
-              <div className="preview-canvas">
-                {libraryPreview?.image_data_url ? (
-                  <img className="preview-image" src={libraryPreview.image_data_url} alt="Generated preview collage" />
-                ) : (
-                  <span>No preview asset yet. Run a file or subtree preview job.</span>
-                )}
-              </div>
-              <div className="preview-meta">
-                <strong>
-                  {libraryPreview?.scope === "directory"
-                    ? formatDirectoryLabel(selectedDirectory)
-                    : selectedFile?.file_name ?? "No file selected"}
-                </strong>
-                <p>
-                  {libraryPreview?.metadata
-                    ? `${libraryPreview.metadata.sample_count} sampled frames with ${libraryPreview.metadata.large_tile_count} large tiles in ${libraryPreview.metadata.timeline_flow} flow.`
-                    : "Preview generation is on-demand and remains separate from conversion and tagging."}
-                </p>
-              </div>
-            </div>
-
-            <dl className="meta-list">
-              <div>
-                <dt>Selected folder</dt>
-                <dd>{formatDirectoryLabel(selectedDirectory)}</dd>
-              </div>
-              <div>
-                <dt>Visible files</dt>
-                <dd>{files.length}</dd>
-              </div>
-              <div>
-                <dt>Selected file</dt>
-                <dd>{selectedFile?.file_name ?? "-"}</dd>
-              </div>
-              <div>
-                <dt>Assigned tags</dt>
-                <dd>{selectedFileTags?.tags?.length ?? 0}</dd>
-              </div>
-              <div>
-                <dt>Sample count</dt>
-                <dd>{libraryPreview?.metadata?.sample_count ?? "-"}</dd>
-              </div>
-              <div>
-                <dt>Playback mode</dt>
-                <dd>{playbackSettings.mode}</dd>
-              </div>
-            </dl>
-
-            <div className="note-card">
-              <strong>Closed-vocabulary tags</strong>
-              {selectedFileTags?.tags?.length ? (
-                <>
-                  <div className="tag-pill-list">
-                    {selectedFileTags.tags.map((tag) => (
-                      <span key={`${tag.tag_key}-${tag.assigned_at}`} className="tree-badge tree-badge-in_progress">
-                        {tag.display_name} {formatConfidence(tag.confidence)}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="muted">
-                    {selectedFileTags.tagging_model_info?.provider ?? "-"} - {selectedFileTags.tagging_model_info?.model ?? "-"} -{" "}
-                    {selectedFileTags.tagging_updated_at ? formatDate(selectedFileTags.tagging_updated_at) : "-"}
-                  </p>
-                </>
-              ) : (
-                <p>No tags stored for the selected video yet. Run a file or subtree tagging job.</p>
-              )}
-            </div>
-          </aside>
+          <LibraryPreviewPanel
+            libraryPreview={libraryPreview}
+            selectedDirectory={selectedDirectory}
+            files={files}
+            selectedFile={selectedFile}
+            selectedFileTags={selectedFileTags}
+            playbackSettings={playbackSettings}
+            onOpenPreviewSettings={() => {
+              setSelectedSettingsSection("preview");
+              setActiveOverlay("settings");
+            }}
+            formatDirectoryLabel={formatDirectoryLabel}
+            formatConfidence={formatConfidence}
+            formatDate={formatDate}
+          />
         ) : null}
       </section>
 
@@ -1433,51 +1249,16 @@ function App() {
         </div>
       ) : null}
 
-      {activeOverlay === "logs" ? (
-        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
-          <section className="overlay panel modal-shell logs-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">Log viewer</p>
-                <h2>Near-real-time backend activity</h2>
-              </div>
-              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
-                Close
-              </button>
-            </div>
-            <div className="log-filter-grid">
-              <label>
-                <span>Job id</span>
-                <input value={logFilters.jobId} onChange={(event) => setLogFilters((current) => ({ ...current, jobId: event.target.value }))} />
-              </label>
-              <label>
-                <span>File id</span>
-                <input value={logFilters.fileId} onChange={(event) => setLogFilters((current) => ({ ...current, fileId: event.target.value }))} />
-              </label>
-              <label>
-                <span>Level</span>
-                <select value={logFilters.level} onChange={(event) => setLogFilters((current) => ({ ...current, level: event.target.value }))}>
-                  <option value="">All levels</option>
-                  <option value="debug">Debug</option>
-                  <option value="info">Info</option>
-                  <option value="warning">Warning</option>
-                  <option value="error">Error</option>
-                </select>
-              </label>
-              <div className="inline-actions align-end">
-                <button type="button" className="ghost-button" onClick={() => setLogFilters(emptyLogFilters)}>
-                  Clear filters
-                </button>
-              </div>
-            </div>
-            <pre ref={logConsoleRef} className="log-console tall-console">
-              {logEvents.length
-                ? logEvents.map((event) => `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.message}`).join("\n")
-                : "No events match the current filters."}
-            </pre>
-          </section>
-        </div>
-      ) : null}
+      <LogViewerModal
+        isOpen={activeOverlay === "logs"}
+        onClose={() => setActiveOverlay(null)}
+        logFilters={logFilters}
+        onChangeLogFilter={(field, value) => setLogFilters((current) => ({ ...current, [field]: value }))}
+        onClearFilters={() => setLogFilters(emptyLogFilters)}
+        logEvents={logEvents}
+        logConsoleRef={logConsoleRef}
+        formatDate={formatDate}
+      />
 
       <JobsModal
         isOpen={activeOverlay === "jobs"}
@@ -1617,300 +1398,50 @@ function App() {
         </div>
       ) : null}
 
-      {activeOverlay === "settings" ? (
-        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
-          <section className="overlay panel modal-shell settings-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">Settings</p>
-                <h2>{settingsSections.find((section) => section.id === selectedSettingsSection)?.label}</h2>
-              </div>
-              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
-                Close
-              </button>
-            </div>
-            <div className="settings-layout">
-              <nav className="settings-nav">
-                {settingsSections.map((section) => (
-                  <button key={section.id} type="button" className={`settings-link ${selectedSettingsSection === section.id ? "active" : ""}`} onClick={() => setSelectedSettingsSection(section.id)}>
-                    {section.label}
-                  </button>
-                ))}
-              </nav>
-              <section className="settings-detail">
-                <h3>{settingsSections.find((section) => section.id === selectedSettingsSection)?.label}</h3>
-                {selectedSettingsSection === "source" ? (
-                  <SourceSettingsSection
-                    source={source}
-                    sourceForm={sourceForm}
-                    sourceFormIsLocal={sourceFormIsLocal}
-                    isWorking={isWorking}
-                    localDirectoryBrowser={localDirectoryBrowser}
-                    isLocalDirectoryBrowserOpen={isLocalDirectoryBrowserOpen}
-                    testResult={testResult}
-                    onUpdateSourceField={updateSourceField}
-                    onLoadLocalDirectoryBrowser={loadLocalDirectoryBrowser}
-                    onSelectLocalDirectory={handleSelectLocalDirectory}
-                    onSourceTest={handleSourceTest}
-                    onReconnect={handleReconnect}
-                    onScanSource={handleScanSource}
-                    onSourceSave={handleSourceSave}
-                  />
-                ) : selectedSettingsSection === "profiles" ? (
-                  <div className="source-settings">
-                    <p>Profiles stay reusable and separate from tuning runs. Tuning can promote a winning output here later.</p>
-                    <div className="profiles-grid">
-                      <div className="note-card">
-                        <strong>Create profile</strong>
-                        <div className="form-grid">
-                          <label>
-                            <span>Name</span>
-                            <input value={profileDraft.name} onChange={(event) => updateProfileDraft("name", event.target.value)} />
-                          </label>
-                          <label>
-                            <span>Codec</span>
-                            <select value={profileDraft.video_codec} onChange={(event) => updateProfileDraft("video_codec", event.target.value)}>
-                              <option value="h264">H.264</option>
-                              <option value="h265">H.265</option>
-                              <option value="av1">AV1</option>
-                            </select>
-                          </label>
-                          <label>
-                            <span>Max dimension</span>
-                            <input value={profileDraft.max_dimension} onChange={(event) => updateProfileDraft("max_dimension", event.target.value)} placeholder="Optional" />
-                          </label>
-                          <label>
-                            <span>Quality value</span>
-                            <input value={profileDraft.quality_value} onChange={(event) => updateProfileDraft("quality_value", event.target.value)} placeholder="20" />
-                          </label>
-                          <label className="toggle-row">
-                            <span>Drop audio</span>
-                            <input type="checkbox" checked={profileDraft.drop_audio} onChange={(event) => updateProfileDraft("drop_audio", event.target.checked)} />
-                          </label>
-                          <label className="toggle-row">
-                            <span>Default profile</span>
-                            <input type="checkbox" checked={profileDraft.is_default} onChange={(event) => updateProfileDraft("is_default", event.target.checked)} />
-                          </label>
-                          <label className="full-width">
-                            <span>Advanced encoder args</span>
-                            <input value={profileDraft.extra_encoder_args} onChange={(event) => updateProfileDraft("extra_encoder_args", event.target.value)} placeholder="Optional ffmpeg encoder args" />
-                          </label>
-                        </div>
-                        <div className="inline-actions">
-                          <button type="button" className="primary-button" disabled={isWorking || !profileDraft.name.trim()} onClick={handleCreateProfile}>
-                            Save profile
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="note-card">
-                        <strong>Saved profiles</strong>
-                        <div className="profile-list">
-                          {conversionProfiles.map((profile) => (
-                            <article key={profile.id} className="profile-row">
-                              <div>
-                                <strong>{profile.name}</strong>
-                                <p className="row-subtitle">{formatProfileLabel(profile)}</p>
-                              </div>
-                              {profile.is_default ? <span className="tree-badge">default</span> : null}
-                            </article>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : selectedSettingsSection === "preview" ? (
-                  <div className="source-settings">
-                    <p>Preview generation stays independent from conversion. Save the sampling and large-tile rules here, then use the live preview to inspect the layout before launching jobs.</p>
-                    <div className="form-grid">
-                      <label>
-                        <span>Sample count</span>
-                        <input type="number" min="3" max="24" value={previewSettings.sample_count} onChange={(event) => updatePreviewSetting("sample_count", Number(event.target.value))} />
-                      </label>
-                      <label>
-                        <span>Large tile count</span>
-                        <input type="number" min="0" max="6" value={previewSettings.large_tile_count} onChange={(event) => updatePreviewSetting("large_tile_count", Number(event.target.value))} />
-                      </label>
-                      <label>
-                        <span>Timeline flow</span>
-                        <select value={previewSettings.timeline_flow} onChange={(event) => updatePreviewSetting("timeline_flow", event.target.value)}>
-                          <option value="row">Row by row</option>
-                          <option value="column">Column by column</option>
-                          <option value="shuffle">Shuffled time order</option>
-                        </select>
-                      </label>
-                      <label className="toggle-row">
-                        <span>Identity diversity</span>
-                        <input type="checkbox" checked={previewSettings.identity_diversity_enabled} onChange={(event) => updatePreviewSetting("identity_diversity_enabled", event.target.checked)} />
-                      </label>
-                      <label className="full-width">
-                        <span>Saved preset</span>
-                        <select value={previewSettings.layout_preset_id} onChange={(event) => updatePreviewSetting("layout_preset_id", event.target.value)}>
-                          {previewPresets.map((preset) => (
-                            <option key={preset.id} value={preset.id}>
-                              {preset.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="full-width">
-                        <span>Preset name</span>
-                        <input value={previewPresetName} onChange={(event) => setPreviewPresetName(event.target.value)} placeholder="Balanced Grid" />
-                      </label>
-                    </div>
-                    <div className="inline-actions">
-                      <button type="button" className="ghost-button" disabled={isWorking} onClick={handleLoadPreset}>
-                        Load preset
-                      </button>
-                      <button type="button" className="ghost-button" disabled={isWorking} onClick={() => handleSavePreset("create")}>
-                        Save as new preset
-                      </button>
-                      <button type="button" className="ghost-button" disabled={isWorking || previewSettings.layout_preset_id === "default-preview-grid"} onClick={() => handleSavePreset("update")}>
-                        Update preset
-                      </button>
-                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSavePreviewSettings}>
-                        Save preview settings
-                      </button>
-                    </div>
-                    <div className="preview-settings-grid">
-                      <div className="note-card">
-                        <strong>Selection rules</strong>
-                        <p>First two large tiles prefer faces. Remaining large tiles prefer figures. When identity diversity is enabled, the backend falls back to separate timeline regions if a full identity pass is too expensive.</p>
-                      </div>
-                      <div className="note-card preview-layout-card">
-                        <strong>Live preview</strong>
-                        {livePreview?.image_data_url ? (
-                          <img className="preview-image" src={livePreview.image_data_url} alt="Live preview layout" />
-                        ) : (
-                          <div className="settings-placeholder compact-placeholder">
-                            <span>Generating layout preview...</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : selectedSettingsSection === "playback" ? (
-                  <div className="source-settings">
-                    <p>Playback mode is configurable because embedded viewing and external opening behave differently across machines and browser environments.</p>
-                    <div className="form-grid">
-                      <label>
-                        <span>Playback mode</span>
-                        <select value={playbackSettings.mode} onChange={(event) => updatePlaybackSetting("mode", event.target.value)}>
-                          <option value="embedded">Embedded modal playback</option>
-                          <option value="external">External open</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>External strategy</span>
-                        <select value={playbackSettings.external_strategy} onChange={(event) => updatePlaybackSetting("external_strategy", event.target.value)}>
-                          <option value="file_uri">File URI / link</option>
-                          <option value="path">Path-first</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div className="inline-actions">
-                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSavePlaybackSettings}>
-                        Save playback settings
-                      </button>
-                    </div>
-                    <div className="note-card">
-                      <strong>Current behavior</strong>
-                      <p>Embedded playback streams through the backend. External playback opens the resolved file URI when the local environment supports it.</p>
-                    </div>
-                  </div>
-                ) : selectedSettingsSection === "tagging" ? (
-                  <div className="source-settings">
-                    <p>Tagging stays separate from conversion and preview. The backend only stores tags selected from this allowed vocabulary plus confidence scores.</p>
-                    <div className="form-grid">
-                      <label>
-                        <span>Provider</span>
-                        <select value={taggingSettings.provider} onChange={(event) => updateTaggingSetting("provider", event.target.value)}>
-                          <option value="openrouter">OpenRouter</option>
-                          <option value="gemini">Google Gemini</option>
-                          <option value="fal">FAL</option>
-                          <option value="mistral">Mistral</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Sample count</span>
-                        <input type="number" min="3" max="24" value={taggingSettings.sample_count} onChange={(event) => updateTaggingSetting("sample_count", Number(event.target.value))} />
-                      </label>
-                      <label className="toggle-row">
-                        <span>Combine frames</span>
-                        <input type="checkbox" checked={taggingSettings.combine_frames} onChange={(event) => updateTaggingSetting("combine_frames", event.target.checked)} />
-                      </label>
-                      <label className="toggle-row">
-                        <span>Prefer batch</span>
-                        <input type="checkbox" checked={taggingSettings.prefer_batch} onChange={(event) => updateTaggingSetting("prefer_batch", event.target.checked)} />
-                      </label>
-                      <label className="full-width">
-                        <span>Allowed vocabulary</span>
-                        <textarea rows="10" value={(taggingSettings.vocabulary ?? []).join("\n")} onChange={(event) => updateTaggingSetting("vocabulary", event.target.value.split("\n").map((entry) => entry.trim()).filter(Boolean))} placeholder="One tag per line" />
-                      </label>
-                    </div>
-                    <div className="inline-actions">
-                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSaveTaggingSettings}>
-                        Save tagging settings
-                      </button>
-                    </div>
-                    <div className="note-card">
-                      <strong>Closed vocabulary only</strong>
-                      <p>The model can only return tags from this list. Any out-of-vocabulary labels are discarded before storage.</p>
-                    </div>
-                  </div>
-                ) : selectedSettingsSection === "providers" ? (
-                  <div className="source-settings">
-                    <p>Configure backend-only provider access here. API keys stay out of the main metadata database and are stored separately.</p>
-                    <div className="provider-settings-list">
-                      {providerSettings.map((provider) => (
-                        <div key={provider.provider} className="note-card">
-                          <div className="panel-header compact-header">
-                            <div>
-                              <strong>{provider.provider === "gemini" ? "Google Gemini" : provider.provider.toUpperCase()}</strong>
-                              <p className="muted">{provider.api_key_configured ? "API key stored" : "API key not stored"}</p>
-                            </div>
-                            <label className="toggle-row">
-                              <span>Enabled</span>
-                              <input type="checkbox" checked={provider.enabled} onChange={(event) => updateProviderSetting(provider.provider, "enabled", event.target.checked)} />
-                            </label>
-                          </div>
-                          <div className="form-grid">
-                            <label>
-                              <span>Vision model</span>
-                              <input value={provider.vision_model} onChange={(event) => updateProviderSetting(provider.provider, "vision_model", event.target.value)} />
-                            </label>
-                            <label>
-                              <span>Text model</span>
-                              <input value={provider.text_model} onChange={(event) => updateProviderSetting(provider.provider, "text_model", event.target.value)} placeholder="Optional" />
-                            </label>
-                            <label>
-                              <span>API key</span>
-                              <input type="password" value={provider.api_key} onChange={(event) => updateProviderSetting(provider.provider, "api_key", event.target.value)} placeholder={provider.api_key_configured ? "Leave blank to keep stored key" : ""} />
-                            </label>
-                            <label className="toggle-row">
-                              <span>Prefer batch</span>
-                              <input type="checkbox" checked={provider.prefer_batch} onChange={(event) => updateProviderSetting(provider.provider, "prefer_batch", event.target.checked)} />
-                            </label>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="inline-actions">
-                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSaveProviderSettings}>
-                        Save provider settings
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="settings-placeholder">
-                    <span>This section remains a secondary maintenance flow and stays out of the main library view.</span>
-                  </div>
-                )}
-              </section>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <SettingsModal
+        isOpen={activeOverlay === "settings"}
+        onClose={() => setActiveOverlay(null)}
+        settingsSections={settingsSections}
+        selectedSettingsSection={selectedSettingsSection}
+        onSelectSection={setSelectedSettingsSection}
+        source={source}
+        sourceForm={sourceForm}
+        sourceFormIsLocal={sourceFormIsLocal}
+        isWorking={isWorking}
+        localDirectoryBrowser={localDirectoryBrowser}
+        isLocalDirectoryBrowserOpen={isLocalDirectoryBrowserOpen}
+        testResult={testResult}
+        onUpdateSourceField={updateSourceField}
+        onLoadLocalDirectoryBrowser={loadLocalDirectoryBrowser}
+        onSelectLocalDirectory={handleSelectLocalDirectory}
+        onSourceTest={handleSourceTest}
+        onReconnect={handleReconnect}
+        onScanSource={handleScanSource}
+        onSourceSave={handleSourceSave}
+        profileDraft={profileDraft}
+        onUpdateProfileDraft={updateProfileDraft}
+        onCreateProfile={handleCreateProfile}
+        conversionProfiles={conversionProfiles}
+        formatProfileLabel={formatProfileLabel}
+        previewSettings={previewSettings}
+        onUpdatePreviewSetting={updatePreviewSetting}
+        previewPresets={previewPresets}
+        previewPresetName={previewPresetName}
+        onPreviewPresetNameChange={setPreviewPresetName}
+        onLoadPreset={handleLoadPreset}
+        onSavePreset={handleSavePreset}
+        livePreview={livePreview}
+        onSavePreviewSettings={handleSavePreviewSettings}
+        playbackSettings={playbackSettings}
+        onUpdatePlaybackSetting={updatePlaybackSetting}
+        onSavePlaybackSettings={handleSavePlaybackSettings}
+        taggingSettings={taggingSettings}
+        onUpdateTaggingSetting={updateTaggingSetting}
+        onSaveTaggingSettings={handleSaveTaggingSettings}
+        providerSettings={providerSettings}
+        onUpdateProviderSetting={updateProviderSetting}
+        onSaveProviderSettings={handleSaveProviderSettings}
+      />
     </main>
   );
 }

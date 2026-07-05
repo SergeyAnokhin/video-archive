@@ -160,8 +160,9 @@ The backend stores provider API keys in `backend/.local/secrets.json`, keeps pro
 
 - [`frontend/`](frontend/) contains the Vite + React application.
 - [`backend/`](backend/) contains the Python HTTP backend, local schema initialization, and backend tests.
-- [`docs/code-map.md`](docs/code-map.md) maps the current implementation files.
+- [`docs/code-map.md`](docs/code-map.md) routes "where should I read first for this task?" across frontend and backend.
 - [`docs/frontend-map.md`](docs/frontend-map.md) points to the smallest frontend edit paths for common UI work.
+- [`docs/frontend-flows.md`](docs/frontend-flows.md) routes modal, jobs, settings, playback, and log-viewer flows.
 - [`docs/`](docs/) contains the product and architecture specifications that guide the next implementation stages.
 
 ## Documentation
@@ -177,3 +178,4 @@ Core specification set:
 - [`docs/backup-format.md`](docs/backup-format.md)
 - [`docs/code-map.md`](docs/code-map.md)
 - [`docs/frontend-map.md`](docs/frontend-map.md)
+- [`docs/frontend-flows.md`](docs/frontend-flows.md)
