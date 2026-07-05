@@ -157,7 +157,8 @@ class JobService:
                 """
                 SELECT job_items.id, job_items.job_id, job_items.file_id, job_items.item_key,
                        job_items.status, job_items.step_name, job_items.message, job_items.started_at,
-                       job_items.finished_at, job_items.output_ref, files.file_name, files.relative_path
+                       job_items.finished_at, job_items.output_ref, job_items.variant_params,
+                       files.file_name, files.relative_path
                 FROM job_items
                 LEFT JOIN files ON files.id = job_items.file_id
                 WHERE job_items.job_id = ?
@@ -167,6 +168,25 @@ class JobService:
             ).fetchall()
 
         return [self._serialize_job_item_row(row) for row in rows]
+
+    def get_job_item(self, job_id: str, item_id: str) -> dict:
+        self.get_job(job_id)
+        with connection(self._database_path) as conn:
+            row = conn.execute(
+                """
+                SELECT job_items.id, job_items.job_id, job_items.file_id, job_items.item_key,
+                       job_items.status, job_items.step_name, job_items.message, job_items.started_at,
+                       job_items.finished_at, job_items.output_ref, job_items.variant_params,
+                       files.file_name, files.relative_path
+                FROM job_items
+                LEFT JOIN files ON files.id = job_items.file_id
+                WHERE job_items.job_id = ? AND job_items.id = ?
+                """,
+                (job_id, item_id),
+            ).fetchone()
+        if row is None:
+            raise ApiError("job_item_not_found", "Requested job item does not exist.", status=404)
+        return self._serialize_job_item_row(row)
 
     def list_events(
         self,
@@ -321,12 +341,37 @@ class JobService:
 
     def create_tune_file_job(self, file_id: str, sweep: dict | None = None) -> dict:
         file_row = self._require_file(file_id)
+        base_profile = self._conversion_profile_service.resolve_profile(None)
+        variants = _build_tune_variants(sweep or {}, base_profile)
+        item_specs = [
+            {
+                "file_id": file_row["id"],
+                "item_key": variant["label"],
+                "message": f"Queued tuning variant {variant['label']} for {file_row['relative_path']}.",
+                "variant_params": variant,
+            }
+            for variant in variants
+        ]
+        if not item_specs:
+            item_specs = [
+                {
+                    "file_id": file_row["id"],
+                    "item_key": "default",
+                    "message": "No sweep parameters were provided; queued a single baseline variant.",
+                    "variant_params": {
+                        "label": "baseline",
+                        "video_codec": base_profile["video_codec"],
+                        "max_dimension": base_profile["max_dimension"],
+                        "quality_value": base_profile["quality_value"],
+                    },
+                }
+            ]
         return self._create_job(
             job_type="tune",
             scope_type="file",
             scope_ref=file_id,
             parameters={"file_id": file_id, "relative_path": file_row["relative_path"], "sweep": sweep or {}},
-            item_specs=[self._file_item_spec(file_row)],
+            item_specs=item_specs,
         )
 
     def cancel_job(self, job_id: str) -> dict:
@@ -436,8 +481,8 @@ class JobService:
                     """
                     INSERT INTO job_items (
                         id, job_id, file_id, item_key, status, step_name, message,
-                        started_at, finished_at, output_ref
-                    ) VALUES (?, ?, ?, ?, 'queued', ?, ?, NULL, NULL, NULL)
+                        started_at, finished_at, output_ref, variant_params
+                    ) VALUES (?, ?, ?, ?, 'queued', ?, ?, NULL, NULL, NULL, ?)
                     """,
                     (
                         str(uuid.uuid4()),
@@ -446,6 +491,7 @@ class JobService:
                         item_spec.get("item_key"),
                         item_spec.get("step_name"),
                         item_spec.get("message"),
+                        None if item_spec.get("variant_params") is None else json.dumps(item_spec["variant_params"]),
                     ),
                 )
             self._insert_event(conn, job_id=job_id, level="info", event_type="job.queued", message=summary_message, payload=parameters)
@@ -504,6 +550,8 @@ class JobService:
                 summary_message = self._execute_preview_job(job)
             elif job["job_type"] == "tag":
                 summary_message = self._execute_tag_job(job)
+            elif job["job_type"] == "tune":
+                summary_message = self._execute_tune_job(job)
             else:
                 summary_message = self._execute_placeholder_job(job)
             self._complete_job(job["id"], summary_message)
@@ -801,6 +849,86 @@ class JobService:
         if completed == 0:
             return "Tagging job completed with no eligible files."
         return f"Tagging job completed for {completed} item(s)."
+
+    def _execute_tune_job(self, job: dict) -> str:
+        source = self._require_active_source()
+        items = self.list_job_items(job["id"])
+        completed = 0
+        failed = 0
+
+        for item in items:
+            if self._job_cancel_requested(job["id"]):
+                raise _JobCancelled()
+            if not item["file_id"]:
+                self._set_job_item_status(item["id"], "skipped", item["message"] or "No eligible file found.")
+                continue
+
+            file_row = self._get_file_for_conversion(item["file_id"])
+            variant = item["variant_params"] or {}
+            label = variant.get("label", item["item_key"] or "variant")
+            profile = {
+                "id": "tune-variant",
+                "name": f"Tuning variant {label}",
+                "video_codec": variant.get("video_codec", "h265"),
+                "container": "mp4",
+                "max_dimension": variant.get("max_dimension"),
+                "quality_mode": None,
+                "quality_value": variant.get("quality_value"),
+                "drop_audio": variant.get("drop_audio", True),
+                "extra_encoder_args": None,
+            }
+            item_label = f"{file_row['relative_path']} [{label}]"
+            self._set_job_item_status(item["id"], "running", f"Generating tuning output {label} for {file_row['relative_path']}...")
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="tune.item.started",
+                message=f"Started tuning variant {label} for {file_row['relative_path']}.",
+                payload=variant,
+            )
+            try:
+                result = self._conversion_service.convert_file(
+                    source_root=source["root_path"],
+                    file_row=file_row,
+                    profile=profile,
+                    mode="tune",
+                    output_suffix=label,
+                )
+            except ApiError as exc:
+                failed += 1
+                self._set_job_item_status(item["id"], "failed", exc.message)
+                self._append_event(
+                    job_id=job["id"],
+                    file_id=file_row["id"],
+                    level="error",
+                    event_type="tune.item.failed",
+                    message=f"Tuning variant {label} failed for {file_row['relative_path']}: {exc.message}",
+                    payload={"error_code": exc.code, **variant},
+                )
+                continue
+
+            self._set_job_item_status(
+                item["id"],
+                "completed",
+                f"Tuning variant {label} completed for {item_label}.",
+                output_ref=result["output_ref"],
+            )
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="tune.item.completed",
+                message=f"Tuning variant {label} completed for {item_label}.",
+                payload={"output_ref": result["output_ref"], "validation": result["validation"], **variant},
+            )
+            completed += 1
+
+        if failed:
+            raise ApiError("tuning_job_failed", f"Tuning failed for {failed} variant(s); {completed} completed successfully.", status=500)
+        if completed == 0:
+            return "Tuning job completed with no eligible variants."
+        return f"Tuning job completed for {completed} variant(s). Source file was never replaced."
 
     def _execute_placeholder_job(self, job: dict) -> str:
         items = self.list_job_items(job["id"])
@@ -1190,6 +1318,7 @@ class JobService:
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],
             "output_ref": row["output_ref"],
+            "variant_params": None if row["variant_params"] is None else json.loads(row["variant_params"]),
             "file_name": row["file_name"],
             "relative_path": row["relative_path"],
         }
@@ -1213,3 +1342,58 @@ class JobService:
             "item_key": file_row["relative_path"],
             "message": f"Queued for {file_row['relative_path']}.",
         }
+
+
+def _build_tune_variants(sweep: dict, base_profile: dict) -> list[dict]:
+    """Builds one tuning variant per requested sweep value across dimension, quality, and codec axes.
+
+    Sweeps are independent single-axis lists: each dimension value, quality value, and codec value
+    produces its own separate-output variant (not a full cartesian product), matching the tuning
+    workflow's goal of comparing individual parameter changes against the current default profile.
+    """
+
+    dimension_values = sweep.get("dimension_values") or []
+    quality_values = sweep.get("quality_values") or []
+    codec_values = sweep.get("codec_values") or []
+
+    variants: list[dict] = []
+    for value in dimension_values:
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            continue
+        variants.append(
+            {
+                "label": f"dim-{value}",
+                "sweep_axis": "dimension",
+                "video_codec": base_profile["video_codec"],
+                "max_dimension": value,
+                "quality_value": base_profile["quality_value"],
+            }
+        )
+
+    for value in quality_values:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        variants.append(
+            {
+                "label": f"quality-{value.strip()}",
+                "sweep_axis": "quality",
+                "video_codec": base_profile["video_codec"],
+                "max_dimension": base_profile["max_dimension"],
+                "quality_value": value.strip(),
+            }
+        )
+
+    for value in codec_values:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        variants.append(
+            {
+                "label": f"codec-{value.strip()}",
+                "sweep_axis": "codec",
+                "video_codec": value.strip().lower(),
+                "max_dimension": base_profile["max_dimension"],
+                "quality_value": base_profile["quality_value"],
+            }
+        )
+
+    return variants

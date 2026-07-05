@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .app_state import AppState
@@ -13,6 +14,7 @@ from .db import initialize_database
 from .errors import ApiError
 from .job_service import JobService
 from .library_service import LibraryService, normalize_relative_path
+from .playback_service import PlaybackSettingsService
 from .preview_service import PreviewService
 from .provider_settings_service import ProviderSettingsService
 from .secrets import SecretStore
@@ -79,6 +81,10 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.OK, {"providers": _require_app_state().provider_settings_service.get_settings()})
                 return
 
+            if path == "/api/settings/playback":
+                self._write_json(HTTPStatus.OK, {"settings": _require_app_state().playback_service.get_settings()})
+                return
+
             if path == "/api/preview-layouts":
                 self._write_json(HTTPStatus.OK, {"presets": _require_app_state().preview_service.list_layout_presets()})
                 return
@@ -93,6 +99,29 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 file_id = path.removeprefix("/api/files/").removesuffix("/tags")
                 tags = _require_app_state().tagging_service.get_file_tags(file_id)
                 self._write_json(HTTPStatus.OK, {"tags": tags})
+                return
+
+            if path.startswith("/api/files/") and path.endswith("/playback"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/playback")
+                app_state = _require_app_state()
+                file_row = app_state.library_service.get_file_row(file_id)
+                source = app_state.source_service.get_active_source()
+                if source is None:
+                    raise ApiError("source_not_configured", "Configure an active source before resolving playback.", status=400)
+                playback = app_state.playback_service.resolve_playback(file_row=file_row, source=source)
+                self._write_json(HTTPStatus.OK, {"playback": playback})
+                return
+
+            if path.startswith("/api/files/") and path.endswith("/stream"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/stream")
+                file_row = _require_app_state().library_service.get_file_row(file_id)
+                self._stream_file(Path(file_row["path"]))
+                return
+
+            if path.startswith("/api/files/"):
+                file_id = path.removeprefix("/api/files/")
+                detail = _require_app_state().library_service.get_file_detail(file_id)
+                self._write_json(HTTPStatus.OK, {"file": detail})
                 return
 
             if path == "/api/directories/preview":
@@ -127,6 +156,10 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 if job_tail.endswith("/items"):
                     job_id = job_tail.removesuffix("/items")
                     self._write_json(HTTPStatus.OK, {"items": _require_app_state().job_service.list_job_items(job_id)})
+                    return
+                if "/items/" in job_tail:
+                    job_id, item_id = job_tail.split("/items/", 1)
+                    self._write_json(HTTPStatus.OK, {"item": _require_app_state().job_service.get_job_item(job_id, item_id)})
                     return
                 self._write_json(HTTPStatus.OK, {"job": _require_app_state().job_service.get_job(job_tail)})
                 return
@@ -194,6 +227,11 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                     raise ApiError("invalid_request", "Field 'providers' must be an array.", status=400)
                 providers = _require_app_state().provider_settings_service.update_settings(providers_payload)
                 self._write_json(HTTPStatus.OK, {"providers": providers})
+                return
+
+            if path == "/api/settings/playback":
+                settings = _require_app_state().playback_service.update_settings(self._read_json_body())
+                self._write_json(HTTPStatus.OK, {"settings": settings})
                 return
 
             if path.startswith("/api/preview-layouts/"):
@@ -288,6 +326,23 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 payload = self._read_json_body()
                 job = _require_app_state().job_service.create_tune_file_job(_read_required_string(payload, "file_id"), payload.get("sweep"))
                 self._write_json(HTTPStatus.OK, {"job": job})
+                return
+
+            if path == "/api/conversion-profiles/promote-tune":
+                payload = self._read_json_body()
+                app_state = _require_app_state()
+                job_id = _read_required_string(payload, "job_id")
+                item_id = _read_required_string(payload, "item_id")
+                name = _read_required_string(payload, "name")
+                item = app_state.job_service.get_job_item(job_id, item_id)
+                if item["status"] != "completed" or not item["variant_params"]:
+                    raise ApiError("tune_variant_not_promotable", "Only a completed tuning variant can be promoted into a profile.", status=409)
+                profile = app_state.conversion_profile_service.create_profile_from_variant(
+                    name=name,
+                    variant_params=item["variant_params"],
+                    is_default=bool(payload.get("is_default", False)),
+                )
+                self._write_json(HTTPStatus.OK, {"profile": profile})
                 return
 
             if path.startswith("/api/jobs/"):
@@ -407,6 +462,49 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             if APP_STATE is None or APP_STATE.job_service.wait_for_shutdown(timeout=1):
                 return
 
+    def _stream_file(self, file_path: Path) -> None:
+        if not file_path.exists() or not file_path.is_file():
+            raise ApiError("file_not_found", "The requested media file is no longer available on disk.", status=404)
+
+        file_size = file_path.stat().st_size
+        content_type = _guess_content_type(file_path.suffix.lower())
+        range_header = self.headers.get("Range")
+
+        start = 0
+        end = file_size - 1
+        status = HTTPStatus.OK
+        if range_header and range_header.startswith("bytes="):
+            requested = range_header.removeprefix("bytes=").split("-", 1)
+            if requested[0]:
+                start = int(requested[0])
+            if len(requested) > 1 and requested[1]:
+                end = int(requested[1])
+            end = min(end, file_size - 1)
+            status = HTTPStatus.PARTIAL_CONTENT
+
+        chunk_length = end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(chunk_length))
+        self.send_header("Cache-Control", "no-store")
+        if status == HTTPStatus.PARTIAL_CONTENT:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.end_headers()
+
+        try:
+            with file_path.open("rb") as handle:
+                handle.seek(start)
+                remaining = chunk_length
+                while remaining > 0:
+                    chunk = handle.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
 
 def create_app_state() -> AppState:
     config = load_config()
@@ -418,6 +516,7 @@ def create_app_state() -> AppState:
     preview_service = PreviewService(config.database_path, config.data_dir)
     provider_settings_service = ProviderSettingsService(config.database_path, secret_store)
     tagging_service = TaggingService(config.database_path, provider_settings_service)
+    playback_service = PlaybackSettingsService(config.database_path)
     job_service = JobService(
         config.database_path,
         source_service,
@@ -436,6 +535,7 @@ def create_app_state() -> AppState:
         preview_service=preview_service,
         provider_settings_service=provider_settings_service,
         tagging_service=tagging_service,
+        playback_service=playback_service,
         job_service=job_service,
     )
 
@@ -459,6 +559,20 @@ def _require_app_state() -> AppState:
     if APP_STATE is None:
         raise RuntimeError("App state is not initialized.")
     return APP_STATE
+
+
+_CONTENT_TYPES_BY_EXTENSION = {
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".wmv": "video/x-ms-wmv",
+}
+
+
+def _guess_content_type(extension: str) -> str:
+    return _CONTENT_TYPES_BY_EXTENSION.get(extension, "application/octet-stream")
 
 
 def _first_query_value(query: dict[str, list[str]], key: str) -> str | None:

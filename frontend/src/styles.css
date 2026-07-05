@@ -590,6 +590,18 @@ textarea:disabled {
   line-height: 1.6;
 }
 
+.log-console-tall {
+  max-height: 60vh;
+  margin-top: 16px;
+}
+
+.playback-video {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 18px;
+  background: #000;
+}
+
 .settings-shell {
   width: min(1120px, 100%);
 }

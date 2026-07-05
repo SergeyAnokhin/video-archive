@@ -7,6 +7,7 @@ from .conversion_profile_service import ConversionProfileService
 from .db import get_schema_version
 from .job_service import JobService
 from .library_service import LibraryService
+from .playback_service import PlaybackSettingsService
 from .preview_service import PreviewService
 from .provider_settings_service import ProviderSettingsService
 from .source_service import SourceService
@@ -22,6 +23,7 @@ class AppState:
     preview_service: PreviewService
     provider_settings_service: ProviderSettingsService
     tagging_service: TaggingService
+    playback_service: PlaybackSettingsService
     job_service: JobService
 
     def app_info(self) -> dict:

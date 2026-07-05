@@ -101,6 +101,20 @@ class ConversionProfileService:
             )
         return self.get_profile(profile_id)
 
+    def create_profile_from_variant(self, *, name: str, variant_params: dict, is_default: bool = False) -> dict:
+        """Promotes a successful tuning variant's parameters into a saved, reusable conversion profile."""
+
+        payload = {
+            "name": name,
+            "video_codec": variant_params.get("video_codec", "h265"),
+            "container": "mp4",
+            "max_dimension": variant_params.get("max_dimension"),
+            "quality_value": variant_params.get("quality_value"),
+            "drop_audio": variant_params.get("drop_audio", True),
+            "is_default": is_default,
+        }
+        return self.create_profile(payload)
+
     def get_profile(self, profile_id: str) -> dict:
         with connection(self._database_path) as conn:
             row = conn.execute(

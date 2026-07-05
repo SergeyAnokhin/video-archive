@@ -6,12 +6,15 @@ import {
   createPreviewDirectoryJob,
   createPreviewFileJob,
   createTagFileJob,
+  createTuneFileJob,
   createRescanDirectoryJob,
   createScanSourceJob,
   createTagDirectoryJob,
   createPreviewLayout,
   fallbackInfo,
   fetchDirectoryPreview,
+  fetchFileDetail,
+  fetchFilePlayback,
   fetchFilePreview,
   fetchFileTags,
   fetchJob,
@@ -19,6 +22,7 @@ import {
   fetchFiles,
   fetchJobs,
   fetchLogs,
+  fetchPlaybackSettings,
   fetchPreviewLayouts,
   fetchProviderSettings,
   fetchSettings,
@@ -26,8 +30,10 @@ import {
   fetchConversionProfiles,
   generateLivePreview,
   loadAppShellData,
+  promoteTuneVariant,
   reconnectSource,
   restartJob,
+  savePlaybackSettings,
   saveProviderSettings,
   saveSettings,
   saveSource,
@@ -60,6 +66,10 @@ const defaultTaggingSettings = {
   combine_frames: true,
   prefer_batch: true,
   vocabulary: []
+};
+
+const defaultPlaybackSettings = {
+  mode: "embedded"
 };
 
 const defaultProviderSettings = [
@@ -214,6 +224,7 @@ function App() {
   const [previewSettings, setPreviewSettings] = useState(defaultPreviewSettings);
   const [taggingSettings, setTaggingSettings] = useState(defaultTaggingSettings);
   const [providerSettings, setProviderSettings] = useState(defaultProviderSettings);
+  const [playbackSettings, setPlaybackSettings] = useState(defaultPlaybackSettings);
   const [previewPresets, setPreviewPresets] = useState([]);
   const [previewPresetName, setPreviewPresetName] = useState("");
   const [livePreview, setLivePreview] = useState(null);
@@ -223,6 +234,16 @@ function App() {
   const [actionError, setActionError] = useState(null);
   const [testResult, setTestResult] = useState(null);
   const [isWorking, setIsWorking] = useState(false);
+  const [fileDetail, setFileDetail] = useState(null);
+  const [playbackTarget, setPlaybackTarget] = useState(null);
+  const [logFilterJobId, setLogFilterJobId] = useState("");
+  const [logFilterFileId, setLogFilterFileId] = useState("");
+  const [logFilterLevel, setLogFilterLevel] = useState("");
+  const [liveLogEvents, setLiveLogEvents] = useState([]);
+  const [tuneDraft, setTuneDraft] = useState(null);
+  const [tuneJob, setTuneJob] = useState(null);
+  const [tuneItems, setTuneItems] = useState([]);
+  const [promoteDraft, setPromoteDraft] = useState(null);
 
   const treeItems = useMemo(() => flattenTree(tree), [tree]);
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? files[0] ?? null;
@@ -290,7 +311,56 @@ function App() {
   }, [activeOverlay, selectedJobId]);
 
   useEffect(() => {
-    if (activeOverlay !== "settings" || !["preview", "tagging", "providers"].includes(selectedSettingsSection)) {
+    if (activeOverlay !== "tune" || !tuneJob || ["completed", "failed", "cancelled"].includes(tuneJob.status)) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      refreshTuneJob(tuneJob.id);
+    }, 2000);
+    return () => window.clearInterval(intervalId);
+  }, [activeOverlay, tuneJob?.id, tuneJob?.status]);
+
+  useEffect(() => {
+    if (activeOverlay !== "logs") {
+      return undefined;
+    }
+
+    const params = new URLSearchParams();
+    if (logFilterJobId) {
+      params.set("job_id", logFilterJobId);
+    }
+    if (logFilterFileId) {
+      params.set("file_id", logFilterFileId);
+    }
+    if (logFilterLevel) {
+      params.set("level", logFilterLevel);
+    }
+    const query = params.toString();
+
+    fetchLogs({ jobId: logFilterJobId || undefined, limit: 150 })
+      .then((payload) => setLiveLogEvents(payload.events))
+      .catch((error) => setActionError(error.message));
+
+    const eventSource = new EventSource(`/api/logs/stream${query ? `?${query}` : ""}`);
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        setLiveLogEvents((current) => {
+          if (current.some((entry) => entry.stream_id === payload.stream_id)) {
+            return current;
+          }
+          return [...current, payload].slice(-300);
+        });
+      } catch {
+        return;
+      }
+    };
+    return () => eventSource.close();
+  }, [activeOverlay, logFilterJobId, logFilterFileId, logFilterLevel]);
+
+  useEffect(() => {
+    if (activeOverlay !== "settings" || !["preview", "tagging", "providers", "playback"].includes(selectedSettingsSection)) {
       return;
     }
 
@@ -419,6 +489,12 @@ function App() {
             return current ? { ...base, ...current, api_key: "" } : base;
           })
         );
+        return;
+      }
+
+      if (section === "playback") {
+        const playbackPayload = await fetchPlaybackSettings();
+        setPlaybackSettings({ ...defaultPlaybackSettings, ...playbackPayload.settings });
       }
     } catch (error) {
       setActionError(error.message);
@@ -688,6 +764,164 @@ function App() {
     }
   }
 
+  async function handleSavePlaybackSettings() {
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const payload = await savePlaybackSettings(playbackSettings);
+      setPlaybackSettings({ ...defaultPlaybackSettings, ...payload.settings });
+      setActionMessage("Playback settings saved.");
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function openFileDetailOverlay(file = selectedFile) {
+    if (!file) {
+      return;
+    }
+    setActionError(null);
+    setFileDetail(null);
+    setSelectedFileId(file.id);
+    setActiveOverlay("fileDetail");
+    try {
+      const [detailPayload, tagsPayload] = await Promise.all([
+        fetchFileDetail(file.id),
+        fetchFileTags(file.id).catch(() => ({ tags: null }))
+      ]);
+      setFileDetail(detailPayload.file);
+      setSelectedFileTags(tagsPayload.tags);
+    } catch (error) {
+      setActionError(error.message);
+    }
+  }
+
+  async function openPlaybackOverlay(file = selectedFile) {
+    if (!file) {
+      return;
+    }
+    setActionError(null);
+    setPlaybackTarget(null);
+    setActiveOverlay("playback");
+    try {
+      const payload = await fetchFilePlayback(file.id);
+      setPlaybackTarget({ file, ...payload.playback });
+    } catch (error) {
+      setActionError(error.message);
+    }
+  }
+
+  function openLogViewerOverlay() {
+    setLogFilterJobId(selectedJobId ?? "");
+    setLogFilterFileId(selectedFile?.id ?? "");
+    setLogFilterLevel("");
+    setLiveLogEvents([]);
+    setActiveOverlay("logs");
+  }
+
+  function openTuneOverlay(file = selectedFile) {
+    if (!file) {
+      return;
+    }
+    setActionError(null);
+    setTuneJob(null);
+    setTuneItems([]);
+    setTuneDraft({
+      fileId: file.id,
+      fileName: file.file_name,
+      dimensionValues: "1000, 900, 800",
+      qualityValues: "",
+      codecValues: ""
+    });
+    setActiveOverlay("tune");
+  }
+
+  function updateTuneDraft(field, value) {
+    setTuneDraft((current) => (current ? { ...current, [field]: value } : current));
+  }
+
+  function parseCommaSeparatedInts(value) {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isFinite(entry) && entry > 0);
+  }
+
+  function parseCommaSeparatedStrings(value) {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  async function submitTuneJob() {
+    if (!tuneDraft) {
+      return;
+    }
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const sweep = {
+        dimension_values: parseCommaSeparatedInts(tuneDraft.dimensionValues),
+        quality_values: parseCommaSeparatedStrings(tuneDraft.qualityValues),
+        codec_values: parseCommaSeparatedStrings(tuneDraft.codecValues)
+      };
+      const payload = await createTuneFileJob(tuneDraft.fileId, sweep);
+      setActionMessage(payload.job.summary_message);
+      await refreshTuneJob(payload.job.id);
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function refreshTuneJob(jobId = tuneJob?.id) {
+    if (!jobId) {
+      return;
+    }
+    try {
+      const [jobPayload, itemsPayload] = await Promise.all([fetchJob(jobId), fetchJobItems(jobId)]);
+      setTuneJob(jobPayload.job);
+      setTuneItems(itemsPayload.items);
+    } catch (error) {
+      setActionError(error.message);
+    }
+  }
+
+  function openPromoteDialog(item) {
+    setPromoteDraft({
+      jobId: tuneJob.id,
+      itemId: item.id,
+      name: `Tuned ${item.variant_params?.label ?? item.item_key ?? "profile"}`,
+      isDefault: false
+    });
+  }
+
+  async function submitPromoteTuneVariant() {
+    if (!promoteDraft) {
+      return;
+    }
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const payload = await promoteTuneVariant(promoteDraft);
+      setActionMessage(`Saved conversion profile "${payload.profile.name}" from tuning result.`);
+      setPromoteDraft(null);
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
   function handleLoadPreset() {
     const preset = previewPresets.find((entry) => entry.id === previewSettings.layout_preset_id);
     if (!preset) {
@@ -897,6 +1131,9 @@ function App() {
             <button type="button" className="ghost-button" onClick={openJobsOverlay}>
               Jobs
             </button>
+            <button type="button" className="ghost-button" onClick={openLogViewerOverlay}>
+              Logs
+            </button>
             <button
               type="button"
               className="primary-button"
@@ -974,6 +1211,30 @@ function App() {
               <button
                 type="button"
                 className="mini-button"
+                disabled={!source || !selectedFile}
+                onClick={() => openFileDetailOverlay()}
+              >
+                Details
+              </button>
+              <button
+                type="button"
+                className="mini-button"
+                disabled={!source || !selectedFile}
+                onClick={() => openPlaybackOverlay()}
+              >
+                Play
+              </button>
+              <button
+                type="button"
+                className="mini-button"
+                disabled={!source || !selectedFile}
+                onClick={() => openTuneOverlay()}
+              >
+                Tune file
+              </button>
+              <button
+                type="button"
+                className="mini-button"
                 disabled={!source || isWorking}
                 onClick={() => openConvertDialog("directory")}
               >
@@ -1045,6 +1306,7 @@ function App() {
                   key={file.id}
                   className={`file-row ${selectedFile?.id === file.id ? "active" : ""}`}
                   onClick={() => setSelectedFileId(file.id)}
+                  onDoubleClick={() => openFileDetailOverlay(file)}
                 >
                   <div>
                     <strong>{file.file_name}</strong>
@@ -1375,6 +1637,306 @@ function App() {
                 </button>
               </div>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeOverlay === "fileDetail" ? (
+        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
+          <section className="overlay panel modal-shell" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Video details</p>
+                <h2>{fileDetail?.file_name ?? selectedFile?.file_name ?? "Loading..."}</h2>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
+                Close
+              </button>
+            </div>
+
+            {fileDetail ? (
+              <div className="convert-layout">
+                <div className="note-card">
+                  <strong>Metadata summary</strong>
+                  <dl className="meta-list">
+                    <div>
+                      <dt>Relative path</dt>
+                      <dd>{fileDetail.relative_path}</dd>
+                    </div>
+                    <div>
+                      <dt>Size</dt>
+                      <dd>{formatBytes(fileDetail.size_bytes)}</dd>
+                    </div>
+                    <div>
+                      <dt>Modified</dt>
+                      <dd>{formatDate(fileDetail.modified_at)}</dd>
+                    </div>
+                    <div>
+                      <dt>Conversion state</dt>
+                      <dd>{formatStatusLabel(fileDetail.conversion_state)}</dd>
+                    </div>
+                    <div>
+                      <dt>Last converted</dt>
+                      <dd>{formatDate(fileDetail.last_converted_at)}</dd>
+                    </div>
+                    <div>
+                      <dt>Preview state</dt>
+                      <dd>{formatStatusLabel(fileDetail.preview_state)}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {libraryPreview?.image_data_url && libraryPreview.scope === "file" ? (
+                  <div className="note-card preview-layout-card">
+                    <strong>Preview collage</strong>
+                    <img className="preview-image" src={libraryPreview.image_data_url} alt="Preview collage" />
+                  </div>
+                ) : null}
+
+                <div className="note-card">
+                  <strong>Assigned tags</strong>
+                  {selectedFileTags?.tags?.length ? (
+                    <div className="tag-pill-list">
+                      {selectedFileTags.tags.map((tag) => (
+                        <span key={`${tag.tag_key}-${tag.assigned_at}`} className="tree-badge tree-badge-in_progress">
+                          {tag.display_name} {formatConfidence(tag.confidence)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No tags stored for this video yet.</p>
+                  )}
+                </div>
+
+                <div className="inline-actions">
+                  <button type="button" className="mini-button" onClick={() => openPlaybackOverlay(selectedFile)}>
+                    Open playback
+                  </button>
+                  <button type="button" className="mini-button" onClick={() => openConvertDialog("file")}>
+                    Convert file
+                  </button>
+                  <button type="button" className="mini-button" disabled={isWorking} onClick={handleFilePreviewJob}>
+                    Preview file
+                  </button>
+                  <button type="button" className="mini-button" disabled={isWorking} onClick={handleFileTagJob}>
+                    Tag file
+                  </button>
+                  <button type="button" className="mini-button" onClick={() => openTuneOverlay(selectedFile)}>
+                    Tune file
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state compact">
+                <p>Loading video details...</p>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {activeOverlay === "playback" ? (
+        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
+          <section className="overlay panel modal-shell" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Playback</p>
+                <h2>{playbackTarget?.file?.file_name ?? "Loading..."}</h2>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
+                Close
+              </button>
+            </div>
+
+            {playbackTarget ? (
+              playbackTarget.mode === "embedded" ? (
+                <video className="playback-video" controls autoPlay src={playbackTarget.embedded_stream_url}>
+                  Embedded playback is not supported in this browser.
+                </video>
+              ) : (
+                <div className="note-card">
+                  <strong>External opening</strong>
+                  <p>This video opens outside the app according to the configured playback mode.</p>
+                  <p className="muted">Path: {playbackTarget.external_path}</p>
+                  <p className="muted">Link: {playbackTarget.external_link}</p>
+                  <div className="inline-actions">
+                    <a className="ghost-button" href={playbackTarget.external_link}>
+                      Open link
+                    </a>
+                  </div>
+                </div>
+              )
+            ) : (
+              <div className="empty-state compact">
+                <p>Resolving playback target...</p>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {activeOverlay === "logs" ? (
+        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
+          <section className="overlay panel modal-shell" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Log viewer</p>
+                <h2>Near-real-time activity</h2>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
+                Close
+              </button>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                <span>Job ID</span>
+                <input value={logFilterJobId} onChange={(event) => setLogFilterJobId(event.target.value)} placeholder="All jobs" />
+              </label>
+              <label>
+                <span>File ID</span>
+                <input value={logFilterFileId} onChange={(event) => setLogFilterFileId(event.target.value)} placeholder="All files" />
+              </label>
+              <label>
+                <span>Level</span>
+                <select value={logFilterLevel} onChange={(event) => setLogFilterLevel(event.target.value)}>
+                  <option value="">All levels</option>
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warning">Warning</option>
+                  <option value="error">Error</option>
+                </select>
+              </label>
+            </div>
+
+            <pre className="log-console log-console-tall">
+              {liveLogEvents.length
+                ? liveLogEvents
+                    .map(
+                      (event) =>
+                        `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.event_type}  ${event.message}`
+                    )
+                    .join("\n")
+                : "No events yet for the current filters."}
+            </pre>
+          </section>
+        </div>
+      ) : null}
+
+      {activeOverlay === "tune" && tuneDraft ? (
+        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
+          <section className="overlay panel modal-shell" onClick={(event) => event.stopPropagation()}>
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Tuning</p>
+                <h2>{tuneDraft.fileName}</h2>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
+                Close
+              </button>
+            </div>
+
+            <div className="note-card">
+              <strong>Advanced workflow</strong>
+              <p>
+                Tuning always writes separate output files and never replaces the source. Provide comma-separated
+                sweep values for one or more axes, then compare results below and promote a winner into a saved
+                conversion profile.
+              </p>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                <span>Dimension sweep (px)</span>
+                <input
+                  value={tuneDraft.dimensionValues}
+                  onChange={(event) => updateTuneDraft("dimensionValues", event.target.value)}
+                  placeholder="1000, 900, 800"
+                />
+              </label>
+              <label>
+                <span>Quality sweep (CRF)</span>
+                <input
+                  value={tuneDraft.qualityValues}
+                  onChange={(event) => updateTuneDraft("qualityValues", event.target.value)}
+                  placeholder="20, 23, 28"
+                />
+              </label>
+              <label>
+                <span>Codec sweep</span>
+                <input
+                  value={tuneDraft.codecValues}
+                  onChange={(event) => updateTuneDraft("codecValues", event.target.value)}
+                  placeholder="h265, h264"
+                />
+              </label>
+            </div>
+
+            <div className="inline-actions">
+              <button type="button" className="primary-button" disabled={isWorking} onClick={submitTuneJob}>
+                Start tuning sweep
+              </button>
+              {tuneJob ? (
+                <button type="button" className="ghost-button" onClick={() => refreshTuneJob(tuneJob.id)}>
+                  Refresh
+                </button>
+              ) : null}
+            </div>
+
+            {tuneJob ? (
+              <div className="job-items-block">
+                <h4>
+                  Variants · {tuneJob.item_counts.completed}/{tuneJob.item_counts.total} completed
+                </h4>
+                <div className="job-items-list">
+                  {tuneItems.map((item) => (
+                    <article key={item.id} className="job-item-row">
+                      <div>
+                        <strong>{item.variant_params?.label ?? item.item_key}</strong>
+                        <p className="row-subtitle">{item.message || "-"}</p>
+                      </div>
+                      <span className={`state-pill state-${item.status}`}>{item.status}</span>
+                      {item.status === "completed" ? (
+                        <button type="button" className="mini-button" onClick={() => openPromoteDialog(item)}>
+                          Promote
+                        </button>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {promoteDraft ? (
+              <div className="note-card note-card-success">
+                <strong>Promote variant to conversion profile</strong>
+                <div className="form-grid">
+                  <label className="full-width">
+                    <span>Profile name</span>
+                    <input
+                      value={promoteDraft.name}
+                      onChange={(event) => setPromoteDraft((current) => ({ ...current, name: event.target.value }))}
+                    />
+                  </label>
+                  <label className="toggle-row">
+                    <span>Set as default profile</span>
+                    <input
+                      type="checkbox"
+                      checked={promoteDraft.isDefault}
+                      onChange={(event) => setPromoteDraft((current) => ({ ...current, isDefault: event.target.checked }))}
+                    />
+                  </label>
+                </div>
+                <div className="inline-actions">
+                  <button type="button" className="ghost-button" onClick={() => setPromoteDraft(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="primary-button" disabled={isWorking} onClick={submitPromoteTuneVariant}>
+                    Save as profile
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}
@@ -1756,6 +2318,37 @@ function App() {
                       <button type="button" className="primary-button" disabled={isWorking} onClick={handleSaveProviderSettings}>
                         Save provider settings
                       </button>
+                    </div>
+                  </div>
+                ) : selectedSettingsSection === "playback" ? (
+                  <div className="source-settings">
+                    <p>
+                      Choose how videos open from the library: play them embedded in-app, or open them externally
+                      by path or link when the environment supports it.
+                    </p>
+                    <div className="form-grid">
+                      <label className="full-width">
+                        <span>Playback mode</span>
+                        <select
+                          value={playbackSettings.mode}
+                          onChange={(event) => setPlaybackSettings({ ...playbackSettings, mode: event.target.value })}
+                        >
+                          <option value="embedded">Embedded modal playback</option>
+                          <option value="external">External opening by path or link</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="inline-actions">
+                      <button type="button" className="primary-button" disabled={isWorking} onClick={handleSavePlaybackSettings}>
+                        Save playback settings
+                      </button>
+                    </div>
+                    <div className="note-card">
+                      <strong>Behavior</strong>
+                      <p>
+                        Embedded mode streams the file through the backend into an in-app player. External mode
+                        resolves the file's direct path and a protocol-appropriate link instead of streaming it.
+                      </p>
                     </div>
                   </div>
                 ) : (

@@ -13,10 +13,17 @@ from .errors import ApiError
 CODEC_ALIASES = {
     "h265": {"hevc", "h265"},
     "hevc": {"hevc", "h265"},
+    "h264": {"h264", "avc"},
 }
 
 CONTAINER_ALIASES = {
     "mp4": {"mp4", "mov,mp4,m4a,3gp,3g2,mj2"},
+}
+
+CODEC_ENCODER_MAP = {
+    "h265": "libx265",
+    "hevc": "libx265",
+    "h264": "libx264",
 }
 
 
@@ -25,7 +32,7 @@ class ConversionService:
         self._ffmpeg_binary = ffmpeg_binary
         self._ffprobe_binary = ffprobe_binary
 
-    def convert_file(self, *, source_root: str, file_row: dict, profile: dict, mode: str) -> dict:
+    def convert_file(self, *, source_root: str, file_row: dict, profile: dict, mode: str, output_suffix: str | None = None) -> dict:
         source_path = Path(file_row["path"])
         source_root_path = Path(source_root)
         if not source_path.exists():
@@ -41,8 +48,10 @@ class ConversionService:
                 final_path = self._replace_source(source_path, temp_output, container)
             elif mode == "test":
                 final_path = self._write_test_output(source_path, temp_output, profile, container)
+            elif mode == "tune":
+                final_path = self._write_tune_output(source_path, temp_output, container, output_suffix)
             else:
-                raise ApiError("invalid_conversion_mode", "Conversion mode must be 'production' or 'test'.", status=400)
+                raise ApiError("invalid_conversion_mode", "Conversion mode must be 'production', 'test', or 'tune'.", status=400)
 
             stat_result = final_path.stat()
             return {
@@ -71,7 +80,7 @@ class ConversionService:
             "-map",
             "0:v:0",
             "-c:v",
-            "libx265",
+            CODEC_ENCODER_MAP.get(str(profile.get("video_codec", "h265")).lower(), "libx265"),
             "-movflags",
             "+faststart",
         ]
@@ -185,6 +194,12 @@ class ConversionService:
     def _write_test_output(self, source_path: Path, temp_output: Path, profile: dict, container: str) -> Path:
         profile_slug = _slugify(profile["name"])
         target_path = source_path.with_name(f"{source_path.stem}.__test__{profile_slug}.{container}")
+        os.replace(temp_output, target_path)
+        return target_path
+
+    def _write_tune_output(self, source_path: Path, temp_output: Path, container: str, output_suffix: str | None) -> Path:
+        suffix_slug = _slugify(output_suffix or uuid.uuid4().hex[:8])
+        target_path = source_path.with_name(f"{source_path.stem}.__tune__{suffix_slug}.{container}")
         os.replace(temp_output, target_path)
         return target_path
 

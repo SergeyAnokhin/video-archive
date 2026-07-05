@@ -36,6 +36,12 @@ Implemented today:
   - `POST /api/jobs/tune-file`
   - `POST /api/jobs/{job_id}/cancel`
   - `POST /api/jobs/{job_id}/restart`
+  - `GET /api/files/{file_id}` (video details modal metadata)
+  - `GET /api/files/{file_id}/playback`
+  - `GET /api/files/{file_id}/stream` (byte-range video streaming for embedded playback)
+  - `GET /api/settings/playback`
+  - `PUT /api/settings/playback`
+  - `POST /api/conversion-profiles/promote-tune`
 - backend local SQLite schema initialization on startup
 - backend local secret file storage outside the main metadata database
 - persisted directory and file metadata from scan results
@@ -44,14 +50,16 @@ Implemented today:
 - real conversion jobs for file and recursive directory scopes with temp output, lightweight validation, production replacement, and separate test outputs
 - real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, persisted preview assets, and directory collage generation
 - real closed-vocabulary tagging jobs for file and recursive directory scopes with configurable sampled-frame count, stored confidence scores, provider-backed inference, and provider-side batch preference
+- real tuning jobs for a single file: independent dimension/quality/codec sweeps, one job item per variant with `variant_params`, always-separate `.__tune__<label>` outputs that never replace the source, and promotion of a completed variant into a new saved conversion profile
 - preview settings persistence with saved presets, live layout preview, and a dedicated preview section in the settings UI
 - tagging settings persistence with allowed vocabulary editing, provider selection, batch preference, and separate provider configuration with API keys stored outside the main database
+- playback settings persistence (embedded modal vs. external open by path/link) plus a resolved per-file playback target and range-capable streaming endpoint
 - frontend source settings flow with test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, tree/file actions, and a jobs modal with detail, items, and live event updates
+- frontend video details modal, playback modal (embedded `<video>` or external path/link), dedicated log viewer modal with job/file/level filtering and live SSE updates, and a tuning modal with sweep inputs, variant comparison, and profile promotion
 
 Not implemented yet:
 
 - protocol-native remote enumeration beyond backend-accessible source paths
-- non-placeholder tune processing
 - backup and maintenance settings workflows
 - UI localization with Russian and English support
 

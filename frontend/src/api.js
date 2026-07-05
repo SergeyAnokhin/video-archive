@@ -319,6 +319,60 @@ export function fetchFileTags(fileId) {
   return requestJson(`/api/files/${encodeURIComponent(fileId)}/tags`, undefined, "File tags");
 }
 
+export function fetchFileDetail(fileId) {
+  return requestJson(`/api/files/${encodeURIComponent(fileId)}`, undefined, "File detail");
+}
+
+export function fetchFilePlayback(fileId) {
+  return requestJson(`/api/files/${encodeURIComponent(fileId)}/playback`, undefined, "File playback");
+}
+
+export function fetchPlaybackSettings() {
+  return requestJson("/api/settings/playback", undefined, "Playback settings load");
+}
+
+export function savePlaybackSettings(payload) {
+  return requestJson(
+    "/api/settings/playback",
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    },
+    "Save playback settings"
+  );
+}
+
+export function createTuneFileJob(fileId, sweep) {
+  return requestJson(
+    "/api/jobs/tune-file",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ file_id: fileId, sweep })
+    },
+    "Tune file"
+  );
+}
+
+export function promoteTuneVariant({ jobId, itemId, name, isDefault }) {
+  return requestJson(
+    "/api/conversion-profiles/promote-tune",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ job_id: jobId, item_id: itemId, name, is_default: Boolean(isDefault) })
+    },
+    "Promote tuning result"
+  );
+}
+
 export function createTagDirectoryJob(relativePath) {
   return requestJson(
     "/api/jobs/tag-directory",

@@ -145,7 +145,8 @@ Current foundation note:
 
 - `scan` and `rescan` perform real metadata refresh work.
 - `convert` now performs real temp-output conversion, lightweight validation, and production or test output handling through the persisted queue, item, and event model.
-- `preview`, `tag`, and `tune` still use the same persisted queue, item, and event model, but their heavy processing steps remain placeholder-only.
+- `tune` now performs real ffmpeg sweeps: each requested dimension/quality/codec value becomes its own job item with `variant_params`, always writes a separate `.__tune__<label>.<ext>` output, and never replaces or renames the source. Completed variants can be promoted into a new saved conversion profile via `POST /api/conversion-profiles/promote-tune`.
+- `preview` and `tag` still use the same persisted queue, item, and event model with real processing.
 
 ## Retention
 

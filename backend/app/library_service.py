@@ -577,6 +577,61 @@ class LibraryService:
             "files_scanned": len(discovered_files),
         }
 
+    def get_file_detail(self, file_id: str) -> dict:
+        with connection(self._database_path) as conn:
+            row = conn.execute(
+                """
+                SELECT id, source_id, relative_path, path, file_name, extension, size_bytes, modified_at,
+                       discovered_at, last_scanned_at, is_video_supported, conversion_state, preview_state,
+                       last_conversion_profile_id, last_converted_at, preview_generated_at, has_preview_assets,
+                       last_error_code, last_error_message, keyframe_timestamps, large_tile_timestamps,
+                       face_detection_summary, body_detection_summary, tagging_updated_at, tagging_model_info
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+
+        return {
+            "id": row["id"],
+            "source_id": row["source_id"],
+            "relative_path": row["relative_path"],
+            "path": row["path"],
+            "file_name": row["file_name"],
+            "extension": row["extension"],
+            "size_bytes": row["size_bytes"],
+            "modified_at": row["modified_at"],
+            "discovered_at": row["discovered_at"],
+            "last_scanned_at": row["last_scanned_at"],
+            "is_video_supported": bool(row["is_video_supported"]),
+            "conversion_state": row["conversion_state"],
+            "preview_state": row["preview_state"],
+            "last_conversion_profile_id": row["last_conversion_profile_id"],
+            "last_converted_at": row["last_converted_at"],
+            "preview_generated_at": row["preview_generated_at"],
+            "has_preview_assets": bool(row["has_preview_assets"]),
+            "last_error_code": row["last_error_code"],
+            "last_error_message": row["last_error_message"],
+            "keyframe_timestamps": None if row["keyframe_timestamps"] is None else json.loads(row["keyframe_timestamps"]),
+            "large_tile_timestamps": None if row["large_tile_timestamps"] is None else json.loads(row["large_tile_timestamps"]),
+            "face_detection_summary": None if row["face_detection_summary"] is None else json.loads(row["face_detection_summary"]),
+            "body_detection_summary": None if row["body_detection_summary"] is None else json.loads(row["body_detection_summary"]),
+            "tagging_updated_at": row["tagging_updated_at"],
+            "tagging_model_info": None if row["tagging_model_info"] is None else json.loads(row["tagging_model_info"]),
+        }
+
+    def get_file_row(self, file_id: str) -> dict:
+        with connection(self._database_path) as conn:
+            row = conn.execute(
+                "SELECT id, source_id, relative_path, path, file_name, extension FROM files WHERE id = ?",
+                (file_id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+        return dict(row)
+
     def _require_active_source(self) -> dict:
         source = self._source_service.get_active_source()
         if source is None:

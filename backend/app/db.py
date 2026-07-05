@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 MIGRATIONS: list[tuple[int, list[str]]] = [
@@ -347,6 +347,23 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             VALUES (
                 'tagging',
                 '{"provider":"openrouter","sample_count":9,"combine_frames":true,"prefer_batch":true}',
+                datetime('now'),
+                datetime('now')
+            )
+            """,
+        ],
+    ),
+    (
+        6,
+        [
+            """
+            ALTER TABLE job_items ADD COLUMN variant_params TEXT NULL
+            """,
+            """
+            INSERT OR IGNORE INTO app_settings (section, payload, created_at, updated_at)
+            VALUES (
+                'playback',
+                '{"mode":"embedded"}',
                 datetime('now'),
                 datetime('now')
             )

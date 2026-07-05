@@ -289,6 +289,27 @@ Rules:
 
 - tuning must never replace the source
 - tuning generates separate outputs
+- each sweep value produces its own job item with `variant_params` (label, codec, max dimension,
+  quality value); axes are independent, not a cartesian product
+- `GET /api/jobs/{job_id}/items` and `GET /api/jobs/{job_id}/items/{item_id}` expose
+  `variant_params` and `output_ref` so the UI can compare generated outputs
+
+### `POST /api/conversion-profiles/promote-tune`
+
+Promotes a completed tuning variant into a new saved conversion profile.
+
+Request body:
+
+```json
+{
+  "job_id": "uuid",
+  "item_id": "uuid",
+  "name": "Promoted from tuning",
+  "is_default": false
+}
+```
+
+The referenced job item must belong to a `tune` job and have status `completed`.
 
 ## 9. Preview Jobs
 
@@ -341,6 +362,40 @@ Response may include:
 - external path
 - external link
 - playback mode
+
+Current implementation returns:
+
+```json
+{
+  "playback": {
+    "mode": "embedded",
+    "embedded_stream_url": "/api/files/{file_id}/stream",
+    "external_path": "/absolute/path/on/backend",
+    "external_link": "smb://host:port/relative/path"
+  }
+}
+```
+
+### `GET /api/files/{file_id}/stream`
+
+Streams the raw video bytes for embedded in-app playback. Supports HTTP `Range` requests
+(`Accept-Ranges: bytes`) so the browser `<video>` element can seek without downloading the
+whole file.
+
+### `GET /api/files/{file_id}`
+
+Returns full metadata for the video details modal: core file fields, conversion/preview
+state, cached analysis fields (keyframe/large-tile timestamps, face/body detection
+summaries), and tagging metadata.
+
+### `GET /api/settings/playback`
+
+Returns the current playback mode (`embedded` or `external`).
+
+### `PUT /api/settings/playback`
+
+Updates the playback mode.
+
 
 ## 12. Logs and Events
 
@@ -444,4 +499,4 @@ Recommended response structure:
 - Endpoints returning directory status should compute recursive progress from files.
 - Job creation endpoints should snapshot relevant profile or settings data into job parameters.
 - The frontend should assume long-running work is asynchronous and job-backed.
-- In the current implementation, `convert`, `preview`, and `tag` endpoints run real backend work backed by saved settings snapshots. `tune` still creates real queued jobs, items, and events but remains placeholder-only.
+- In the current implementation, `convert`, `preview`, `tag`, and `tune` endpoints run real backend work backed by saved settings snapshots. Tuning always writes separate outputs per sweep variant and never replaces the source.
