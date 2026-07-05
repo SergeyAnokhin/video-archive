@@ -251,7 +251,7 @@ Variant comparison (formerly "tuning") is a file-level test-mode conversion that
 - Preview generation builds a collage from sampled video frames.
 - Preview generation supports video previews and folder previews.
 - Folder previews use representative frames from videos in the folder subtree (default: 4 frames).
-- Preview visibility must be globally toggleable in the main UI.
+- Preview visibility must be globally toggleable in the main UI via a small, always-visible icon button in the top bar (grouped with the jobs/theme/language/settings buttons). Toggling is instant and purely client-side: it shows or hides already-rendered preview thumbnails and collages without a backend call, without deleting or regenerating anything, and without a page reload.
 
 ### 9.2 Collage Grid Layout
 
@@ -261,6 +261,7 @@ Variant comparison (formerly "tuning") is a file-level test-mode conversion that
 - The number of sampled frames is therefore derived from the layout: total cells minus cells absorbed by enlarged tiles.
 - Grid dimensions, the number of enlarged tiles, their sizes (2× or 3×), and their placement are configurable (see [Section 10](#10-preview-settings-page)).
 - The application ships with a built-in gallery of layout presets mixing large and small tiles in varied arrangements (large tiles at a corner, along an edge, centered, and so on), modeled on the reference screenshot shared for this project; the user picks a preset or edits a custom layout.
+- The overall collage canvas aspect ratio is configurable independently of grid dimensions: presets include standard ratios, a tall phone-portrait ratio (approximately 19.5:9, matching modern phone screens such as the Samsung Galaxy S24), and ultra-wide ratios (21:9 and wider), plus a custom ratio option (see [Section 10](#10-preview-settings-page)).
 
 ### 9.2.1 Collage Appearance
 
@@ -313,6 +314,7 @@ The application must provide a dedicated preview settings page.
 The page must support:
 
 - configuring the grid dimensions
+- configuring the overall collage aspect ratio (standard, phone-portrait, ultra-wide, or custom — see [Section 9.2](#92-collage-grid-layout))
 - configuring how many enlarged tiles are used and their size (2×2 or 3×3)
 - choosing from the built-in gallery of layout presets
 - configuring timeline flow strategy
@@ -442,6 +444,7 @@ For any selected video, the UI should allow:
 - Primary workflows (browsing the library, opening a video, inspecting details, launching folder/file actions) must remain reachable and usable on a small screen through responsive layout, not a separate mobile codebase.
 - The same screen and interaction structure should apply across desktop and mobile widths, so the interface can later be reused as the basis for a dedicated mobile application without a redesign.
 - Native mobile applications remain out of scope for V1 (see [Section 3](#3-out-of-scope-for-v1)); this requirement covers responsiveness of the existing web UI only.
+- The frontend must be built mobile-first from the start of implementation ([Roadmap Stage 1](./roadmap.md#stage-1--skeleton)), not retrofitted in a later polish stage; portrait orientation is the primary small-screen case to design against, since most phone usage is vertical.
 - See [Design System](./design-system.md) for breakpoints and detailed responsive rules.
 
 ## 12. Tagging

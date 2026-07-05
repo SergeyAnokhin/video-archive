@@ -66,6 +66,7 @@ Job-level defaults (shown in conversion dialogs, not stored per profile):
 Preview settings should include:
 
 - grid dimensions (rows × columns)
+- collage aspect ratio (standard, phone-portrait ~19.5:9, ultra-wide 21:9+, or custom — independent of grid dimensions)
 - enlarged tile count, sizes (2×2 or 3×3 spans), and placement (grid must stay fully covered)
 - layout preset (built-in gallery + user presets + quick save/load slots)
 - timeline flow mode (`row | column | shuffle`)

@@ -8,7 +8,7 @@ The style direction is inspired by reference screenshots of another application 
 
 | Observed pattern | Video Archive equivalent |
 | --- | --- |
-| Slim top bar: logo + title, small icon-only buttons top-right (tasks, theme, language, settings) | Same top bar, icon buttons for Jobs, Theme, Language, Settings |
+| Slim top bar: logo + title, small icon-only buttons top-right (tasks, theme, language, settings) | Same top bar, icon buttons for Jobs, Theme, Language, Settings, and a Preview Visibility toggle |
 | Centered search bar with pill-shaped filter buttons beneath it (Search / AI / Year / Language) | Compact, non-dominant search field at the edge of the toolbar with tag autocomplete; pill filters for scope, status, tags. Search is deliberately smaller than in the reference — it is a secondary convenience, not a central element |
 | Card grid: thumbnail, small type-icon badge top-left, category badge top-right, title + date caption | File/folder cards: thumbnail or preview collage, conversion/preview status badges, name + modified date |
 | Modal with left icon-rail navigation (Indexing, AI settings, Log, Usage, Backup) and stat tiles in a grid | Settings screen and Jobs modal reuse the same icon-rail + stat-tile pattern |
@@ -51,6 +51,12 @@ Colors, copy, and iconography are not copied — only the density, spacing, and 
 - Switching language does not reload the page and does not change layout — only text content and locale-specific formatting (dates, numbers).
 - See [Specification Section 11.9](./specification.md#119-localization) and [Settings Specification Section 9](./settings-spec.md#9-interface-settings).
 
+### 4.1 Preview Visibility Toggle
+
+- A small, always-visible icon button sits in the top bar alongside the theme and language toggles: it shows or hides all preview thumbnails and collages across the current view.
+- Toggling is instant and purely client-side/front-end state: no backend call, no regeneration of assets, no page reload, and no change to layout or navigation.
+- This is a display preference for the current session, not a data-changing action — preview files on disk are untouched.
+
 ## 5. Responsive Breakpoints
 
 | Range | Layout |
@@ -63,6 +69,7 @@ Additional rules:
 
 - Touch targets (icon buttons, cards, list rows) must be at least 40x40 logical pixels on mobile widths.
 - The same component tree and navigation structure is reused across all breakpoints; there is no separate mobile-only screen set, so the same interface can later become the basis for a dedicated mobile application (see [Specification Section 11.11](./specification.md#1111-responsive-and-mobile-support)).
+- Layouts are designed mobile-first, with portrait orientation as the primary small-screen case (most phones are used vertically). Mobile-first foundations are established from [Roadmap Stage 1](./roadmap.md#stage-1--skeleton), not deferred to a later polish pass.
 
 ## 6. Non-Goals
 

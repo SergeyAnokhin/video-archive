@@ -10,7 +10,7 @@ This document defines the main screens, modals, and interaction surfaces for Vid
 - Prioritize browsing and quick actions over advanced tuning controls
 - Move rare or advanced controls into settings, modals, or secondary panels
 - Show incomplete indicators, but hide success-only indicators; running/failed activity is surfaced through the jobs UI, not per-file badges
-- Small, icon-only buttons for global/secondary actions (jobs, settings, theme, language) grouped in the top bar, in the spirit of the reference screenshots in [Design System](./design-system.md)
+- Small, icon-only buttons for global/secondary actions (jobs, settings, theme, language, preview visibility) grouped in the top bar, in the spirit of the reference screenshots in [Design System](./design-system.md)
 - A compact activity indicator appears in the top bar whenever a job is queued or running: hover shows what the job is doing, click opens the jobs modal
 - A compact, non-dominant search field sits at the edge of the toolbar (tag autocomplete + file names); it must not become a central element
 - Two theme presets available (Strict default, Playful optional), switchable from the top bar without changing layout or navigation
@@ -31,7 +31,7 @@ Main regions:
 - directory tree
 - current folder contents
 - toolbar (with compact search field)
-- optional preview visibility toggle
+- preview visibility is controlled globally from the top-bar toggle (see [Design System §4.1](./design-system.md#41-preview-visibility-toggle)), not a per-screen control
 
 Directory actions:
 
@@ -128,6 +128,7 @@ Purpose:
 Controls:
 
 - grid dimensions
+- collage aspect ratio selector (standard, phone-portrait, ultra-wide, or custom — see [Specification §9.2](./specification.md#92-collage-grid-layout))
 - construction-set layout editor: paint cells with two tile brushes (small / enlarged 2×2 or 3×3), quick brush switching
 - built-in preset gallery (varied large/small tile arrangements, selectable at a click)
 - Fill all / Clear all actions

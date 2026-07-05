@@ -10,9 +10,10 @@ Scope:
 
 - Root `package.json` orchestration (`npm run dev` starts both halves) per [Tech Stack](./tech-stack.md).
 - `frontend/`: Vite + React + TypeScript shell with dark Strict theme base, top bar, i18n scaffold (EN/RU from day one).
+- Mobile-first responsive foundations established from this stage, not deferred: breakpoints and layout primitives per [Design System §5](./design-system.md#5-responsive-breakpoints), portrait orientation as the primary small-screen case.
 - `backend/`: FastAPI app with `GET /api/health` and `GET /api/app/info` (including ffmpeg availability), SQLite initialization with schema versioning.
 
-Done when: `npm.cmd run dev` from the root starts both servers; the frontend shows backend status; both languages switch live.
+Done when: `npm.cmd run dev` from the root starts both servers; the frontend shows backend status; both languages switch live; the shell layout is already responsive down to mobile/portrait widths.
 
 ## Stage 2 — Local Source, Scan, Browsing
 
@@ -94,7 +95,7 @@ Done when: switching sources warns and wipes; a backup made before the wipe rest
 Scope:
 
 - Playful theme preset and decorative animations ([Design System §2.2](./design-system.md#22-playful)).
-- Responsive/mobile refinement pass ([Design System §5](./design-system.md#5-responsive-breakpoints)).
+- Responsive/mobile refinement pass ([Design System §5](./design-system.md#5-responsive-breakpoints)) — polish only; mobile-first foundations already exist from Stage 1.
 - Optional: similar video detection ([Specification §13](./specification.md#13-similar-video-detection)).
 - Optional: WebDAV source; provider batch tagging modes.
 
