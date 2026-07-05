@@ -2020,14 +2020,18 @@ function App() {
                           placeholder="Default"
                         />
                       </label>
+                      </>
+                      ) : null}
                       <label className="full-width">
                         <span>Root path</span>
                         <input
                           value={sourceForm.root_path}
                           onChange={(event) => updateSourceField("root_path", event.target.value)}
-                          placeholder="Accessible path or UNC share"
+                          placeholder={sourceForm.protocol === "local" ? "Full path to local folder, e.g. C:\\Videos or /mnt/videos" : "Accessible path or UNC share"}
                         />
                       </label>
+                      {sourceForm.protocol !== "local" ? (
+                      <>
                       <label>
                         <span>Username</span>
                         <input
