@@ -191,6 +191,11 @@ Query parameters:
 
 Returns a job summary.
 
+Current foundation response also includes:
+
+- `cancel_requested_at`
+- `item_counts` with queued, running, completed, failed, cancelled, skipped, and total counts
+
 ### `GET /api/jobs/{job_id}/items`
 
 Returns item-level progress for a job.
@@ -341,6 +346,12 @@ Recommended transport:
 
 - Server-Sent Events for v1
 
+Current foundation behavior:
+
+- implemented as `text/event-stream`
+- supports filtering by `job_id`
+- streams persisted `app_events` rows for UI-tail updates
+
 ## 13. Settings
 
 ### `GET /api/settings`
@@ -403,3 +414,4 @@ Recommended response structure:
 - Endpoints returning directory status should compute recursive progress from files.
 - Job creation endpoints should snapshot relevant profile or settings data into job parameters.
 - The frontend should assume long-running work is asynchronous and job-backed.
+- In the current foundation, `convert`, `preview`, `tag`, and `tune` endpoints create real queued jobs, items, and events, but heavy media processing is still placeholder-only.

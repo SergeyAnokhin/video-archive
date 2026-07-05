@@ -3,12 +3,12 @@ from __future__ import annotations
 import socket
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from .db import connection
 from .errors import ApiError
 from .secrets import SecretStore
+from .time_utils import utc_now
 
 
 SUPPORTED_PROTOCOLS = {"smb", "ftp", "sftp", "webdav"}
@@ -70,11 +70,17 @@ class SourceService:
 
     def replace_active_source(self, payload: SourcePayload) -> dict:
         source_id = str(uuid.uuid4())
-        now = _utc_now()
+        now = utc_now()
+        current_source = self.get_active_source()
+        password = payload.password
+        if password is None and current_source is not None and current_source["has_password"]:
+            active_secret_ref = self._get_active_secret_ref()
+            password = self._secret_store.get(active_secret_ref)
+
         username_ref, secret_ref = self._secret_store.upsert_source_credentials(
             source_id,
             payload.username,
-            payload.password,
+            password,
         )
 
         with connection(self._database_path) as conn, conn:
@@ -102,17 +108,62 @@ class SourceService:
 
         return self.get_active_source() or {}
 
+    def _get_active_secret_ref(self) -> str | None:
+        with connection(self._database_path) as conn:
+            row = conn.execute(
+                """
+                SELECT secret_ref
+                FROM sources
+                WHERE is_active = 1
+                LIMIT 1
+                """
+            ).fetchone()
+        return None if row is None else row["secret_ref"]
+
     def test_connection(self, payload: SourcePayload, connector=None) -> dict:
         connector = connector or _test_socket_connection
         port = payload.port or DEFAULT_PORTS[payload.protocol]
         connector(payload.host, port)
+        root_path = Path(payload.root_path)
+        root_accessible = root_path.exists() and root_path.is_dir()
         return {
-            "ok": True,
+            "ok": root_accessible,
             "protocol": payload.protocol,
             "host": payload.host,
             "port": port,
-            "message": "TCP connection succeeded.",
+            "root_path": payload.root_path,
+            "root_accessible": root_accessible,
+            "message": (
+                "TCP connection succeeded and the root path is accessible."
+                if root_accessible
+                else "TCP connection succeeded, but the root path is not accessible on this machine yet."
+            ),
         }
+
+    def reconnect_active_source(self, connector=None) -> dict:
+        source = self.get_active_source()
+        if source is None:
+            raise ApiError("source_not_configured", "No active source is configured.", status=400)
+
+        payload = SourcePayload(
+            name=source["name"],
+            protocol=source["protocol"],
+            host=source["host"],
+            port=source["port"],
+            root_path=source["root_path"],
+            username=source["username"],
+            password=None,
+        )
+        result = self.test_connection(payload, connector=connector)
+        if result["ok"]:
+            now = utc_now()
+            with connection(self._database_path) as conn, conn:
+                conn.execute(
+                    "UPDATE sources SET last_connected_at = ?, updated_at = ? WHERE id = ?",
+                    (now, now, source["id"]),
+                )
+            result["last_connected_at"] = now
+        return result
 
 
 def parse_source_payload(raw: dict) -> SourcePayload:
@@ -177,7 +228,3 @@ def _test_socket_connection(host: str, port: int) -> None:
             f"Unable to reach remote source at {host}:{port}.",
             status=400,
         ) from exc
-
-
-def _utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")

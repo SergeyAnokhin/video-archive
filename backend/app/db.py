@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 MIGRATIONS: list[tuple[int, list[str]]] = [
@@ -147,6 +147,10 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             )
             """,
             """
+            CREATE INDEX IF NOT EXISTS idx_job_items_job_id
+            ON job_items(job_id)
+            """,
+            """
             CREATE TABLE IF NOT EXISTS tag_catalog (
                 id TEXT PRIMARY KEY,
                 tag_key TEXT NOT NULL UNIQUE,
@@ -198,6 +202,34 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
                 FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE SET NULL,
                 FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL
             )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_app_events_job_id_created_at
+            ON app_events(job_id, created_at)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_app_events_created_at
+            ON app_events(created_at)
+            """,
+        ],
+    ),
+    (
+        2,
+        [
+            """
+            ALTER TABLE jobs ADD COLUMN cancel_requested_at TEXT NULL
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_job_items_job_id
+            ON job_items(job_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_app_events_job_id_created_at
+            ON app_events(job_id, created_at)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_app_events_created_at
+            ON app_events(created_at)
             """,
         ],
     ),

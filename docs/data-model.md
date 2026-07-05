@@ -163,6 +163,7 @@ Top-level task records.
 | `started_at` | datetime nullable | Execution start |
 | `finished_at` | datetime nullable | Execution finish |
 | `summary_message` | text nullable | Human-readable outcome |
+| `cancel_requested_at` | datetime nullable | Best-effort cancellation request timestamp |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
 

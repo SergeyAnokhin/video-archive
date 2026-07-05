@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from .config import AppConfig
 from .db import get_schema_version
+from .job_service import JobService
+from .library_service import LibraryService
 from .source_service import SourceService
 
 
@@ -11,9 +13,12 @@ from .source_service import SourceService
 class AppState:
     config: AppConfig
     source_service: SourceService
+    library_service: LibraryService
+    job_service: JobService
 
     def app_info(self) -> dict:
         active_source = self.source_service.get_active_source()
+        queue = self.job_service.get_queue_summary()
         return {
             "version": self.config.app_version,
             "active_source": (
@@ -32,9 +37,5 @@ class AppState:
                 "path": str(self.config.database_path),
                 "schema_version": get_schema_version(self.config.database_path),
             },
-            "queue": {
-                "status": "idle",
-                "queued_jobs": 0,
-                "running_jobs": 0,
-            },
+            "queue": queue,
         }

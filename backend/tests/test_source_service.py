@@ -77,6 +77,44 @@ class SourceServiceTests(unittest.TestCase):
                 }
             )
 
+    def test_replace_active_source_keeps_existing_password_when_new_payload_omits_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_root = root / "library"
+            source_root.mkdir()
+            db_path = root / "video_archive.db"
+            secrets_path = root / "secrets.json"
+            initialize_database(db_path)
+            service = SourceService(db_path, SecretStore(secrets_path))
+
+            initial = parse_source_payload(
+                {
+                    "name": "Archive NAS",
+                    "protocol": "smb",
+                    "host": "nas.local",
+                    "port": 445,
+                    "root_path": str(source_root),
+                    "username": "user",
+                    "password": "secret",
+                }
+            )
+            service.replace_active_source(initial)
+
+            updated = parse_source_payload(
+                {
+                    "name": "Archive NAS 2",
+                    "protocol": "smb",
+                    "host": "nas-2.local",
+                    "port": 445,
+                    "root_path": str(source_root),
+                    "username": "user",
+                }
+            )
+            saved = service.replace_active_source(updated)
+
+            self.assertEqual(saved["name"], "Archive NAS 2")
+            self.assertTrue(saved["has_password"])
+
 
 if __name__ == "__main__":
     unittest.main()

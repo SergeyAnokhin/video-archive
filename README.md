@@ -14,14 +14,40 @@ Implemented today:
   - `GET /api/source`
   - `PUT /api/source`
   - `POST /api/source/test-connection`
+- backend source reconnect endpoint:
+  - `POST /api/source/reconnect`
+- backend source scan and browse endpoints:
+  - `GET /api/tree`
+  - `GET /api/files`
+  - `GET /api/jobs`
+  - `GET /api/jobs/{job_id}`
+  - `GET /api/jobs/{job_id}/items`
+  - `GET /api/logs`
+  - `GET /api/logs/stream`
+  - `POST /api/jobs/scan-source`
+  - `POST /api/jobs/rescan-directory`
+  - `POST /api/jobs/convert-directory`
+  - `POST /api/jobs/preview-directory`
+  - `POST /api/jobs/tag-directory`
+  - `POST /api/jobs/convert-file`
+  - `POST /api/jobs/preview-file`
+  - `POST /api/jobs/tag-file`
+  - `POST /api/jobs/tune-file`
+  - `POST /api/jobs/{job_id}/cancel`
+  - `POST /api/jobs/{job_id}/restart`
 - backend local SQLite schema initialization on startup
 - backend local secret file storage outside the main metadata database
+- persisted directory and file metadata from scan results
+- backend async job queue foundation with persistent job items and structured app events
+- frontend source settings flow with test, save, reconnect, scan, rescan, tree, file listing, and a jobs modal with detail, items, and live event updates
 
 Not implemented yet:
 
-- source connectivity and scanning
-- directory tree and file browser
-- job execution and logs
+- protocol-native remote enumeration beyond backend-accessible source paths
+- heavy conversion execution
+- real preview asset generation
+- real AI tagging outputs
+- non-placeholder tune processing
 - settings persistence and backups
 - UI localization with Russian and English support
 
@@ -77,6 +103,8 @@ On first startup, the backend creates local development state under `backend/.lo
 
 - `video_archive.db` for metadata
 - `secrets.json` for source credentials stored outside the main metadata database
+
+For the current browsing flow, `root_path` must point to a directory that is directly accessible from the backend machine, such as a local path or a reachable UNC share.
 
 Optional local overrides can be placed in `backend/.env.local`. Start from [`backend/.env.example`](backend/.env.example) and set values such as:
 

@@ -141,6 +141,11 @@ Examples:
 - The UI log viewer consumes those events in near real time.
 - Job item progress should be visible without reading raw logs.
 
+Current foundation note:
+
+- `scan` and `rescan` perform real metadata refresh work.
+- `convert`, `preview`, `tag`, and `tune` already use the same persisted queue, item, and event model, but their heavy processing steps are still placeholder-only in the current implementation.
+
 ## Retention
 
 - Completed and failed jobs remain visible until removed by policy or explicit user cleanup.
