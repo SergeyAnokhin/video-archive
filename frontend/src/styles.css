@@ -768,6 +768,22 @@ textarea:disabled {
   gap: 12px;
 }
 
+.local-directory-browser,
+.local-directory-list {
+  display: grid;
+  gap: 12px;
+}
+
+.local-directory-item {
+  display: grid;
+  justify-content: stretch;
+  gap: 4px;
+}
+
+.local-directory-item span:last-child {
+  text-align: left;
+}
+
 .toggle-row {
   align-content: end;
 }

@@ -14,6 +14,7 @@ Implemented today:
   - `GET /api/source`
   - `PUT /api/source`
   - `POST /api/source/test-connection`
+  - `GET /api/local-directories`
 - backend source reconnect endpoint:
   - `POST /api/source/reconnect`
 - backend source scan and browse endpoints:
@@ -53,7 +54,7 @@ Implemented today:
 - preview settings persistence with saved presets, live layout preview, and a dedicated preview section in the settings UI
 - playback settings persistence with embedded modal playback and external file-link opening when supported by the local environment
 - tagging settings persistence with allowed vocabulary editing, provider selection, batch preference, and separate provider configuration with API keys stored outside the main database
-- frontend source settings flow with test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, playback settings, conversion profile creation, a video details modal, a dedicated log viewer, a tuning workflow modal, and a jobs modal with detail, items, and live event updates
+- frontend source settings flow with local-folder browsing, test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, playback settings, conversion profile creation, a video details modal, a dedicated log viewer, a tuning workflow modal, and a jobs modal with detail, items, and live event updates
 
 Not implemented yet:
 
@@ -114,7 +115,7 @@ On first startup, the backend creates local development state under `backend/.lo
 - `video_archive.db` for metadata
 - `secrets.json` for source credentials stored outside the main metadata database
 
-For the current browsing flow, `root_path` must point to a directory that is directly accessible from the backend machine, such as a local path or a reachable UNC share.
+For the current browsing flow, `root_path` must point to a directory that is directly accessible from the backend machine, such as a local path or a reachable UNC share. The source settings screen now supports a `Local folder` mode with a backend-driven directory browser for test libraries on the same machine.
 
 Optional local overrides can be placed in `backend/.env.local`. Start from [`backend/.env.example`](backend/.env.example) and set values such as:
 

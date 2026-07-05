@@ -43,6 +43,14 @@ Response fields:
 
 Returns the currently configured source.
 
+### `GET /api/local-directories`
+
+Lists backend-local directories for the source settings folder picker.
+
+Query parameters:
+
+- `path` optional absolute path to browse, or omitted to return Windows drive roots
+
 ### `PUT /api/source`
 
 Creates or replaces the active source configuration.
@@ -51,18 +59,16 @@ Request body:
 
 ```json
 {
-  "name": "Archive NAS",
-  "protocol": "smb",
-  "host": "nas.local",
-  "port": 445,
-  "root_path": "/videos",
-  "username": "user",
-  "password": "secret"
+  "name": "Test Library",
+  "protocol": "local",
+  "root_path": "C:\\Videos\\Test Library"
 }
 ```
 
 Notes:
 
+- `protocol` currently supports `local`, `smb`, `ftp`, `sftp`, and `webdav`.
+- local sources skip TCP probing and only validate backend access to `root_path`.
 - Secrets may be routed into secret storage rather than the main database.
 - Only one active source is supported.
 

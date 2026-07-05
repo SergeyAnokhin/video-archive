@@ -16,6 +16,7 @@ import {
   fetchConversionProfiles,
   fetchDirectoryPreview,
   fetchFileDetails,
+  fetchLocalDirectories,
   fetchFilePreview,
   fetchFileTags,
   fetchJobs,
@@ -48,6 +49,12 @@ const emptySourceForm = {
   root_path: "",
   username: "",
   password: ""
+};
+
+const emptyLocalDirectoryBrowser = {
+  path: "",
+  parent_path: null,
+  directories: []
 };
 
 const defaultPreviewSettings = {
@@ -141,15 +148,30 @@ function toSourceForm(source) {
 }
 
 function toSourcePayload(form) {
+  const isLocal = form.protocol === "local";
   return {
     name: form.name.trim(),
     protocol: form.protocol,
-    host: form.host.trim(),
-    port: form.port === "" ? null : Number(form.port),
+    host: isLocal ? null : form.host.trim(),
+    port: isLocal || form.port === "" ? null : Number(form.port),
     root_path: form.root_path.trim(),
-    username: form.username.trim() || null,
-    password: form.password.trim() || null
+    username: isLocal ? null : form.username.trim() || null,
+    password: isLocal ? null : form.password.trim() || null
   };
+}
+
+function isLocalProtocol(protocol) {
+  return protocol === "local";
+}
+
+function formatSourceSummary(source) {
+  if (!source) {
+    return "Configure one active source to enable scan and browsing";
+  }
+  if (isLocalProtocol(source.protocol)) {
+    return `LOCAL - ${source.root_path}`;
+  }
+  return `${source.protocol.toUpperCase()} - ${source.host} - ${source.root_path}`;
 }
 
 function formatStatusLabel(value) {
@@ -316,15 +338,15 @@ function App() {
   const [actionMessage, setActionMessage] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [testResult, setTestResult] = useState(null);
+  const [localDirectoryBrowser, setLocalDirectoryBrowser] = useState(emptyLocalDirectoryBrowser);
+  const [isLocalDirectoryBrowserOpen, setIsLocalDirectoryBrowserOpen] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const logConsoleRef = useRef(null);
 
   const treeItems = useMemo(() => flattenTree(tree), [tree]);
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? files[0] ?? null;
   const liveSourceLabel = source?.name ?? info.active_source?.name ?? "No active source";
-  const liveSourceMeta = source
-    ? `${source.protocol.toUpperCase()} - ${source.host} - ${source.root_path}`
-    : "Configure one active source to enable scan and browsing";
+  const liveSourceMeta = formatSourceSummary(source);
   const queueSummary = `${info.queue.running_jobs} running - ${info.queue.queued_jobs} queued`;
   const backendLabel =
     health.state === "ready"
@@ -332,10 +354,22 @@ function App() {
       : health.state === "loading"
         ? "Connecting backend"
         : "Backend offline";
+  const sourceFormIsLocal = isLocalProtocol(sourceForm.protocol);
 
   useEffect(() => {
     loadBootstrap();
   }, []);
+
+  useEffect(() => {
+    if (!sourceFormIsLocal) {
+      setIsLocalDirectoryBrowserOpen(false);
+      setLocalDirectoryBrowser(emptyLocalDirectoryBrowser);
+    }
+  }, [sourceFormIsLocal]);
+
+  useEffect(() => {
+    setTestResult(null);
+  }, [sourceForm.protocol]);
 
   useEffect(() => {
     if (!files.length) {
@@ -672,7 +706,45 @@ function App() {
   }
 
   function updateSourceField(field, value) {
-    setSourceForm((current) => ({ ...current, [field]: value }));
+    setSourceForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "protocol") {
+        if (value === "local") {
+          next.host = "";
+          next.port = "";
+          next.username = "";
+          next.password = "";
+        }
+      }
+      return next;
+    });
+  }
+
+  async function loadLocalDirectoryBrowser(path = "") {
+    setIsWorking(true);
+    setActionError(null);
+    try {
+      const payload = await fetchLocalDirectories(path);
+      setLocalDirectoryBrowser({
+        path: payload.path ?? "",
+        parent_path: payload.parent_path ?? null,
+        directories: payload.directories ?? []
+      });
+      setIsLocalDirectoryBrowserOpen(true);
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  function handleSelectLocalDirectory(path) {
+    updateSourceField("root_path", path);
+    if (!sourceForm.name.trim()) {
+      const segments = path.split(/[/\\]+/).filter(Boolean);
+      const leaf = segments[segments.length - 1] ?? path;
+      updateSourceField("name", `Local ${leaf}`);
+    }
   }
 
   function updatePreviewSetting(field, value) {
@@ -2049,7 +2121,9 @@ function App() {
                 <h3>{settingsSections.find((section) => section.id === selectedSettingsSection)?.label}</h3>
                 {selectedSettingsSection === "source" ? (
                   <div className="source-settings">
-                    <p>Video Archive supports one active source at a time. Test connectivity, save the source, then scan it to populate the library tree.</p>
+                    <p>
+                      Video Archive supports one active source at a time. Use a remote protocol for server-backed libraries or switch to a local folder when you want to test directly on this machine.
+                    </p>
                     <div className="form-grid">
                       <label>
                         <span>Name</span>
@@ -2058,34 +2132,48 @@ function App() {
                       <label>
                         <span>Protocol</span>
                         <select value={sourceForm.protocol} onChange={(event) => updateSourceField("protocol", event.target.value)}>
+                          <option value="local">Local folder</option>
                           <option value="smb">SMB</option>
                           <option value="ftp">FTP</option>
                           <option value="sftp">SFTP</option>
                           <option value="webdav">WebDAV</option>
                         </select>
                       </label>
-                      <label>
-                        <span>Host</span>
-                        <input value={sourceForm.host} onChange={(event) => updateSourceField("host", event.target.value)} />
-                      </label>
-                      <label>
-                        <span>Port</span>
-                        <input value={sourceForm.port} onChange={(event) => updateSourceField("port", event.target.value)} placeholder="Default" />
-                      </label>
                       <label className="full-width">
                         <span>Root path</span>
-                        <input value={sourceForm.root_path} onChange={(event) => updateSourceField("root_path", event.target.value)} placeholder="Accessible path or UNC share" />
+                        <input
+                          value={sourceForm.root_path}
+                          onChange={(event) => updateSourceField("root_path", event.target.value)}
+                          placeholder={sourceFormIsLocal ? "C:\\Videos\\Test Library" : "Accessible path or UNC share"}
+                        />
                       </label>
-                      <label>
-                        <span>Username</span>
-                        <input value={sourceForm.username} onChange={(event) => updateSourceField("username", event.target.value)} />
-                      </label>
-                      <label>
-                        <span>Password</span>
-                        <input type="password" value={sourceForm.password} onChange={(event) => updateSourceField("password", event.target.value)} placeholder={source?.has_password ? "Leave blank to keep saved password" : ""} />
-                      </label>
+                      {sourceFormIsLocal ? null : (
+                        <>
+                          <label>
+                            <span>Host</span>
+                            <input value={sourceForm.host} onChange={(event) => updateSourceField("host", event.target.value)} />
+                          </label>
+                          <label>
+                            <span>Port</span>
+                            <input value={sourceForm.port} onChange={(event) => updateSourceField("port", event.target.value)} placeholder="Default" />
+                          </label>
+                          <label>
+                            <span>Username</span>
+                            <input value={sourceForm.username} onChange={(event) => updateSourceField("username", event.target.value)} />
+                          </label>
+                          <label>
+                            <span>Password</span>
+                            <input type="password" value={sourceForm.password} onChange={(event) => updateSourceField("password", event.target.value)} placeholder={source?.has_password ? "Leave blank to keep saved password" : ""} />
+                          </label>
+                        </>
+                      )}
                     </div>
                     <div className="inline-actions">
+                      {sourceFormIsLocal ? (
+                        <button type="button" className="ghost-button" disabled={isWorking} onClick={() => loadLocalDirectoryBrowser(localDirectoryBrowser.path || sourceForm.root_path || "")}>
+                          Browse local folders
+                        </button>
+                      ) : null}
                       <button type="button" className="ghost-button" disabled={isWorking} onClick={handleSourceTest}>
                         Test connection
                       </button>
@@ -2099,12 +2187,60 @@ function App() {
                         Save source
                       </button>
                     </div>
+                    {sourceFormIsLocal && isLocalDirectoryBrowserOpen ? (
+                      <div className="note-card local-directory-browser">
+                        <div className="panel-header compact-header">
+                          <div>
+                            <strong>Local folder browser</strong>
+                            <p className="muted">{localDirectoryBrowser.path || "This PC"}</p>
+                          </div>
+                          <div className="inline-actions">
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              disabled={isWorking || !localDirectoryBrowser.parent_path}
+                              onClick={() => loadLocalDirectoryBrowser(localDirectoryBrowser.parent_path || "")}
+                            >
+                              Up
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-button"
+                              disabled={isWorking || !localDirectoryBrowser.path}
+                              onClick={() => handleSelectLocalDirectory(localDirectoryBrowser.path)}
+                            >
+                              Use this folder
+                            </button>
+                          </div>
+                        </div>
+                        <div className="local-directory-list">
+                          {localDirectoryBrowser.directories.map((entry) => (
+                            <button
+                              key={entry.path}
+                              type="button"
+                              className="tree-item local-directory-item"
+                              onClick={() => loadLocalDirectoryBrowser(entry.path)}
+                            >
+                              <span>{entry.name}</span>
+                              <span className="row-subtitle">{entry.path}</span>
+                            </button>
+                          ))}
+                          {!localDirectoryBrowser.directories.length ? (
+                            <div className="settings-placeholder compact-placeholder">
+                              <span>No child directories found here.</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     {testResult ? (
                       <div className={`note-card ${testResult.ok ? "note-card-success" : "note-card-warning"}`}>
                         <strong>{testResult.ok ? "Ready to scan" : "Connection partial"}</strong>
                         <p>{testResult.message}</p>
                         <p className="muted">
-                          {testResult.host}:{testResult.port} - {testResult.root_path}
+                          {testResult.protocol === "local"
+                            ? testResult.root_path
+                            : `${testResult.host}:${testResult.port} - ${testResult.root_path}`}
                         </p>
                       </div>
                     ) : null}

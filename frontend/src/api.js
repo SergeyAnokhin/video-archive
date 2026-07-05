@@ -61,6 +61,11 @@ export function fetchTree() {
   return requestJson("/api/tree", undefined, "Tree load");
 }
 
+export function fetchLocalDirectories(path = "") {
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  return requestJson(`/api/local-directories${query}`, undefined, "Local directory list");
+}
+
 export function fetchFiles(directory = "") {
   const query = directory ? `?directory=${encodeURIComponent(directory)}` : "";
   return requestJson(`/api/files${query}`, undefined, "File list");

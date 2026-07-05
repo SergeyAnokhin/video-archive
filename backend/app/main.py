@@ -44,6 +44,13 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.OK, {"source": _require_app_state().source_service.get_active_source()})
                 return
 
+            if path == "/api/local-directories":
+                self._write_json(
+                    HTTPStatus.OK,
+                    _require_app_state().source_service.list_local_directories(_first_query_value(query, "path")),
+                )
+                return
+
             if path == "/api/tree":
                 self._write_json(HTTPStatus.OK, {"tree": _require_app_state().library_service.get_tree()})
                 return

@@ -7,7 +7,7 @@ from pathlib import Path
 from app.db import initialize_database
 from app.errors import ApiError
 from app.secrets import SecretStore
-from app.source_service import SourceService, parse_source_payload
+from app.source_service import LOCAL_SOURCE_PROTOCOL_SENTINEL, SourceService, parse_source_payload
 
 
 class SourceServiceTests(unittest.TestCase):
@@ -76,6 +76,61 @@ class SourceServiceTests(unittest.TestCase):
                     "root_path": "/videos",
                 }
             )
+
+    def test_parse_source_payload_accepts_local_without_host(self) -> None:
+        payload = parse_source_payload(
+            {
+                "name": "Local Test Library",
+                "protocol": "local",
+                "root_path": "C:\\Videos",
+            }
+        )
+
+        self.assertEqual(payload.protocol, "local")
+        self.assertEqual(payload.host, LOCAL_SOURCE_PROTOCOL_SENTINEL)
+        self.assertIsNone(payload.port)
+
+    def test_test_connection_for_local_source_skips_socket_probe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = root / "video_archive.db"
+            secrets_path = root / "secrets.json"
+            initialize_database(db_path)
+            service = SourceService(db_path, SecretStore(secrets_path))
+
+            payload = parse_source_payload(
+                {
+                    "name": "Local Test Library",
+                    "protocol": "local",
+                    "root_path": str(root),
+                }
+            )
+
+            calls: list[tuple[str, int]] = []
+
+            def fake_connector(host: str, port: int) -> None:
+                calls.append((host, port))
+
+            result = service.test_connection(payload, connector=fake_connector)
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["port"], None)
+            self.assertEqual(calls, [])
+
+    def test_list_local_directories_returns_children_for_absolute_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "alpha").mkdir()
+            (root / "beta").mkdir()
+            db_path = root / "video_archive.db"
+            secrets_path = root / "secrets.json"
+            initialize_database(db_path)
+            service = SourceService(db_path, SecretStore(secrets_path))
+
+            listing = service.list_local_directories(str(root))
+
+            self.assertEqual(listing["path"], str(root.resolve()))
+            self.assertEqual([entry["name"] for entry in listing["directories"]], ["alpha", "beta"])
 
     def test_replace_active_source_keeps_existing_password_when_new_payload_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

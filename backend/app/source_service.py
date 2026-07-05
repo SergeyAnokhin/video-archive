@@ -11,7 +11,8 @@ from .secrets import SecretStore
 from .time_utils import utc_now
 
 
-SUPPORTED_PROTOCOLS = {"smb", "ftp", "sftp", "webdav"}
+SUPPORTED_PROTOCOLS = {"local", "smb", "ftp", "sftp", "webdav"}
+LOCAL_SOURCE_PROTOCOL_SENTINEL = "__local__"
 DEFAULT_PORTS = {
     "smb": 445,
     "ftp": 21,
@@ -53,11 +54,13 @@ class SourceService:
 
         username = self._secret_store.get(row["username_ref"])
         has_password = self._secret_store.get(row["secret_ref"]) is not None
+        protocol = "local" if row["protocol"] == "smb" and row["host"] == LOCAL_SOURCE_PROTOCOL_SENTINEL else row["protocol"]
+        host = "" if protocol == "local" else row["host"]
         return {
             "id": row["id"],
             "name": row["name"],
-            "protocol": row["protocol"],
-            "host": row["host"],
+            "protocol": protocol,
+            "host": host,
             "port": row["port"],
             "root_path": row["root_path"],
             "username": username,
@@ -121,11 +124,26 @@ class SourceService:
         return None if row is None else row["secret_ref"]
 
     def test_connection(self, payload: SourcePayload, connector=None) -> dict:
+        root_path = Path(payload.root_path)
+        root_accessible = root_path.exists() and root_path.is_dir()
+        if payload.protocol == "local":
+            return {
+                "ok": root_accessible,
+                "protocol": payload.protocol,
+                "host": payload.host,
+                "port": None,
+                "root_path": payload.root_path,
+                "root_accessible": root_accessible,
+                "message": (
+                    "Local root path is accessible."
+                    if root_accessible
+                    else "Local root path is not accessible on this machine yet."
+                ),
+            }
+
         connector = connector or _test_socket_connection
         port = payload.port or DEFAULT_PORTS[payload.protocol]
         connector(payload.host, port)
-        root_path = Path(payload.root_path)
-        root_accessible = root_path.exists() and root_path.is_dir()
         return {
             "ok": root_accessible,
             "protocol": payload.protocol,
@@ -165,6 +183,32 @@ class SourceService:
             result["last_connected_at"] = now
         return result
 
+    def list_local_directories(self, raw_path: str | None) -> dict:
+        normalized = (raw_path or "").strip()
+        if not normalized:
+            return {
+                "path": "",
+                "parent_path": None,
+                "directories": [{"name": drive, "path": drive} for drive in _list_windows_drives()],
+            }
+
+        candidate = Path(normalized).expanduser()
+        if not candidate.is_absolute():
+            raise ApiError("invalid_path", "Local directory browsing requires an absolute path.", status=400)
+        if not candidate.exists() or not candidate.is_dir():
+            raise ApiError("directory_not_found", "Selected local directory is not available.", status=404)
+
+        resolved = candidate.resolve()
+        directories = sorted(
+            [entry for entry in resolved.iterdir() if entry.is_dir()],
+            key=lambda entry: entry.name.lower(),
+        )
+        return {
+            "path": str(resolved),
+            "parent_path": _parent_directory_path(resolved),
+            "directories": [{"name": entry.name, "path": str(entry.resolve())} for entry in directories],
+        }
+
 
 def parse_source_payload(raw: dict) -> SourcePayload:
     if not isinstance(raw, dict):
@@ -172,7 +216,7 @@ def parse_source_payload(raw: dict) -> SourcePayload:
 
     name = _require_non_empty_string(raw, "name")
     protocol = _require_non_empty_string(raw, "protocol").lower()
-    host = _require_non_empty_string(raw, "host")
+    host = LOCAL_SOURCE_PROTOCOL_SENTINEL if protocol == "local" else _require_non_empty_string(raw, "host")
     root_path = _require_non_empty_string(raw, "root_path")
     username = _optional_string(raw.get("username"))
     password = _optional_string(raw.get("password"))
@@ -181,7 +225,7 @@ def parse_source_payload(raw: dict) -> SourcePayload:
     if protocol not in SUPPORTED_PROTOCOLS:
         raise ApiError(
             "invalid_source_protocol",
-            "Protocol must be one of: smb, ftp, sftp, webdav.",
+            "Protocol must be one of: local, smb, ftp, sftp, webdav.",
             status=400,
         )
 
@@ -190,6 +234,8 @@ def parse_source_payload(raw: dict) -> SourcePayload:
             raise ApiError("invalid_source_port", "Port must be an integer when provided.", status=400)
         if port < 1 or port > 65535:
             raise ApiError("invalid_source_port", "Port must be between 1 and 65535.", status=400)
+        if protocol == "local":
+            raise ApiError("invalid_source_port", "Local sources do not use a TCP port.", status=400)
 
     return SourcePayload(
         name=name,
@@ -228,3 +274,19 @@ def _test_socket_connection(host: str, port: int) -> None:
             f"Unable to reach remote source at {host}:{port}.",
             status=400,
         ) from exc
+
+
+def _list_windows_drives() -> list[str]:
+    drives: list[str] = []
+    for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        drive = f"{letter}:\\"
+        if Path(drive).exists():
+            drives.append(drive)
+    return drives
+
+
+def _parent_directory_path(path: Path) -> str | None:
+    parent = path.parent
+    if parent == path:
+        return None
+    return str(parent)
