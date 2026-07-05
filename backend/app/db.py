@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 MIGRATIONS: list[tuple[int, list[str]]] = [
@@ -249,6 +249,86 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             ) VALUES (
                 'default-h265-mp4', 'Default H.265 MP4', 1, 'h265', 'mp4', NULL,
                 NULL, NULL, 1, NULL, datetime('now'), datetime('now')
+            )
+            """,
+        ],
+    ),
+    (
+        4,
+        [
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                section TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS preview_assets (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                asset_kind TEXT NOT NULL CHECK (asset_kind IN ('file', 'directory')),
+                file_id TEXT NULL,
+                directory_relative_path TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                metadata TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+                FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+            )
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_preview_assets_file_unique
+            ON preview_assets(file_id)
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_preview_assets_directory_unique
+            ON preview_assets(source_id, asset_kind, directory_relative_path)
+            WHERE asset_kind = 'directory'
+            """,
+            """
+            ALTER TABLE files ADD COLUMN keyframe_timestamps TEXT NULL
+            """,
+            """
+            ALTER TABLE files ADD COLUMN large_tile_timestamps TEXT NULL
+            """,
+            """
+            ALTER TABLE files ADD COLUMN face_detection_summary TEXT NULL
+            """,
+            """
+            ALTER TABLE files ADD COLUMN body_detection_summary TEXT NULL
+            """,
+            """
+            ALTER TABLE files ADD COLUMN preview_layout_version INTEGER NOT NULL DEFAULT 1
+            """,
+            """
+            ALTER TABLE files ADD COLUMN preview_asset_path TEXT NULL
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_preview_layout_presets_one_default
+            ON preview_layout_presets(is_default)
+            WHERE is_default = 1
+            """,
+            """
+            INSERT OR IGNORE INTO preview_layout_presets (
+                id, name, timeline_flow, sample_count, large_tile_count,
+                identity_diversity_enabled, layout_definition, is_default,
+                created_at, updated_at
+            ) VALUES (
+                'default-preview-grid', 'Balanced Grid', 'row', 9, 2,
+                1, '{"kind":"auto-grid","version":1}', 1,
+                datetime('now'), datetime('now')
+            )
+            """,
+            """
+            INSERT OR IGNORE INTO app_settings (section, payload, created_at, updated_at)
+            VALUES (
+                'preview',
+                '{"sample_count":9,"large_tile_count":2,"timeline_flow":"row","identity_diversity_enabled":true,"layout_preset_id":"default-preview-grid"}',
+                datetime('now'),
+                datetime('now')
             )
             """,
         ],

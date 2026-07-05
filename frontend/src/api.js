@@ -70,6 +70,70 @@ export function fetchConversionProfiles() {
   return requestJson("/api/conversion-profiles", undefined, "Conversion profiles");
 }
 
+export function fetchSettings() {
+  return requestJson("/api/settings", undefined, "Settings load");
+}
+
+export function saveSettings(payload) {
+  return requestJson(
+    "/api/settings",
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    },
+    "Save settings"
+  );
+}
+
+export function fetchPreviewLayouts() {
+  return requestJson("/api/preview-layouts", undefined, "Preview presets");
+}
+
+export function createPreviewLayout(payload) {
+  return requestJson(
+    "/api/preview-layouts",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    },
+    "Create preview preset"
+  );
+}
+
+export function updatePreviewLayout(presetId, payload) {
+  return requestJson(
+    `/api/preview-layouts/${encodeURIComponent(presetId)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    },
+    "Update preview preset"
+  );
+}
+
+export function generateLivePreview(payload) {
+  return requestJson(
+    "/api/preview-layouts/preview",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    },
+    "Live preview"
+  );
+}
+
 export function fetchJobs(limit = 20) {
   return requestJson(`/api/jobs?limit=${limit}`, undefined, "Jobs load");
 }
@@ -194,6 +258,29 @@ export function createPreviewDirectoryJob(relativePath) {
     },
     "Preview directory"
   );
+}
+
+export function createPreviewFileJob(fileId) {
+  return requestJson(
+    "/api/jobs/preview-file",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ file_id: fileId })
+    },
+    "Preview file"
+  );
+}
+
+export function fetchFilePreview(fileId) {
+  return requestJson(`/api/files/${encodeURIComponent(fileId)}/preview`, undefined, "File preview");
+}
+
+export function fetchDirectoryPreview(relativePath = "") {
+  const query = `?relative_path=${encodeURIComponent(relativePath)}`;
+  return requestJson(`/api/directories/preview${query}`, undefined, "Directory preview");
 }
 
 export function createTagDirectoryJob(relativePath) {

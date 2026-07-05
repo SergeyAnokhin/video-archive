@@ -389,7 +389,7 @@ class LibraryService:
                     """
                     SELECT id, directory_id, relative_path, path, size_bytes, modified_at,
                            conversion_state, preview_state, has_preview_assets,
-                           last_converted_at, preview_generated_at
+                           last_converted_at, preview_generated_at, preview_asset_path
                     FROM files
                     WHERE source_id = ? AND (
                         relative_path = ? OR
@@ -484,12 +484,15 @@ class LibraryService:
                 has_preview_assets = existing["has_preview_assets"]
                 last_converted_at = existing["last_converted_at"]
                 preview_generated_at = existing["preview_generated_at"]
+                preview_asset_path = existing["preview_asset_path"]
                 if changed:
                     conversion_state = "not_started"
                     preview_state = "not_started"
                     has_preview_assets = 0
                     last_converted_at = None
                     preview_generated_at = None
+                    preview_asset_path = None
+                    conn.execute("DELETE FROM preview_assets WHERE asset_kind = 'file' AND file_id = ?", (existing["id"],))
 
                 conn.execute(
                     """
@@ -497,7 +500,11 @@ class LibraryService:
                     SET directory_id = ?, path = ?, file_name = ?, extension = ?, size_bytes = ?,
                         modified_at = ?, last_scanned_at = ?, is_video_supported = ?,
                         conversion_state = ?, preview_state = ?, last_converted_at = ?,
-                        preview_generated_at = ?, has_preview_assets = ?, last_error_code = NULL,
+                        preview_generated_at = ?, has_preview_assets = ?, keyframe_timestamps = CASE WHEN ? THEN NULL ELSE keyframe_timestamps END,
+                        large_tile_timestamps = CASE WHEN ? THEN NULL ELSE large_tile_timestamps END,
+                        face_detection_summary = CASE WHEN ? THEN NULL ELSE face_detection_summary END,
+                        body_detection_summary = CASE WHEN ? THEN NULL ELSE body_detection_summary END,
+                        preview_asset_path = ?, last_error_code = NULL,
                         last_error_message = NULL, updated_at = ?
                     WHERE id = ?
                     """,
@@ -515,6 +522,11 @@ class LibraryService:
                         last_converted_at,
                         preview_generated_at,
                         has_preview_assets,
+                        int(changed),
+                        int(changed),
+                        int(changed),
+                        int(changed),
+                        preview_asset_path,
                         now,
                         existing["id"],
                     ),
@@ -522,6 +534,8 @@ class LibraryService:
 
             missing_files = sorted(set(existing_files) - set(discovered_files))
             for relative_path in missing_files:
+                file_row = existing_files[relative_path]
+                conn.execute("DELETE FROM preview_assets WHERE asset_kind = 'file' AND file_id = ?", (file_row["id"],))
                 conn.execute(
                     "DELETE FROM files WHERE source_id = ? AND relative_path = ?",
                     (source["id"], relative_path),
@@ -536,6 +550,21 @@ class LibraryService:
                 conn.execute(
                     "DELETE FROM directories WHERE source_id = ? AND relative_path = ?",
                     (source["id"], relative_path),
+                )
+
+            if subtree_prefix:
+                conn.execute(
+                    """
+                    DELETE FROM preview_assets
+                    WHERE asset_kind = 'directory' AND source_id = ?
+                      AND (directory_relative_path = ? OR directory_relative_path LIKE ?)
+                    """,
+                    (source["id"], subtree_prefix, f"{subtree_prefix}/%"),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM preview_assets WHERE asset_kind = 'directory' AND source_id = ?",
+                    (source["id"],),
                 )
 
         return {

@@ -10,6 +10,7 @@ from .conversion_service import ConversionService
 from .db import connection
 from .errors import ApiError
 from .library_service import LibraryService, normalize_relative_path
+from .preview_service import PreviewService
 from .source_service import SourceService
 from .time_utils import utc_now
 
@@ -31,12 +32,14 @@ class JobService:
         library_service: LibraryService,
         conversion_profile_service: ConversionProfileService,
         conversion_service: ConversionService,
+        preview_service: PreviewService,
     ) -> None:
         self._database_path = database_path
         self._source_service = source_service
         self._library_service = library_service
         self._conversion_profile_service = conversion_profile_service
         self._conversion_service = conversion_service
+        self._preview_service = preview_service
         self._stop_event = threading.Event()
         self._wake_event = threading.Event()
         self._worker_thread: threading.Thread | None = None
@@ -250,14 +253,15 @@ class JobService:
             item_specs=item_specs,
         )
 
-    def create_preview_directory_job(self, relative_path: str) -> dict:
+    def create_preview_directory_job(self, relative_path: str, *, preview_settings: dict | None = None) -> dict:
         normalized_path = normalize_relative_path(relative_path)
         item_specs = self._build_directory_item_specs(normalized_path)
+        preview_settings = preview_settings or self._preview_service.resolve_settings_snapshot()
         return self._create_job(
             job_type="preview",
             scope_type="directory",
             scope_ref=normalized_path,
-            parameters={"relative_path": normalized_path, "recursive": True},
+            parameters={"relative_path": normalized_path, "recursive": True, "preview": preview_settings},
             item_specs=item_specs,
         )
 
@@ -289,13 +293,14 @@ class JobService:
             item_specs=[self._file_item_spec(file_row)],
         )
 
-    def create_preview_file_job(self, file_id: str) -> dict:
+    def create_preview_file_job(self, file_id: str, *, preview_settings: dict | None = None) -> dict:
         file_row = self._require_file(file_id)
+        preview_settings = preview_settings or self._preview_service.resolve_settings_snapshot()
         return self._create_job(
             job_type="preview",
             scope_type="file",
             scope_ref=file_id,
-            parameters={"file_id": file_id, "relative_path": file_row["relative_path"]},
+            parameters={"file_id": file_id, "relative_path": file_row["relative_path"], "preview": preview_settings},
             item_specs=[self._file_item_spec(file_row)],
         )
 
@@ -389,8 +394,8 @@ class JobService:
             )
         if job_type == "preview":
             if job["scope_type"] == "file":
-                return self.create_preview_file_job(parameters["file_id"])
-            return self.create_preview_directory_job(parameters.get("relative_path", ""))
+                return self.create_preview_file_job(parameters["file_id"], preview_settings=parameters.get("preview"))
+            return self.create_preview_directory_job(parameters.get("relative_path", ""), preview_settings=parameters.get("preview"))
         if job_type == "tag":
             if job["scope_type"] == "file":
                 return self.create_tag_file_job(parameters["file_id"])
@@ -490,6 +495,8 @@ class JobService:
                 summary_message = self._execute_scan_job(job)
             elif job["job_type"] == "convert":
                 summary_message = self._execute_convert_job(job)
+            elif job["job_type"] == "preview":
+                summary_message = self._execute_preview_job(job)
             else:
                 summary_message = self._execute_placeholder_job(job)
             self._complete_job(job["id"], summary_message)
@@ -618,6 +625,97 @@ class JobService:
         if completed == 0:
             return "Conversion job completed with no eligible files."
         return f"Conversion job completed for {completed} item(s) in {mode} mode using profile {profile['name']}."
+
+    def _execute_preview_job(self, job: dict) -> str:
+        source = self._require_active_source()
+        preview_settings = job["parameters"].get("preview")
+        if not isinstance(preview_settings, dict):
+            preview_settings = self._preview_service.resolve_settings_snapshot()
+        items = self.list_job_items(job["id"])
+        completed = 0
+        failed = 0
+        successful_files: list[dict] = []
+
+        for item in items:
+            if self._job_cancel_requested(job["id"]):
+                raise _JobCancelled()
+            if not item["file_id"]:
+                self._set_job_item_status(item["id"], "skipped", item["message"] or "No eligible file found.")
+                continue
+
+            file_row = self._get_file_for_preview(item["file_id"])
+            item_label = file_row["relative_path"]
+            self._set_job_item_status(item["id"], "running", f"Generating preview for {item_label}...")
+            self._set_file_preview_state(
+                file_id=file_row["id"],
+                state="in_progress",
+                error_code=None,
+                error_message=None,
+            )
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="preview.item.started",
+                message=f"Started preview generation for {item_label}.",
+                payload={"sample_count": preview_settings["sample_count"], "large_tile_count": preview_settings["large_tile_count"]},
+            )
+            try:
+                result = self._preview_service.generate_file_preview(
+                    source_root=source["root_path"],
+                    file_row=file_row,
+                    settings=preview_settings,
+                )
+            except ApiError as exc:
+                failed += 1
+                self._set_job_item_status(item["id"], "failed", exc.message)
+                self._set_file_preview_state(
+                    file_id=file_row["id"],
+                    state="failed",
+                    error_code=exc.code,
+                    error_message=exc.message,
+                )
+                self._append_event(
+                    job_id=job["id"],
+                    file_id=file_row["id"],
+                    level="error",
+                    event_type="preview.item.failed",
+                    message=f"Preview generation failed for {item_label}: {exc.message}",
+                    payload={"error_code": exc.code},
+                )
+                continue
+
+            self._set_job_item_status(
+                item["id"],
+                "completed",
+                f"Preview generated for {item_label}.",
+                output_ref=result["output_ref"],
+            )
+            self._append_event(
+                job_id=job["id"],
+                file_id=file_row["id"],
+                level="info",
+                event_type="preview.item.completed",
+                message=f"Preview generated for {item_label}.",
+                payload={"output_ref": result["output_ref"]},
+            )
+            successful_files.append(file_row)
+            completed += 1
+
+        if job["scope_type"] == "directory" and successful_files:
+            self._preview_service.generate_directory_preview(
+                source_id=source["id"],
+                source_root=source["root_path"],
+                relative_path=normalize_relative_path(job["parameters"].get("relative_path")),
+                settings=preview_settings,
+                file_rows=successful_files,
+            )
+
+        if failed:
+            raise ApiError("preview_job_failed", f"Preview generation failed for {failed} item(s); {completed} completed successfully.", status=500)
+        if completed == 0:
+            return "Preview job completed with no eligible files."
+        return f"Preview job completed for {completed} item(s)."
 
     def _execute_placeholder_job(self, job: dict) -> str:
         items = self.list_job_items(job["id"])
@@ -846,6 +944,22 @@ class JobService:
             raise ApiError("unsupported_file", "Selected file is not eligible for video workflows.", status=400)
         return row
 
+    def _get_file_for_preview(self, file_id: str):
+        with connection(self._database_path) as conn:
+            row = conn.execute(
+                """
+                SELECT id, source_id, directory_id, relative_path, path, file_name, extension, is_video_supported
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+        if row is None:
+            raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+        if not row["is_video_supported"]:
+            raise ApiError("unsupported_file", "Selected file is not eligible for video workflows.", status=400)
+        return row
+
     def _set_file_conversion_state(
         self,
         *,
@@ -891,6 +1005,26 @@ class JobService:
                     now,
                     file_id,
                 ),
+            )
+
+    def _set_file_preview_state(
+        self,
+        *,
+        file_id: str,
+        state: str,
+        error_code: str | None,
+        error_message: str | None,
+    ) -> None:
+        now = utc_now()
+        with connection(self._database_path) as conn, conn:
+            conn.execute(
+                """
+                UPDATE files
+                SET preview_state = ?, has_preview_assets = CASE WHEN ? = 'done' THEN 1 ELSE has_preview_assets END,
+                    last_error_code = ?, last_error_message = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (state, state, error_code, error_message, now, file_id),
             )
 
     def _require_active_source(self) -> dict:

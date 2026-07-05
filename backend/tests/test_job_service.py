@@ -10,6 +10,7 @@ from app.conversion_service import ConversionService
 from app.db import initialize_database
 from app.job_service import JobService
 from app.library_service import LibraryService
+from app.preview_service import PreviewService
 from app.secrets import SecretStore
 from app.source_service import SourceService, parse_source_payload
 
@@ -117,6 +118,32 @@ class JobServiceTests(unittest.TestCase):
             self.assertTrue((target_dir / "One.__test__default-h265-mp4.mp4").exists())
             self.assertEqual(files[0]["conversion_state"], "done")
 
+    def test_preview_job_updates_file_metadata_and_directory_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, source_service, library_service, job_service, source_root = _build_services(tmp)
+            target_dir = source_root / "clips"
+            target_dir.mkdir(parents=True)
+            (target_dir / "One.mp4").write_bytes(b"one")
+            (target_dir / "Two.mp4").write_bytes(b"two")
+            source = source_service.get_active_source()
+            assert source is not None
+            library_service.scan_source(source, "")
+
+            job_service.start()
+            self.addCleanup(job_service.shutdown)
+
+            job = job_service.create_preview_directory_job("clips")
+            completed = _wait_for_terminal_status(job_service, job["id"])
+            files = library_service.list_files("clips")
+            events = job_service.list_events(job_id=job["id"], limit=50)
+            directory_preview = job_service._preview_service.get_directory_preview(source["id"], "clips")
+
+            self.assertEqual(completed["status"], "completed")
+            self.assertTrue(all(file["preview_state"] == "done" for file in files))
+            self.assertTrue(all(file["has_preview_assets"] for file in files))
+            self.assertIsNotNone(directory_preview)
+            self.assertTrue(any(event["event_type"] == "preview.item.completed" for event in events))
+
 
 def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobService, Path]:
     root = Path(tmp)
@@ -138,12 +165,14 @@ def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobS
     source_service.replace_active_source(payload)
     library_service = LibraryService(db_path, source_service)
     profile_service = ConversionProfileService(db_path)
+    preview_service = FakePreviewService(db_path, root / ".local")
     job_service = JobService(
         db_path,
         source_service,
         library_service,
         profile_service,
         FakeConversionService(),
+        preview_service,
     )
     return root, source_service, library_service, job_service, source_root
 
@@ -174,6 +203,66 @@ class FakeConversionService(ConversionService):
             "output_ref": str(final_path),
             "validation": {"codec_name": "hevc", "format_name": "mp4"},
         }
+
+
+class FakePreviewService(PreviewService):
+    def __init__(self, database_path: Path, data_dir: Path) -> None:
+        super().__init__(database_path, data_dir)
+
+    def generate_file_preview(self, *, source_root: str, file_row: dict, settings: dict) -> dict:
+        output_path = self._preview_dir / "files" / f"{file_row['id']}.jpg"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"fake-preview")
+        metadata = {
+            "scope_type": "file",
+            "file_id": file_row["id"],
+            "relative_path": file_row["relative_path"],
+            "file_name": file_row["file_name"],
+            "sample_count": settings["sample_count"],
+            "large_tile_count": settings["large_tile_count"],
+            "timeline_flow": settings["timeline_flow"],
+            "identity_diversity_enabled": settings["identity_diversity_enabled"],
+            "layout": {"sample_count": settings["sample_count"], "large_tile_count": settings["large_tile_count"], "tiles": []},
+            "keyframe_timestamps": [1.0, 2.0, 3.0],
+            "large_tile_timestamps": [1.0, 2.0],
+            "face_detection_summary": {"samples_with_faces": 2},
+            "body_detection_summary": {"samples_with_bodies": 1},
+            "layout_version": 1,
+        }
+        self._store_file_preview_asset(
+            source_id=file_row["source_id"],
+            file_id=file_row["id"],
+            relative_path=file_row["relative_path"],
+            image_path=output_path,
+            metadata=metadata,
+        )
+        return {"output_ref": str(output_path), "metadata": metadata}
+
+    def generate_directory_preview(self, *, source_id: str, source_root: str, relative_path: str, settings: dict, file_rows: list[dict]) -> dict | None:
+        output_path = self._preview_dir / "directories" / (relative_path.replace("/", "__") or "root")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path = output_path.with_suffix(".jpg")
+        output_path.write_bytes(b"fake-directory-preview")
+        metadata = {
+            "scope_type": "directory",
+            "relative_path": relative_path,
+            "sample_count": min(settings["sample_count"], len(file_rows)),
+            "large_tile_count": min(settings["large_tile_count"], len(file_rows)),
+            "timeline_flow": settings["timeline_flow"],
+            "identity_diversity_enabled": settings["identity_diversity_enabled"],
+            "layout": {"sample_count": min(settings["sample_count"], len(file_rows)), "large_tile_count": min(settings["large_tile_count"], len(file_rows)), "tiles": []},
+            "keyframe_timestamps": [1.0],
+            "large_tile_timestamps": [1.0],
+            "layout_version": 1,
+            "video_count": len(file_rows),
+        }
+        self._store_directory_preview_asset(
+            source_id=source_id,
+            relative_path=relative_path,
+            image_path=output_path,
+            metadata=metadata,
+        )
+        return {"output_ref": str(output_path), "metadata": metadata}
 
 
 def _wait_for_terminal_status(job_service: JobService, job_id: str, timeout: float = 5) -> dict:

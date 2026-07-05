@@ -1,6 +1,6 @@
 # video-archive
 
-Video Archive is a local-first Windows-targeted application for browsing one remote video source at a time and later adding recursive conversion, preview generation, tagging, settings, and maintenance workflows. The current repository state is an initial implementation skeleton: a React frontend, a Python backend, and a root npm developer entrypoint that starts both together.
+Video Archive is a local-first Windows-targeted application for browsing one remote video source at a time and later adding recursive conversion, preview generation, tagging, settings, and maintenance workflows. The current repository state now includes real conversion and preview foundations: a React frontend, a Python backend, and a root npm developer entrypoint that starts both together.
 
 ## Current Bootstrap Status
 
@@ -42,15 +42,16 @@ Implemented today:
 - backend async job queue foundation with persistent job items and structured app events
 - saved conversion profile bootstrap with a default `H.265` / `MP4` profile
 - real conversion jobs for file and recursive directory scopes with temp output, lightweight validation, production replacement, and separate test outputs
-- frontend source settings flow with test, save, reconnect, scan, rescan, tree, file listing, and a jobs modal with detail, items, and live event updates
+- real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, persisted preview assets, and directory collage generation
+- preview settings persistence with saved presets, live layout preview, and a dedicated preview section in the settings UI
+- frontend source settings flow with test, save, reconnect, scan, rescan, tree, file listing, preview display, and a jobs modal with detail, items, and live event updates
 
 Not implemented yet:
 
 - protocol-native remote enumeration beyond backend-accessible source paths
-- real preview asset generation
 - real AI tagging outputs
 - non-placeholder tune processing
-- settings persistence and backups
+- most non-preview settings persistence and backups
 - UI localization with Russian and English support
 
 ## Local Run
@@ -125,6 +126,16 @@ npm.cmd run test --prefix backend
 ### Conversion runtime dependency
 
 Real conversion jobs now call `ffmpeg` and `ffprobe` from the backend machine. Those binaries must be available on `PATH` for production or test conversion runs to succeed.
+
+### Preview runtime dependencies
+
+Real preview jobs use local Python imaging and detection libraries on the backend machine:
+
+- `opencv-python`
+- `numpy`
+- `Pillow`
+
+Preview generation does not require cloud AI providers. Face prioritization uses OpenCV's local Haar cascade, and figure prioritization uses OpenCV's local HOG person detector.
 
 ## Project Structure
 

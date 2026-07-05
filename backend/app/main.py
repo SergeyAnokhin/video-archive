@@ -13,6 +13,7 @@ from .db import initialize_database
 from .errors import ApiError
 from .job_service import JobService
 from .library_service import LibraryService, normalize_relative_path
+from .preview_service import PreviewService
 from .secrets import SecretStore
 from .source_service import SourceService, parse_source_payload
 
@@ -58,6 +59,32 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                     HTTPStatus.OK,
                     {"profiles": _require_app_state().conversion_profile_service.list_profiles()},
                 )
+                return
+
+            if path == "/api/settings":
+                self._write_json(
+                    HTTPStatus.OK,
+                    {"settings": {"preview": _require_app_state().preview_service.get_settings()}},
+                )
+                return
+
+            if path == "/api/preview-layouts":
+                self._write_json(HTTPStatus.OK, {"presets": _require_app_state().preview_service.list_layout_presets()})
+                return
+
+            if path.startswith("/api/files/") and path.endswith("/preview"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/preview")
+                preview = _require_app_state().preview_service.get_file_preview(file_id)
+                self._write_json(HTTPStatus.OK, {"preview": preview})
+                return
+
+            if path == "/api/directories/preview":
+                relative_path = normalize_relative_path(_first_query_value(query, "relative_path"))
+                source = _require_app_state().source_service.get_active_source()
+                if source is None:
+                    raise ApiError("source_not_configured", "Configure an active source before loading directory previews.", status=400)
+                preview = _require_app_state().preview_service.get_directory_preview(source["id"], relative_path)
+                self._write_json(HTTPStatus.OK, {"preview": preview})
                 return
 
             if path == "/api/jobs":
@@ -123,6 +150,21 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 payload = parse_source_payload(self._read_json_body())
                 source = _require_app_state().source_service.replace_active_source(payload)
                 self._write_json(HTTPStatus.OK, {"source": source})
+                return
+
+            if path == "/api/settings":
+                payload = self._read_json_body()
+                preview_payload = payload.get("preview")
+                if not isinstance(preview_payload, dict):
+                    raise ApiError("invalid_request", "Field 'preview' must be a JSON object.", status=400)
+                settings = _require_app_state().preview_service.update_settings(preview_payload)
+                self._write_json(HTTPStatus.OK, {"settings": {"preview": settings}})
+                return
+
+            if path.startswith("/api/preview-layouts/"):
+                preset_id = path.removeprefix("/api/preview-layouts/")
+                preset = _require_app_state().preview_service.update_layout_preset(preset_id, self._read_json_body())
+                self._write_json(HTTPStatus.OK, {"preset": preset})
                 return
 
             self._not_found()
@@ -192,6 +234,16 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.OK, {"job": job})
                 return
 
+            if path == "/api/preview-layouts":
+                preset = _require_app_state().preview_service.create_layout_preset(self._read_json_body())
+                self._write_json(HTTPStatus.OK, {"preset": preset})
+                return
+
+            if path == "/api/preview-layouts/preview":
+                preview = _require_app_state().preview_service.build_live_preview(self._read_json_body())
+                self._write_json(HTTPStatus.OK, {"preview": preview})
+                return
+
             if path == "/api/jobs/tag-file":
                 job = _require_app_state().job_service.create_tag_file_job(_read_required_string(self._read_json_body(), "file_id"))
                 self._write_json(HTTPStatus.OK, {"job": job})
@@ -218,11 +270,29 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
 
                 self._not_found()
 
+            if path.startswith("/api/preview-layouts/"):
+                preset_id = path.removeprefix("/api/preview-layouts/")
+                preset = _require_app_state().preview_service.update_layout_preset(preset_id, self._read_json_body())
+                self._write_json(HTTPStatus.OK, {"preset": preset})
+                return
+
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
         except (BrokenPipeError, ConnectionResetError):
             return
+
+    def do_DELETE(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
+        try:
+            path = urlparse(self.path).path
+            if path.startswith("/api/preview-layouts/"):
+                preset_id = path.removeprefix("/api/preview-layouts/")
+                _require_app_state().preview_service.delete_layout_preset(preset_id)
+                self._write_json(HTTPStatus.OK, {"ok": True})
+                return
+            self._not_found()
+        except ApiError as exc:
+            self._write_error(exc)
 
     def log_message(self, format: str, *args) -> None:
         print(f"{self.address_string()} - {format % args}")
@@ -309,12 +379,14 @@ def create_app_state() -> AppState:
     source_service = SourceService(config.database_path, SecretStore(config.secrets_path))
     library_service = LibraryService(config.database_path, source_service)
     conversion_profile_service = ConversionProfileService(config.database_path)
+    preview_service = PreviewService(config.database_path, config.data_dir)
     job_service = JobService(
         config.database_path,
         source_service,
         library_service,
         conversion_profile_service,
         ConversionService(),
+        preview_service,
     )
     job_service.start()
     return AppState(
@@ -322,6 +394,7 @@ def create_app_state() -> AppState:
         source_service=source_service,
         library_service=library_service,
         conversion_profile_service=conversion_profile_service,
+        preview_service=preview_service,
         job_service=job_service,
     )
 
