@@ -55,5 +55,13 @@ ENV/
 env/
 pip-wheel-metadata/
 
+# Backend runtime data
+backend/*.db
+backend/*.db-journal
+backend/secrets.env
+
 # Project-local caches
 .npm-cache/
+
+# Local manual-testing fixtures (real video footage, not part of the source tree)
+/test-data/

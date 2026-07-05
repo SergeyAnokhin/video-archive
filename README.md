@@ -4,13 +4,11 @@ Video Archive is a local-first, Windows-targeted web application for browsing a 
 
 ## Current Status
 
-**Specification stage.** The repository currently contains the complete specification set and the root orchestration file only. An earlier implementation prototype was intentionally removed; the implementation will be recreated from scratch following [docs/roadmap.md](docs/roadmap.md).
+**Roadmap Stage 1 ("Skeleton") is implemented.** `frontend/` and `backend/` exist and run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n from day one, talking to a FastAPI backend that reports health, app info (including ffmpeg availability), and initializes a schema-versioned SQLite database. See [docs/roadmap.md](docs/roadmap.md) for what comes next (source browsing, jobs, conversion, previews, tagging, playback).
 
-There is no runnable frontend or backend yet — `npm.cmd run dev` will work again after Roadmap Stage 1 recreates `frontend/` and `backend/`.
+## Local Run
 
-## Planned Local Run
-
-The repository root stays the single developer entrypoint: one command starts frontend and backend together.
+The repository root is the single developer entrypoint: one command starts frontend and backend together.
 
 ### Prerequisites
 
@@ -18,7 +16,7 @@ The repository root stays the single developer entrypoint: one command starts fr
 - Python 3.11+
 - ffmpeg on `PATH` (`winget install ffmpeg`)
 
-### Startup (after Stage 1)
+### Startup
 
 ```powershell
 npm.cmd install
@@ -26,15 +24,32 @@ npm.cmd run dev
 ```
 
 - Frontend: `http://127.0.0.1:5173`
-- Backend: `http://127.0.0.1:8000`
+- Backend: `http://127.0.0.1:8000` (health at `/api/health`, app info at `/api/app/info`)
 
-Frontend and backend will also remain independently runnable from their own directories.
+Frontend and backend also remain independently runnable from their own directories (`npm run dev` inside `frontend/` or `backend/`).
 
 ## Project Structure
 
-- [`package.json`](package.json) — root developer entrypoint that will start frontend and backend together.
+- [`package.json`](package.json) — root developer entrypoint that starts frontend and backend together.
 - [`docs/`](docs/) — the product and architecture specifications that drive the implementation.
-- `frontend/`, `backend/` — to be recreated in Roadmap Stage 1.
+- [`frontend/`](frontend/) — Vite + React + TypeScript app.
+- [`backend/`](backend/) — FastAPI app, SQLite database (git-ignored), schema versioning.
+
+See [docs/code-map.md](docs/code-map.md) for the full file-by-file map.
+
+## Local Test Data
+
+`test-data/VideoArchive/` holds real camera-recording samples for manually exercising the `local` source (scanning, browsing, conversion, etc. from [Stage 2](docs/roadmap.md#stage-2--local-source-scan-browsing) onward). It mirrors what a real source root looks like:
+
+```text
+test-data/VideoArchive/
+  Foscam/2026/05/06/alarm_20260506_144929.mp4
+  ReolinkFront/2026/03/04/ReolinkFront_00_20260304000003.mp4
+```
+
+- Top-level folders are camera names; nested folders are date-partitioned (`YYYY/MM/DD`).
+- This directory is git-ignored (`/test-data/` in [`.gitignore`](.gitignore)) — it stays local, is not committed, and is not part of the application source.
+- To use it as a source, point a `local` source's root path at `test-data/VideoArchive` (or a subfolder of it).
 
 ## Documentation
 

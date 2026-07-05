@@ -1,0 +1,39 @@
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--topbar-height);
+  padding: 0 var(--space-3);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.top-bar__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.top-bar__icon-btn:hover {
+  background: var(--color-surface-raised);
+}
+
+.top-bar__title {
+  font-weight: 600;
+  flex: 1;
+}
+
+/* Desktop: the directory tree is persistent, so the menu toggle is not needed. */
+@media (min-width: 1024px) {
+  .top-bar__menu-toggle {
+    display: none;
+  }
+}

@@ -1,0 +1,101 @@
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  position: relative;
+  min-height: 0;
+}
+
+/* Mobile-first (< 640px): the directory tree is a drawer that overlays the content. */
+.app-nav {
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0;
+  bottom: 0;
+  width: min(80%, 300px);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: var(--space-4);
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 200ms ease;
+  z-index: 20;
+}
+
+.app-nav--open {
+  transform: translateX(0);
+}
+
+.app-nav__title {
+  margin: 0 0 var(--space-2);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.app-nav__placeholder {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.app-nav-backdrop {
+  position: fixed;
+  inset: var(--topbar-height) 0 0 0;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  z-index: 10;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+/* Tablet (640px - 1024px): the tree becomes an inline collapsible panel, no overlay. */
+@media (min-width: 640px) {
+  .app-nav {
+    position: static;
+    top: auto;
+    width: 0;
+    padding: 0;
+    border-right: none;
+    overflow: hidden;
+    transform: none;
+    transition:
+      width 200ms ease,
+      padding 200ms ease;
+    white-space: nowrap;
+  }
+
+  .app-nav--open {
+    width: 220px;
+    padding: var(--space-4);
+    border-right: 1px solid var(--color-border);
+    white-space: normal;
+  }
+
+  .app-nav-backdrop {
+    display: none;
+  }
+}
+
+/* Desktop (> 1024px): the tree is a persistent pane regardless of toggle state. */
+@media (min-width: 1024px) {
+  .app-nav {
+    width: 260px;
+    padding: var(--space-4);
+    border-right: 1px solid var(--color-border);
+    white-space: normal;
+  }
+}

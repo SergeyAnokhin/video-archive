@@ -1,0 +1,38 @@
+{
+  "app": {
+    "title": "Видеоархив"
+  },
+  "topBar": {
+    "menuToggle": "Переключить навигацию",
+    "showPreviews": "Показать превью",
+    "hidePreviews": "Скрыть превью",
+    "settingsToggle": "Настройки"
+  },
+  "language": {
+    "en": "Английский",
+    "ru": "Русский"
+  },
+  "settings": {
+    "title": "Настройки",
+    "close": "Закрыть",
+    "interfaceSection": "Интерфейс",
+    "language": "Язык"
+  },
+  "sidebar": {
+    "title": "Библиотека",
+    "placeholder": "Просмотр каталогов появится на следующем этапе."
+  },
+  "backendStatus": {
+    "title": "Статус бэкенда",
+    "loading": "Подключение к бэкенду…",
+    "error": "Не удалось подключиться к бэкенду: {{message}}",
+    "api": "API",
+    "online": "В сети",
+    "appVersion": "Версия приложения",
+    "database": "База данных",
+    "schemaVersion": "Версия схемы {{version}}",
+    "ffmpeg": "ffmpeg",
+    "ffmpegAvailable": "Доступен ({{version}})",
+    "ffmpegMissing": "Не найден в PATH"
+  }
+}

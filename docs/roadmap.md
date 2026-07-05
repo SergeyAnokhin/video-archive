@@ -26,6 +26,8 @@ Scope:
 
 Done when: a `library` folder next to the backend is scanned and browsable, indicators reflect missing conversions/previews.
 
+Manual testing can point the `local` source at [`test-data/VideoArchive/`](../README.md#local-test-data), a local-only sample of real camera-recording folders (git-ignored, not part of the app).
+
 ## Stage 3 — Job Infrastructure
 
 Scope:

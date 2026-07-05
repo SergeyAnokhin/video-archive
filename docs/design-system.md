@@ -8,7 +8,7 @@ The style direction is inspired by reference screenshots of another application 
 
 | Observed pattern | Video Archive equivalent |
 | --- | --- |
-| Slim top bar: logo + title, small icon-only buttons top-right (tasks, theme, language, settings) | Same top bar, icon buttons for Jobs, Theme, Language, Settings, and a Preview Visibility toggle |
+| Slim top bar: logo + title, small icon-only buttons top-right (tasks, theme, language, settings) | Same top bar, icon buttons for Jobs, Preview Visibility, Theme, and Settings. Language selection lives inside Settings rather than as its own top-bar button (see [§4](#4-localization-presentation)) |
 | Centered search bar with pill-shaped filter buttons beneath it (Search / AI / Year / Language) | Compact, non-dominant search field at the edge of the toolbar with tag autocomplete; pill filters for scope, status, tags. Search is deliberately smaller than in the reference — it is a secondary convenience, not a central element |
 | Card grid: thumbnail, small type-icon badge top-left, category badge top-right, title + date caption | File/folder cards: thumbnail or preview collage, conversion/preview status badges, name + modified date |
 | Modal with left icon-rail navigation (Indexing, AI settings, Log, Usage, Backup) and stat tiles in a grid | Settings screen and Jobs modal reuse the same icon-rail + stat-tile pattern |
@@ -47,15 +47,23 @@ Colors, copy, and iconography are not copied — only the density, spacing, and 
 
 ## 4. Localization Presentation
 
-- The language toggle lives among the small icon buttons in the top bar, next to the theme toggle.
-- Switching language does not reload the page and does not change layout — only text content and locale-specific formatting (dates, numbers).
+- The language control lives in **Settings**, not the top bar: the top bar only exposes the Settings icon button that opens it. Language is a one-time-per-session-ish preference, not something switched constantly, so it doesn't need to occupy prime top-bar real estate the way the preview visibility toggle does ([§4.1](#41-preview-visibility-toggle)).
+- Inside Settings, under an "Interface" section, language is a small labelled option group (e.g. "English" / "Русский" buttons, current selection highlighted) rather than an icon — Settings has room for a text label, so clarity wins over the icon-only compactness rule that applies to the top bar ([§4.2](#42-icon-only-buttons-for-self-evident-actions)).
+- Switching language does not reload the page and does not change layout — only text content and locale-specific formatting (dates, numbers) — and the Settings surface itself re-renders in the new language immediately.
 - See [Specification Section 11.9](./specification.md#119-localization) and [Settings Specification Section 9](./settings-spec.md#9-interface-settings).
 
 ### 4.1 Preview Visibility Toggle
 
-- A small, always-visible icon button sits in the top bar alongside the theme and language toggles: it shows or hides all preview thumbnails and collages across the current view.
+- A small, always-visible icon button sits in the top bar next to the Settings button: it shows or hides all preview thumbnails and collages across the current view.
 - Toggling is instant and purely client-side/front-end state: no backend call, no regeneration of assets, no page reload, and no change to layout or navigation.
 - This is a display preference for the current session, not a data-changing action — preview files on disk are untouched.
+
+### 4.2 Icon-Only Buttons for Self-Evident Actions
+
+- Any control whose action is obvious from a single icon (delete, theme, jobs, settings, preview visibility) is a compact icon-only button: no text label in the UI, just the icon plus an accessible name (`aria-label`/`title`) for assistive tech and tooltips.
+- Icons are drawn from **Lucide** (`lucide-react`) — a thin-stroke, outline icon set used across many modern dashboard/SaaS UIs — imported directly as React components (e.g. `<Settings />`, `<Eye />`). Chosen over emoji (inconsistent, low-fidelity across OSes — e.g. flag emoji rendering as bare letter codes on Windows) and over filled/Material-style icon sets, which read heavier and less consistent with this app's quiet, muted Strict theme.
+- Destructive actions (for example, delete) use a small icon in the danger/red accent color instead of a labelled button — the icon and color communicate the action, so no confirmation text is needed in the button itself (a confirmation step may still gate the action).
+- This keeps the top bar and card actions dense, consistent with the overall density/restraint direction in [Section 1](#1-reference-inspiration).
 
 ## 5. Responsive Breakpoints
 

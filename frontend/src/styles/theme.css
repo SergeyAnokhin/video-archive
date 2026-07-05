@@ -1,0 +1,35 @@
+/*
+ * Strict theme (default, dark). Playful is a later stage; when it lands it
+ * will define its own variable set selected by `[data-theme="playful"]`.
+ */
+:root,
+[data-theme='strict'] {
+  --color-bg: #14161a;
+  --color-surface: #1b1e24;
+  --color-surface-raised: #23272e;
+  --color-border: #2c3138;
+  --color-text: #e6e8eb;
+  --color-text-muted: #9aa0aa;
+  --color-accent: #4f8cff;
+  --color-accent-contrast: #0b1220;
+  --color-success: #3dd68c;
+  --color-danger: #e5484d;
+  --color-warning: #f5a524;
+
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}

@@ -10,6 +10,7 @@ This document fixes the concrete technology choices for Video Archive so that im
 | Build tool | Vite | Dev server on `127.0.0.1:5173`, `/api` proxied to the backend |
 | Localization | i18next (`react-i18next`) | English and Russian resource files, parity required |
 | Styling | Plain CSS with CSS variables | Theme presets (Strict/Playful) switch variable sets; no heavy UI framework |
+| Iconography | Lucide (`lucide-react`) | Thin-stroke outline icon set, imported as React components; avoids emoji (inconsistent/low-fidelity rendering across OSes, e.g. flag emoji on Windows) and reads more consistent with the app's muted Strict theme than filled/Material-style icon sets |
 | Server state | Lightweight fetch hooks or TanStack Query | Keep simple; add TanStack Query only when polling/caching demands it |
 
 ## Backend

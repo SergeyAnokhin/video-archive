@@ -1,0 +1,38 @@
+{
+  "app": {
+    "title": "Video Archive"
+  },
+  "topBar": {
+    "menuToggle": "Toggle navigation",
+    "showPreviews": "Show previews",
+    "hidePreviews": "Hide previews",
+    "settingsToggle": "Settings"
+  },
+  "language": {
+    "en": "English",
+    "ru": "Russian"
+  },
+  "settings": {
+    "title": "Settings",
+    "close": "Close",
+    "interfaceSection": "Interface",
+    "language": "Language"
+  },
+  "sidebar": {
+    "title": "Library",
+    "placeholder": "Directory browsing arrives in a later stage."
+  },
+  "backendStatus": {
+    "title": "Backend status",
+    "loading": "Connecting to backend…",
+    "error": "Could not reach the backend: {{message}}",
+    "api": "API",
+    "online": "Online",
+    "appVersion": "App version",
+    "database": "Database",
+    "schemaVersion": "Schema version {{version}}",
+    "ffmpeg": "ffmpeg",
+    "ffmpegAvailable": "Available ({{version}})",
+    "ffmpegMissing": "Not found on PATH"
+  }
+}
