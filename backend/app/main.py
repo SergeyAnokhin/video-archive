@@ -102,6 +102,14 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.OK, {"preview": preview})
                 return
 
+            if path.startswith("/api/files/") and path.endswith("/preview-image"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/preview-image")
+                preview = _require_app_state().preview_service.get_file_preview(file_id, include_image_data=False)
+                if preview is None:
+                    raise ApiError("preview_not_found", "Requested preview asset does not exist.", status=404)
+                self._serve_file_content(Path(preview["image_path"]))
+                return
+
             if path.startswith("/api/files/") and path.endswith("/playback"):
                 file_id = path.removeprefix("/api/files/").removesuffix("/playback")
                 file_row = _require_app_state().library_service.get_file(file_id)

@@ -1,5 +1,16 @@
-import { X } from "lucide-react";
+import { Archive, Bot, Clapperboard, Database, Image, SlidersHorizontal, Tags, Wrench, X } from "lucide-react";
 import { renderSettingsDetail } from "./SettingsSections";
+
+const sectionIcons = {
+  source: Database,
+  profiles: SlidersHorizontal,
+  preview: Image,
+  playback: Clapperboard,
+  tagging: Tags,
+  providers: Bot,
+  backup: Archive,
+  maintenance: Wrench
+};
 
 export default function SettingsModal(props) {
   const { isOpen, onClose, settingsSections, selectedSettingsSection, onSelectSection } = props;
@@ -25,16 +36,22 @@ export default function SettingsModal(props) {
         </div>
         <div className="settings-layout">
           <nav className="settings-nav">
-            {settingsSections.map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                className={`settings-link ${selectedSettingsSection === section.id ? "active" : ""}`}
-                onClick={() => onSelectSection(section.id)}
-              >
-                {section.label}
-              </button>
-            ))}
+            {settingsSections.map((section) => {
+              const Icon = sectionIcons[section.icon] ?? Database;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  className={`settings-link ${selectedSettingsSection === section.id ? "active" : ""}`}
+                  onClick={() => onSelectSection(section.id)}
+                >
+                  <span className="settings-link-icon" aria-hidden="true">
+                    <Icon size={16} />
+                  </span>
+                  <span className="settings-link-label">{section.label}</span>
+                </button>
+              );
+            })}
           </nav>
           <section className="settings-detail">
             <h3>{selectedSectionLabel}</h3>

@@ -1,4 +1,4 @@
-import { RefreshCcw } from "lucide-react";
+import { Folder, FolderOpen, RefreshCcw } from "lucide-react";
 
 export default function DirectoryTreePanel({
   treeItems,
@@ -17,9 +17,15 @@ export default function DirectoryTreePanel({
           <p className="section-kicker">{t("directory.kicker")}</p>
           <h2>{t("directory.title")}</h2>
         </div>
-        <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onScanSource}>
+        <button
+          type="button"
+          className="ghost-button icon-only-button"
+          disabled={!source || isWorking}
+          aria-label={t("directory.rescanSource")}
+          title={t("directory.rescanSource")}
+          onClick={onScanSource}
+        >
           <RefreshCcw size={16} />
-          <span>{t("directory.rescanSource")}</span>
         </button>
       </div>
 
@@ -32,10 +38,13 @@ export default function DirectoryTreePanel({
                 key={node.id}
                 type="button"
                 className={`tree-item ${selectedDirectory === node.path ? "active" : ""}`}
-                style={{ paddingLeft: `${16 + node.depth * 16}px` }}
                 onClick={() => onSelectDirectory(node.path)}
               >
-                <span>{node.path ? node.name : t("app.sourceRoot")}</span>
+                <span className="tree-item-main">
+                  <span className="tree-depth-rail" style={{ width: `${node.depth * 14}px` }} aria-hidden="true" />
+                  {selectedDirectory === node.path ? <FolderOpen size={15} /> : <Folder size={15} />}
+                  <span className="tree-name">{node.path ? node.name : t("app.sourceRoot")}</span>
+                </span>
                 <span className="tree-badges">
                   {badges.map((badge) => (
                     <span key={badge.key} className={`tree-badge tree-badge-${badge.state}`} title={badge.title}>

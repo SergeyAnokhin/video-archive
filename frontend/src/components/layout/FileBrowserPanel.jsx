@@ -1,4 +1,4 @@
-import { Clapperboard, Eye, FolderCog, ImagePlus, ScanSearch, Tags } from "lucide-react";
+import { Clapperboard, FolderCog, ImageIcon, ImagePlus, ScanSearch, Tags } from "lucide-react";
 
 export default function FileBrowserPanel({
   selectedDirectory,
@@ -6,61 +6,76 @@ export default function FileBrowserPanel({
   selectedFile,
   isWorking,
   files,
-  onOpenDetails,
   onOpenPlayback,
   onOpenConvertDirectory,
   onPreviewDirectory,
   onTagDirectory,
   onRescanDirectory,
   onSelectFile,
+  onOpenFileDetails,
+  getFilePreviewImageUrl,
   formatDirectoryLabel,
-  formatBytes,
-  formatDate,
   formatStatusLabel,
   t
 }) {
+  function renderStateLamp(kind, state) {
+    return (
+      <span
+        className={`state-lamp state-lamp-${state}`}
+        title={kind === "convert" ? t("files.convertState", { state: formatStatusLabel(state) }) : t("files.previewState", { state: formatStatusLabel(state) })}
+      />
+    );
+  }
+
   return (
     <section className="panel file-panel">
-      <div className="panel-header">
+      <div className="panel-header compact-file-header">
         <div>
           <p className="section-kicker">{t("files.kicker")}</p>
           <h2>{formatDirectoryLabel(selectedDirectory)}</h2>
-          <p className="muted">{t("files.intro")}</p>
         </div>
         <div className="inline-actions">
-          <button type="button" className="mini-button icon-button" disabled={!source || !selectedFile || isWorking} onClick={onOpenDetails}>
+          <button
+            type="button"
+            className="ghost-button icon-only-button"
+            disabled={!source || isWorking}
+            aria-label={t("files.convertSubtree")}
+            title={t("files.convertSubtree")}
+            onClick={onOpenConvertDirectory}
+          >
             <FolderCog size={16} />
-            <span>{t("files.details")}</span>
           </button>
-          <button type="button" className="mini-button icon-button" disabled={!source || !selectedFile || isWorking} onClick={onOpenPlayback}>
-            <Clapperboard size={16} />
-            <span>{t("files.playback")}</span>
-          </button>
-          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onOpenConvertDirectory}>
-            <FolderCog size={16} />
-            <span>{t("files.convertSubtree")}</span>
-          </button>
-          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onPreviewDirectory}>
+          <button
+            type="button"
+            className="ghost-button icon-only-button"
+            disabled={!source || isWorking}
+            aria-label={t("files.previewSubtree")}
+            title={t("files.previewSubtree")}
+            onClick={onPreviewDirectory}
+          >
             <ImagePlus size={16} />
-            <span>{t("files.previewSubtree")}</span>
           </button>
-          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onTagDirectory}>
+          <button
+            type="button"
+            className="ghost-button icon-only-button"
+            disabled={!source || isWorking}
+            aria-label={t("files.tagSubtree")}
+            title={t("files.tagSubtree")}
+            onClick={onTagDirectory}
+          >
             <Tags size={16} />
-            <span>{t("files.tagSubtree")}</span>
           </button>
-          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onRescanDirectory}>
+          <button
+            type="button"
+            className="ghost-button icon-only-button"
+            disabled={!source || isWorking}
+            aria-label={t("files.rescanSubtree")}
+            title={t("files.rescanSubtree")}
+            onClick={onRescanDirectory}
+          >
             <ScanSearch size={16} />
-            <span>{t("files.rescanSubtree")}</span>
           </button>
         </div>
-      </div>
-
-      <div className="list-header">
-        <span>{t("files.name")}</span>
-        <span>{t("files.type")}</span>
-        <span>{t("files.size")}</span>
-        <span>{t("files.modified")}</span>
-        <span>{t("files.status")}</span>
       </div>
 
       <div className="file-list">
@@ -68,24 +83,56 @@ export default function FileBrowserPanel({
           files.map((file) => (
             <article
               key={file.id}
-              className={`file-row ${selectedFile?.id === file.id ? "active" : ""}`}
+              className={`file-card ${selectedFile?.id === file.id ? "active" : ""}`}
               onClick={() => onSelectFile(file.id)}
-              onDoubleClick={onOpenDetails}
+              onDoubleClick={() => onOpenPlayback(file)}
             >
-              <div>
-                <strong>{file.file_name}</strong>
-                <p className="row-subtitle">{file.relative_path}</p>
+              <div className="file-card-media">
+                {getFilePreviewImageUrl(file) ? (
+                  <img className="preview-image" src={getFilePreviewImageUrl(file)} alt={file.file_name} loading="lazy" />
+                ) : (
+                  <div className="file-card-placeholder">
+                    <ImageIcon size={20} />
+                  </div>
+                )}
+                <div className="file-card-chrome">
+                  <div className="file-card-indicators">
+                    {renderStateLamp("convert", file.conversion_state)}
+                    {renderStateLamp("preview", file.preview_state)}
+                  </div>
+                  <div className="file-card-actions">
+                    <button
+                      type="button"
+                      className="ghost-button icon-only-button file-card-action"
+                      disabled={isWorking}
+                      aria-label={t("files.playback")}
+                      title={t("files.playback")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenPlayback(file);
+                      }}
+                    >
+                      <Clapperboard size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button icon-only-button file-card-action"
+                      disabled={isWorking}
+                      aria-label={t("files.details")}
+                      title={t("files.details")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenFileDetails(file.id);
+                      }}
+                    >
+                      <FolderCog size={15} />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <span>{file.extension || "-"}</span>
-              <span>{formatBytes(file.size_bytes)}</span>
-              <span>{formatDate(file.modified_at)}</span>
-              <div className="state-stack">
-                <span className={`state-pill state-${file.conversion_state}`}>
-                  {t("files.convertState", { state: formatStatusLabel(file.conversion_state) })}
-                </span>
-                <span className={`state-pill state-${file.preview_state}`}>
-                  {t("files.previewState", { state: formatStatusLabel(file.preview_state) })}
-                </span>
+
+              <div className="file-card-body">
+                <strong title={file.file_name}>{file.file_name}</strong>
               </div>
             </article>
           ))

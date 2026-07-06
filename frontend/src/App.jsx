@@ -14,7 +14,6 @@ import {
   createPreviewLayout,
   fallbackInfo,
   fetchConversionProfiles,
-  fetchDirectoryPreview,
   fetchFileDetails,
   fetchFilePreview,
   fetchFileTags,
@@ -42,7 +41,6 @@ import {
 import AppHeader from "./components/layout/AppHeader";
 import DirectoryTreePanel from "./components/layout/DirectoryTreePanel";
 import FileBrowserPanel from "./components/layout/FileBrowserPanel";
-import LibraryPreviewPanel from "./components/layout/LibraryPreviewPanel";
 import FileDetailsModal from "./components/modals/FileDetailsModal";
 import JobsModal from "./components/modals/JobsModal";
 import LogViewerModal from "./components/modals/LogViewerModal";
@@ -100,7 +98,6 @@ function App() {
   const [selectedDirectory, setSelectedDirectory] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [selectedSettingsSection, setSelectedSettingsSection] = useState("source");
-  const [previewVisible, setPreviewVisible] = useState(true);
   const [activeOverlay, setActiveOverlay] = useState(null);
   const [conversionDraft, setConversionDraft] = useState(null);
   const [previewSettings, setPreviewSettings] = useState(defaultPreviewSettings);
@@ -110,7 +107,6 @@ function App() {
   const [previewPresets, setPreviewPresets] = useState([]);
   const [previewPresetName, setPreviewPresetName] = useState("");
   const [livePreview, setLivePreview] = useState(null);
-  const [libraryPreview, setLibraryPreview] = useState(null);
   const [selectedFileTags, setSelectedFileTags] = useState(null);
   const [selectedFileDetails, setSelectedFileDetails] = useState(null);
   const [selectedFilePreview, setSelectedFilePreview] = useState(null);
@@ -280,15 +276,6 @@ function App() {
   }, [activeOverlay, selectedSettingsSection]);
 
   useEffect(() => {
-    if (!previewVisible || !source) {
-      setLibraryPreview(null);
-      return;
-    }
-
-    loadLibraryPreview();
-  }, [previewVisible, source, selectedFileId, selectedDirectory, files]);
-
-  useEffect(() => {
     if (activeOverlay !== "settings" || selectedSettingsSection !== "preview") {
       return undefined;
     }
@@ -354,7 +341,6 @@ function App() {
       setFiles([]);
       setJobs([]);
       setSelectedDirectory("");
-      setLibraryPreview(null);
       return;
     }
 
@@ -455,31 +441,6 @@ function App() {
         await ensureConversionProfiles(true);
       }
     } catch (error) {
-      setActionError(error.message);
-    }
-  }
-
-  async function loadLibraryPreview(fileId = selectedFile?.id, directoryPath = selectedDirectory) {
-    if (!source) {
-      return;
-    }
-
-    try {
-      if (fileId) {
-        const payload = await fetchFilePreview(fileId);
-        if (payload.preview) {
-          setLibraryPreview({ ...payload.preview, scope: "file" });
-          return;
-        }
-      }
-
-      const payload = await fetchDirectoryPreview(directoryPath);
-      setLibraryPreview(payload.preview ? { ...payload.preview, scope: "directory" } : null);
-    } catch (error) {
-      if (error?.status === 404) {
-        setLibraryPreview(null);
-        return;
-      }
       setActionError(error.message);
     }
   }
@@ -699,7 +660,6 @@ function App() {
       const payload = await createJob(selectedDirectory);
       setActionMessage(payload.job.summary_message);
       await refreshLibrary(selectedDirectory);
-      await loadLibraryPreview(selectedFile?.id, selectedDirectory);
       if (activeOverlay === "jobs") {
         await refreshJobsOverlay(payload.job.id);
       }
@@ -722,7 +682,6 @@ function App() {
       const payload = await createPreviewFileJob(fileId);
       setActionMessage(payload.job.summary_message);
       await refreshLibrary(selectedDirectory);
-      await loadLibraryPreview(fileId, selectedDirectory);
       if (activeOverlay === "details") {
         await loadSelectedFileContext(fileId);
       }
@@ -980,8 +939,8 @@ function App() {
     }
   }
 
-  async function openDetailsModal() {
-    if (!selectedFile?.id) {
+  async function openDetailsModal(fileId = selectedFile?.id) {
+    if (!fileId) {
       return;
     }
     setActionError(null);
@@ -989,7 +948,14 @@ function App() {
     setSelectedFilePreview(null);
     setSelectedFileLogs([]);
     setActiveOverlay("details");
-    await loadSelectedFileContext(selectedFile.id);
+    await loadSelectedFileContext(fileId);
+  }
+
+  function getFilePreviewImageUrl(file) {
+    if (!file?.id || !file.has_preview_assets) {
+      return "";
+    }
+    return `/api/files/${encodeURIComponent(file.id)}/preview-image`;
   }
 
   function openTuneModal() {
@@ -1128,13 +1094,11 @@ function App() {
         liveSourceMeta={liveSourceMeta}
         queueSummary={queueSummary}
         queueStatus={info.queue.status}
-        previewVisible={previewVisible}
         source={source}
         isWorking={isWorking}
         locale={locale}
         visualMode={visualMode}
         t={t}
-        onTogglePreview={() => setPreviewVisible((value) => !value)}
         onScanSource={handleScanSource}
         onOpenLogs={() => openLogViewer()}
         onOpenJobs={openJobsOverlay}
@@ -1146,7 +1110,7 @@ function App() {
         onCycleVisualMode={() => setVisualMode((current) => getNextVisualMode(current))}
       />
 
-      <section className={`workspace ${previewVisible ? "with-preview" : "without-preview"}`}>
+      <section className="workspace">
         <DirectoryTreePanel
           treeItems={treeItems}
           selectedDirectory={selectedDirectory}
@@ -1164,38 +1128,18 @@ function App() {
           selectedFile={selectedFile}
           isWorking={isWorking}
           files={files}
-          onOpenDetails={openDetailsModal}
-          onOpenPlayback={() => handleOpenPlayback()}
+          onOpenPlayback={handleOpenPlayback}
           onOpenConvertDirectory={() => openConvertDialog("directory")}
           onPreviewDirectory={() => handleDirectoryJob(createPreviewDirectoryJob)}
           onTagDirectory={() => handleDirectoryJob(createTagDirectoryJob)}
           onRescanDirectory={handleRescanDirectory}
           onSelectFile={setSelectedFileId}
+          onOpenFileDetails={openDetailsModal}
+          getFilePreviewImageUrl={getFilePreviewImageUrl}
           formatDirectoryLabel={(path) => formatDirectoryLabel(path, t)}
-          formatBytes={formatBytes}
-          formatDate={formatDateValue}
           formatStatusLabel={(value) => formatStatusLabel(value, t)}
           t={t}
         />
-
-        {previewVisible ? (
-          <LibraryPreviewPanel
-            libraryPreview={libraryPreview}
-            selectedDirectory={selectedDirectory}
-            files={files}
-            selectedFile={selectedFile}
-            selectedFileTags={selectedFileTags}
-            playbackSettings={playbackSettings}
-            onOpenPreviewSettings={() => {
-              setSelectedSettingsSection("preview");
-              setActiveOverlay("settings");
-            }}
-            formatDirectoryLabel={(path) => formatDirectoryLabel(path, t)}
-            formatConfidence={formatConfidence}
-            formatDate={formatDateValue}
-            t={t}
-          />
-        ) : null}
       </section>
 
       <FileDetailsModal

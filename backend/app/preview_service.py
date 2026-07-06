@@ -248,7 +248,7 @@ class PreviewService:
             timeline_flow=settings["timeline_flow"],
         )
         collage = self._render_collage(layout, ordered_frames, file_row["file_name"])
-        output_path = self._preview_dir / "files" / f"{file_row['id']}.jpg"
+        output_path = self._build_file_preview_output_path(file_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         collage.save(output_path, format="JPEG", quality=88)
 
@@ -290,6 +290,9 @@ class PreviewService:
             "output_ref": str(output_path),
             "metadata": metadata,
         }
+
+    def _build_file_preview_output_path(self, file_path: Path) -> Path:
+        return file_path.with_suffix(".jpg")
 
     def generate_directory_preview(
         self,

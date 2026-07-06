@@ -1,9 +1,18 @@
 export const visualModes = ["strict", "playful", "casino"];
 
-const settingsSectionIds = ["source", "profiles", "preview", "playback", "tagging", "providers", "backup", "maintenance"];
+const settingsSections = [
+  { id: "source", icon: "database" },
+  { id: "profiles", icon: "sliders" },
+  { id: "preview", icon: "image" },
+  { id: "playback", icon: "clapperboard" },
+  { id: "tagging", icon: "tags" },
+  { id: "providers", icon: "bot" },
+  { id: "backup", icon: "archive" },
+  { id: "maintenance", icon: "wrench" }
+];
 
 export function getSettingsSections(t) {
-  return settingsSectionIds.map((id) => ({ id, label: t(`settings.${id}`) }));
+  return settingsSections.map((section) => ({ ...section, label: t(`settings.${section.id}`) }));
 }
 
 export function getNextVisualMode(current) {

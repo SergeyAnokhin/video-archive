@@ -314,6 +314,10 @@ Starts preview generation for one file.
 
 Returns preview asset metadata for a file.
 
+### `GET /api/files/{file_id}/preview-image`
+
+Streams the stored preview image for a file. File previews are stored beside the source video with the same basename and a `.jpg` suffix.
+
 ### `GET /api/directories/{relative_path}/preview`
 
 Returns preview asset metadata for a directory.

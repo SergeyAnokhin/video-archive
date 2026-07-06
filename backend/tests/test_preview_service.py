@@ -64,6 +64,17 @@ class PreviewServiceTests(unittest.TestCase):
             self.assertEqual(updated["aspect_ratio_preset"], "ultrawide")
             self.assertTrue(updated["identity_diversity_enabled"])
 
+    def test_file_preview_output_path_uses_source_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = root / "video_archive.db"
+            initialize_database(db_path)
+            preview_service = PreviewService(db_path, root / ".local")
+
+            output_path = preview_service._build_file_preview_output_path(root / "library" / "clip.mp4")
+
+            self.assertEqual(output_path, root / "library" / "clip.jpg")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,7 @@ Implemented today:
   - `GET /api/files`
   - `GET /api/files/{file_id}`
   - `GET /api/files/{file_id}/playback`
+  - `GET /api/files/{file_id}/preview-image`
   - `GET /api/files/{file_id}/content`
   - `GET /api/conversion-profiles`
   - `GET /api/jobs`
@@ -49,7 +50,7 @@ Implemented today:
 - saved conversion profiles can now also be created from the UI and from successful tuning results
 - real conversion jobs for file and recursive directory scopes with temp output, lightweight validation, production replacement, and separate test outputs
 - real tuning jobs for a single file with dimension, quality, and codec sweeps that always write separate outputs and can be promoted into saved conversion profiles
-- real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, persisted preview assets, and directory collage generation
+- real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, file-level `.jpg` previews written next to their source videos, and directory collage generation
 - real closed-vocabulary tagging jobs for file and recursive directory scopes with configurable sampled-frame count, stored confidence scores, provider-backed inference, and provider-side batch preference
 - preview settings persistence with saved presets, live layout preview, selectable aspect ratios including Samsung S24 portrait and ultrawide presets, and a dedicated preview section in the settings UI
 - playback settings persistence with embedded modal playback and external file-link opening when supported by the local environment
@@ -133,6 +134,7 @@ Optional local overrides can be placed in `backend/.env.local`. Start from [`bac
 
 - `VIDEO_ARCHIVE_HOST`
 - `VIDEO_ARCHIVE_PORT`
+- `VIDEO_ARCHIVE_FRONTEND_PORT`
 - `VIDEO_ARCHIVE_DATA_DIR`
 - `VIDEO_ARCHIVE_DB_PATH`
 - `VIDEO_ARCHIVE_SECRETS_PATH`
@@ -143,6 +145,8 @@ The default local ports are intentionally non-standard to avoid collisions with 
 - backend: `127.0.0.1:18637`
 
 If you still need a different backend port, set `VIDEO_ARCHIVE_PORT` before starting `npm.cmd run dev`. The frontend Vite proxy follows the same `VIDEO_ARCHIVE_PORT` value instead of hardcoding the backend target.
+
+The frontend dev server now stays pinned to `127.0.0.1:18673` by default and fails fast if that port is already busy. To intentionally use a different frontend port, set `VIDEO_ARCHIVE_FRONTEND_PORT` before starting `npm.cmd run dev`.
 
 ### Run backend tests
 

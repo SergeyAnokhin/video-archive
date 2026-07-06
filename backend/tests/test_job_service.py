@@ -294,7 +294,7 @@ class FakePreviewService(PreviewService):
         super().__init__(database_path, data_dir)
 
     def generate_file_preview(self, *, source_root: str, file_row: dict, settings: dict) -> dict:
-        output_path = self._preview_dir / "files" / f"{file_row['id']}.jpg"
+        output_path = Path(file_row["path"]).with_suffix(".jpg")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"fake-preview")
         metadata = {

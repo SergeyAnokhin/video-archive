@@ -15,6 +15,12 @@ This document defines the main screens, modals, and interaction surfaces for Vid
 - Use `lucide-react` icons in buttons by default; text-only buttons should be exceptions, not the rule
 - For obvious actions, prefer icon-only buttons with accessible labels rather than repeating short text everywhere
 - Keep the main library visually compact and low-clutter, with stronger or more playful visual modes as a skin rather than a layout fork
+- Keep panel radii and spacing restrained; avoid oversized rounded capsules that make the browse view feel older or less dense
+- Keep the top bar as a compact strip rather than a hero block; status, source, queue, locale, theme, and settings should fit into a shallow header row
+- Prefer thumbnail-first file cards over dense metadata tables on the main library screen
+- In file cards, show only the file preview, the short file name, and compact state indicators; move size, modified time, full path, and deeper metadata into details flows
+- File state on the main screen should read as compact lamps or icon indicators, not repeated text pills
+- Settings navigation should use stable-height items so section buttons do not visually jump when labels wrap or the active state changes
 
 ## 1. Main Library Screen
 
@@ -28,9 +34,9 @@ Purpose:
 Main regions:
 
 - directory tree
-- current folder contents
+- current folder contents as wrapped thumbnail cards
 - toolbar
-- optional preview visibility toggle
+- compact icon-first action strips for tree and folder scopes
 - locale switch
 - visual-mode switch
 
@@ -43,8 +49,8 @@ Directory actions:
 
 File actions:
 
-- open details
-- open playback
+- open details from the card
+- open playback from the card
 - convert
 - preview
 - tag
@@ -56,6 +62,11 @@ Indicators:
 - preview indicator
 
 Indicators appear only for incomplete, running, or failed states.
+
+Preview storage:
+
+- file preview images should be written next to the source video with the same basename and a `.jpg` suffix
+- directory collages can remain backend-managed secondary assets
 
 ## 2. Video Details Modal
 

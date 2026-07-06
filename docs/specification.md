@@ -441,6 +441,7 @@ Recommended core fields:
 | `last_conversion_profile_id` | Last used conversion profile |
 | `last_converted_at` | Last successful conversion time |
 | `preview_generated_at` | Last successful preview time |
+| `preview_asset_path` | Stored preview image path for the current file-level preview |
 | `tags` | Final assigned tags |
 
 ### 15.3 Cached Analysis Metadata
