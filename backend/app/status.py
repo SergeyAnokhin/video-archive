@@ -27,6 +27,7 @@ def compute_directory_status(conn, source_id: str, relative_path: str) -> dict:
                 SUM(CASE WHEN has_preview_asset = 1 THEN 1 ELSE 0 END) AS previewed
             FROM files
             WHERE source_id = :sid AND is_video_supported = 1 {clause}
+              AND file_name NOT LIKE '%.original.%' AND file_name NOT LIKE '%.variant-%'
             """
         ),
         params,

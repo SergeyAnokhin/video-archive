@@ -245,8 +245,12 @@ def cancel_job(engine, job_id: str) -> dict | None:
     if job["status"] == "queued":
         finish_job(engine, job_id, "cancelled", "Cancelled before starting.")
     elif job["status"] == "running":
-        request_cancel(job_id)
+        # Log before flagging: once the worker can see the cancel request it
+        # may finish and log job_cancel_honored/job_cancelled within
+        # microseconds, so logging after would risk this event landing after
+        # them in the event stream.
         log_event(engine, job_id, None, "info", "job_cancel_requested", "Cancellation requested.")
+        request_cancel(job_id)
     else:
         raise JobConflictError("job_not_cancellable", f"Job is already {job['status']}.")
 
@@ -368,6 +372,16 @@ def complete_job_item(
                 """
             ),
             {"now": _now(), "file_id": file_id, "output_ref": output_ref, "message": message, "id": item_id},
+        )
+
+
+def skip_job_item(engine, item_id: str, message: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE job_items SET status = 'skipped', finished_at = :now, message = :message WHERE id = :id"
+            ),
+            {"now": _now(), "message": message, "id": item_id},
         )
 
 

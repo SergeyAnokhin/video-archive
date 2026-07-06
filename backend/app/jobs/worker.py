@@ -13,6 +13,7 @@ import time
 
 from app.db import get_engine
 from app.jobs import service
+from app.jobs.convert import run_convert_job
 from app.jobs.rescan import run_rescan_job
 
 _POLL_INTERVAL_SECONDS = 0.3
@@ -20,6 +21,7 @@ _RETENTION_INTERVAL_SECONDS = 60.0
 
 _HANDLERS = {
     "rescan": run_rescan_job,
+    "convert": run_convert_job,
 }
 
 

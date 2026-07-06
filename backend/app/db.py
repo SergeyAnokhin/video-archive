@@ -143,6 +143,26 @@ MIGRATIONS: dict[int, list[str]] = {
         "CREATE INDEX idx_app_events_job ON app_events (job_id)",
         "CREATE INDEX idx_app_events_created_at ON app_events (created_at)",
     ],
+    # Stage 4: conversion profiles (Data Model §4, Specification §7). The
+    # `convert` job type and its safe-replace/test-mode/variant logic reuse
+    # the jobs/job_items infrastructure from migration 3 unchanged.
+    4: [
+        """
+        CREATE TABLE conversion_profiles (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            video_codec TEXT NOT NULL DEFAULT 'h265',
+            container TEXT NOT NULL DEFAULT 'mp4',
+            max_dimension INTEGER,
+            crf INTEGER NOT NULL DEFAULT 26,
+            drop_audio INTEGER NOT NULL DEFAULT 1,
+            extra_encoder_args TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

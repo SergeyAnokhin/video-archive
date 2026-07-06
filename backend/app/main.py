@@ -6,7 +6,17 @@ from app.config import APP_VERSION
 from app.db import init_db
 from app.ffmpeg import check_ffmpeg
 from app.jobs.worker import JobWorker
-from app.routers import app_info, directories, files, health, jobs, logs, source, tree
+from app.routers import (
+    app_info,
+    conversion_profiles,
+    directories,
+    files,
+    health,
+    jobs,
+    logs,
+    source,
+    tree,
+)
 
 _worker = JobWorker()
 
@@ -29,5 +39,6 @@ app.include_router(source.router, prefix="/api")
 app.include_router(tree.router, prefix="/api")
 app.include_router(directories.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
+app.include_router(conversion_profiles.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")

@@ -1,0 +1,210 @@
+.convert-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  padding: var(--space-4);
+  z-index: 40;
+}
+
+.convert-dialog {
+  width: min(440px, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.convert-dialog__title {
+  margin: 0 0 var(--space-2);
+  font-size: 16px;
+}
+
+.convert-dialog__hint {
+  margin: 0 0 var(--space-3);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.convert-dialog__hint--error {
+  color: var(--color-danger);
+}
+
+.convert-dialog__hint--warning {
+  color: var(--color-warning);
+}
+
+.convert-dialog__label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.convert-dialog__input {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.convert-dialog__fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.convert-dialog__fieldset legend {
+  padding: 0 var(--space-1);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.convert-dialog__radio,
+.convert-dialog__checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+}
+
+.convert-dialog__checkbox {
+  margin-bottom: var(--space-3);
+}
+
+.convert-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.convert-dialog__button {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.convert-dialog__button:hover {
+  color: var(--color-text);
+}
+
+.convert-dialog__button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.convert-dialog__button--primary {
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.convert-dialog__tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.convert-dialog__tab {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.convert-dialog__tab[aria-selected='true'] {
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.convert-dialog__variant-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.convert-dialog__variant-row input,
+.convert-dialog__variant-row select {
+  min-height: var(--touch-target-min);
+  min-width: 90px;
+  padding: 0 var(--space-2);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.convert-dialog__results {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.convert-dialog__result-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  font-size: 13px;
+}
+
+.convert-dialog__result-status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.convert-dialog__result-status--completed {
+  color: var(--color-accent);
+}
+
+.convert-dialog__result-status--failed {
+  color: var(--color-danger);
+}
+
+/* Mobile: modals become full-screen sheets (Design System §5). */
+@media (max-width: 639px) {
+  .convert-dialog-overlay {
+    padding: 0;
+  }
+
+  .convert-dialog {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+}

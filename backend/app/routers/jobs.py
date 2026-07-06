@@ -1,14 +1,18 @@
-"""Job endpoints (API §6-7): CRUD, cancellation, restart, and the `rescan`
-job trigger. Conversion/preview/tag job endpoints arrive with their own
-stages.
+"""Job endpoints (API §6-8): CRUD, cancellation, restart, the `rescan` job
+trigger, and the `convert` job triggers (directory and file scope, including
+the file-scope variant-comparison sweep). Preview/tag job endpoints arrive
+with their own stages.
 """
 
 from __future__ import annotations
+
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app import conversion_profiles
 from app.db import get_engine
 from app.jobs import service
 from app.source_access import get_active_source_or_404
@@ -128,4 +132,116 @@ def rescan_directory(body: RescanDirectoryRequest):
         scope_type="directory" if body.path else "source",
         scope_ref=body.path or None,
         parameters={"path": body.path},
+    )
+
+
+def _profile_not_found_error(profile_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={
+            "error": {
+                "code": "conversion_profile_not_found",
+                "message": f"Conversion profile not found: {profile_id}",
+            }
+        },
+    )
+
+
+class ConvertDirectoryRequest(BaseModel):
+    path: str = ""
+    profile_id: str
+    mode: Literal["production", "test"] = "production"
+    skip_processed: bool = True
+
+
+@router.post("/jobs/convert-directory")
+def convert_directory(body: ConvertDirectoryRequest):
+    engine = get_engine()
+    if conversion_profiles.get_profile(engine, body.profile_id) is None:
+        raise _profile_not_found_error(body.profile_id)
+
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+        if body.path:
+            dir_row = conn.execute(
+                text("SELECT id FROM directories WHERE source_id = :sid AND relative_path = :path"),
+                {"sid": source.id, "path": body.path},
+            ).fetchone()
+            if dir_row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "error": {
+                            "code": "directory_not_found",
+                            "message": f"Directory not found: {body.path}",
+                        }
+                    },
+                )
+
+    return service.create_job(
+        engine,
+        job_type="convert",
+        scope_type="directory" if body.path else "source",
+        scope_ref=body.path or None,
+        parameters={
+            "path": body.path,
+            "profile_id": body.profile_id,
+            "mode": body.mode,
+            "skip_processed": body.skip_processed,
+        },
+    )
+
+
+class VariantOverride(BaseModel):
+    max_dimension: int | None = None
+    crf: int | None = None
+    video_codec: str | None = None
+
+
+class ConvertFileRequest(BaseModel):
+    file_id: str
+    profile_id: str
+    mode: Literal["production", "test"] = "production"
+    skip_processed: bool = True
+    variants: list[VariantOverride] | None = None
+
+
+@router.post("/jobs/convert-file")
+def convert_file(body: ConvertFileRequest):
+    engine = get_engine()
+    if conversion_profiles.get_profile(engine, body.profile_id) is None:
+        raise _profile_not_found_error(body.profile_id)
+
+    if body.variants and body.mode != "test":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "variants_require_test_mode",
+                    "message": "Variant comparison is only allowed with mode: test.",
+                }
+            },
+        )
+
+    with engine.connect() as conn:
+        get_active_source_or_404(conn)
+        file_row = conn.execute(text("SELECT id FROM files WHERE id = :id"), {"id": body.file_id}).fetchone()
+        if file_row is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"code": "file_not_found", "message": f"File not found: {body.file_id}"}},
+            )
+
+    return service.create_job(
+        engine,
+        job_type="convert",
+        scope_type="file",
+        scope_ref=body.file_id,
+        parameters={
+            "file_id": body.file_id,
+            "profile_id": body.profile_id,
+            "mode": body.mode,
+            "skip_processed": body.skip_processed,
+            "variants": [v.model_dump(exclude_none=True) for v in body.variants] if body.variants else None,
+        },
     )

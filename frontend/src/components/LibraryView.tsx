@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { File as FileIcon, Film, Folder, RefreshCw } from 'lucide-react'
+import { File as FileIcon, Film, Folder, RefreshCw, Wand2 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
+import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
+import { FileConvertModal } from './FileConvertModal'
 import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry } from '../types/api'
 import './LibraryView.css'
 
@@ -16,6 +18,8 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rescanning, setRescanning] = useState(false)
+  const [convertDirOpen, setConvertDirOpen] = useState(false)
+  const [convertFile, setConvertFile] = useState<FileEntry | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -92,6 +96,16 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
         >
           <RefreshCw size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
         </button>
+
+        <button
+          type="button"
+          className="library-view__icon-btn"
+          aria-label={t('library.convert')}
+          title={t('library.convert')}
+          onClick={() => setConvertDirOpen(true)}
+        >
+          <Wand2 size={16} />
+        </button>
       </div>
 
       {error && (
@@ -112,9 +126,25 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
             <FolderCard key={dir.path} dir={dir} onOpen={() => onNavigate(dir.path)} />
           ))}
           {data.files.map((file) => (
-            <FileCard key={file.id} file={file} />
+            <FileCard key={file.id} file={file} onConvert={() => setConvertFile(file)} />
           ))}
         </div>
+      )}
+
+      {convertDirOpen && (
+        <ConvertDirectoryDialog
+          path={path}
+          onClose={() => setConvertDirOpen(false)}
+          onStarted={refreshJobs}
+        />
+      )}
+
+      {convertFile && (
+        <FileConvertModal
+          file={convertFile}
+          onClose={() => setConvertFile(null)}
+          onStarted={refreshJobs}
+        />
       )}
     </div>
   )
@@ -158,7 +188,7 @@ function FolderCard({ dir, onOpen }: { dir: DirectoryEntry; onOpen: () => void }
   )
 }
 
-function FileCard({ file }: { file: FileEntry }) {
+function FileCard({ file, onConvert }: { file: FileEntry; onConvert: () => void }) {
   const { t } = useTranslation()
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
@@ -172,6 +202,17 @@ function FileCard({ file }: { file: FileEntry }) {
         {file.file_name}
       </div>
       <div className="library-card__meta">{formatSize(file.size_bytes)}</div>
+      {file.is_video_supported && (
+        <button
+          type="button"
+          className="library-card__convert-btn"
+          aria-label={t('library.convertFile')}
+          title={t('library.convertFile')}
+          onClick={onConvert}
+        >
+          <Wand2 size={14} />
+        </button>
+      )}
       {(showConversionDot || showPreviewDot) && (
         <div className="library-card__badges">
           {showConversionDot && (

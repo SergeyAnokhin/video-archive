@@ -130,3 +130,25 @@ export interface DirectoryChildrenResponse {
   directories: DirectoryEntry[]
   files: FileEntry[]
 }
+
+export type ConversionMode = 'production' | 'test'
+
+export interface ConversionProfile {
+  id: string
+  name: string
+  is_default: boolean
+  video_codec: string
+  container: string
+  max_dimension: number | null
+  crf: number
+  drop_audio: boolean
+  extra_encoder_args: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface VariantOverride {
+  max_dimension?: number
+  crf?: number
+  video_codec?: string
+}

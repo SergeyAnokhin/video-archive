@@ -34,6 +34,25 @@
     "lastScan": "Last scanned {{date}}.",
     "neverScanned": "Not scanned yet."
   },
+  "conversionProfiles": {
+    "title": "Conversion profiles",
+    "empty": "No conversion profiles yet. Add one to start converting videos.",
+    "add": "Add profile",
+    "edit": "Edit",
+    "duplicate": "Duplicate",
+    "delete": "Delete",
+    "save": "Save",
+    "markDefault": "Set as default",
+    "default": "Default",
+    "name": "Profile name",
+    "codec": "Video codec",
+    "maxDimension": "Max dimension (px)",
+    "noResize": "Never resize",
+    "crf": "Quality (CRF)",
+    "dropAudio": "Drop audio",
+    "summary": "{{codec}} · CRF {{crf}} · max {{dimension}}",
+    "duplicateName": "{{name}} copy"
+  },
   "sidebar": {
     "title": "Library",
     "noSource": "Configure a source in Settings to browse folders.",
@@ -49,7 +68,35 @@
     "loading": "Loading…",
     "loadError": "Could not load this folder: {{message}}",
     "empty": "This folder is empty.",
-    "rescan": "Rescan folder"
+    "rescan": "Rescan folder",
+    "convert": "Convert folder",
+    "convertFile": "Convert file"
+  },
+  "convertDialog": {
+    "directoryTitle": "Convert folder",
+    "fileTitle": "Convert file",
+    "scopePath": "Scope: {{path}} (recursive)",
+    "noProfiles": "No conversion profiles yet. Add one in Settings first.",
+    "profile": "Profile",
+    "mode": "Mode",
+    "modeProduction": "Production (replace original)",
+    "modeTest": "Test (keep original)",
+    "skipProcessed": "Skip already converted files",
+    "start": "Start",
+    "cancel": "Cancel",
+    "close": "Close",
+    "convertTab": "Convert",
+    "variantsTab": "Compare variants",
+    "variantsHint": "Each row produces a separate test-mode output next to the original for comparison.",
+    "variantsAdd": "Add variant",
+    "variantsRemove": "Remove",
+    "variantMaxDimension": "Max dimension",
+    "variantCrf": "CRF",
+    "variantCodecInherit": "Same as profile",
+    "resultsHint": "Variant outputs appear next to the original file.",
+    "resultsWaiting": "Waiting for the job to start producing variants…",
+    "saveAsProfile": "Save as profile",
+    "saveAsProfileNamePlaceholder": "New profile name"
   },
   "jobs": {
     "title": "Jobs",
@@ -67,6 +114,14 @@
       "completed": "Completed",
       "failed": "Failed",
       "cancelled": "Cancelled"
+    },
+    "itemStatus": {
+      "queued": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "skipped": "Skipped"
     },
     "type": {
       "scan": "Scan",
