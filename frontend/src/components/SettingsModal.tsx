@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SourceSection } from './SourceSection'
 import { ConversionProfilesSection } from './ConversionProfilesSection'
+import { PreviewSettingsSection } from './PreviewSettingsSection'
 import { InterfaceSection } from './InterfaceSection'
 import './SettingsModal.css'
 
@@ -47,6 +48,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <SourceSection />
 
         <ConversionProfilesSection />
+
+        <PreviewSettingsSection />
 
         <InterfaceSection />
       </div>

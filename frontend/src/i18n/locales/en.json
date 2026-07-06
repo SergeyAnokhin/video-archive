@@ -70,7 +70,9 @@
     "empty": "This folder is empty.",
     "rescan": "Rescan folder",
     "convert": "Convert folder",
-    "convertFile": "Convert file"
+    "convertFile": "Convert file",
+    "preview": "Generate previews for folder",
+    "previewFile": "Generate preview"
   },
   "convertDialog": {
     "directoryTitle": "Convert folder",
@@ -97,6 +99,44 @@
     "resultsWaiting": "Waiting for the job to start producing variants…",
     "saveAsProfile": "Save as profile",
     "saveAsProfileNamePlaceholder": "New profile name"
+  },
+  "previewDialog": {
+    "directoryTitle": "Generate previews for folder",
+    "skipProcessed": "Skip files that already have a preview"
+  },
+  "previewSettings": {
+    "title": "Preview",
+    "aspectRatio": "Collage aspect ratio",
+    "aspectRatioOption": {
+      "standard": "Standard",
+      "phone-portrait": "Phone portrait (~19.5:9)",
+      "ultra-wide": "Ultra-wide (21:9+)",
+      "custom": "Custom"
+    },
+    "folderFrameCount": "Folder-preview frame count",
+    "brush": "Tile brush",
+    "brushSmall": "Small tile",
+    "brushEnlarged2": "Enlarged 2×2",
+    "brushEnlarged3": "Enlarged 3×3",
+    "fillAll": "Fill all",
+    "clearAll": "Clear all",
+    "gridRows": "Grid rows",
+    "gridCols": "Grid columns",
+    "timelineFlow": "Timeline flow",
+    "timelineFlowRow": "Row by row",
+    "timelineFlowColumn": "Column by column",
+    "timelineFlowShuffle": "Shuffled",
+    "identityDiversity": "Identity diversity (prefer two different faces)",
+    "frameCount": "{{count}} frames sampled for this layout",
+    "layoutInvalid": "This layout doesn't fit the grid — adjust the enlarged tiles.",
+    "captionSample": "example.mp4",
+    "presetGallery": "Layout presets",
+    "quickSlots": "Quick slots",
+    "saveToSlot": "Save to slot {{slot}}",
+    "loadSlot": "Load slot {{slot}}",
+    "presetName": "Preset name",
+    "savePreset": "Save preset",
+    "saveAsNewPreset": "Save as new preset"
   },
   "jobs": {
     "title": "Jobs",

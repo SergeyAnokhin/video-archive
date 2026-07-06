@@ -43,7 +43,10 @@ Chosen for good quality on a modest CPU with limited RAM — all run via OpenCV 
 | Person / figure detection | YOLOv8n (ONNX, via `onnxruntime`) | Nano variant (~6 MB); person class only |
 | Blur scoring | Laplacian variance (OpenCV) | Cheap sharpness heuristic for frame ranking |
 
-Model files are downloaded once and stored next to the backend; the backend must work (with reduced frame-selection quality) if a model file is missing.
+Model files are downloaded once and stored next to the backend, in `backend/models/` (git-ignored, created on demand); the backend must work (with reduced frame-selection quality) if a model file is missing. In practice (`app/detection.py`):
+
+- YuNet and SFace have stable official direct-download URLs (OpenCV Model Zoo) and are fetched automatically, lazily, on first use.
+- No stable official pre-exported ONNX file exists for YOLOv8n; person detection is enabled by placing `yolov8n.onnx` manually at `backend/models/yolov8n.onnx`. Without it, preview tile selection falls back to face detection and blur-score ranking only.
 
 ## Supported Video Extensions
 

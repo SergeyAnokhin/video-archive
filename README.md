@@ -4,13 +4,14 @@ Video Archive is a local-first, Windows-targeted web application for browsing a 
 
 ## Current Status
 
-**Roadmap Stages 1-4 ("Skeleton", "Local Source, Scan, Browsing", "Job Infrastructure", "Conversion") are implemented.** `frontend/` and `backend/` run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n, talking to a FastAPI backend with a schema-versioned SQLite database. On top of that:
+**Roadmap Stages 1-5 ("Skeleton", "Local Source, Scan, Browsing", "Job Infrastructure", "Conversion", "Preview Generation") are implemented.** `frontend/` and `backend/` run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n, talking to a FastAPI backend with a schema-versioned SQLite database. On top of that:
 
 - Stage 2 adds configuring a `local` source (a folder next to the backend, or any absolute path) from Settings, with test-connection and a destructive-replace warning; a synchronous filesystem scan on connect that discovers folders/files, detects supported video extensions, and recognizes preview assets (`<name>.jpg`, `folder-preview.jpg`) without listing them as separate files; and a directory tree and folder/file card grid in the main library screen, with conversion/preview indicators shown only for incomplete folders and files.
 - Stage 3 adds a job queue (`jobs`/`job_items` tables) driven by a single sequential background worker with a `queued → running → completed|failed|cancelled` state machine; a `rescan` job (triggered from a folder's toolbar) that refreshes one directory subtree file-by-file with live per-file progress and cooperative cancellation; a structured event log (`app_events`) streamed to the frontend over SSE; a top-bar activity indicator, a Jobs modal (cancel/restart/remove/clear-finished), and a Log Viewer (job/file/level filters); and 24-hour automatic retention for finished jobs.
 - Stage 4 adds saved conversion profiles (CRUD in Settings: codec, container, max dimension, CRF, drop-audio, default profile); a `convert` job that runs ffmpeg with a safe replace workflow (temp output → lightweight ffprobe validation → replace the source only on success, otherwise the original is left untouched); a per-job test-mode toggle that preserves the original as `<name>.original.<ext>` instead of deleting it, plus a skip-processed toggle for bulk runs; folder-level convert dialogs (recursive, excluding `.original.`/`.variant-` artifacts) and a file-level convert/variant-comparison modal that sweeps max-dimension/CRF/codec combinations into `<name>.variant-<params>.mp4` outputs and can promote a variant's parameters into a new saved profile.
+- Stage 5 adds a `preview` job that samples interior video frames, ranks them with local, best-effort face/person detection (YuNet/YOLOv8n/SFace via OpenCV and ONNX Runtime, gracefully degrading to blur-score ranking if a model is missing) and composites them into a black-background grid collage with enlarged tiles and a file-name caption, written next to the source as `<name>.jpg`; folder-level jobs also refresh `folder-preview.jpg` recursively for every directory in the subtree; a Preview Settings section (grid dimensions, collage aspect ratio, a construction-set tile editor with a built-in + custom preset gallery and quick save/load slots, timeline flow, identity diversity) with a live layout preview; and real preview thumbnails rendered in the library grid, toggleable via the existing top-bar preview-visibility button.
 
-See [docs/roadmap.md](docs/roadmap.md) for what comes next (previews, tagging, playback).
+See [docs/roadmap.md](docs/roadmap.md) for what comes next (tagging, playback).
 
 ## Local Run
 
@@ -21,6 +22,7 @@ The repository root is the single developer entrypoint: one command starts front
 - Node.js 20+
 - Python 3.11+
 - ffmpeg on `PATH` (`winget install ffmpeg`)
+- Internet access on first preview generation (or first `pytest` run touching preview code): face-detection model files (~39 MB total) are downloaded once into `backend/models/` (git-ignored) and cached from then on. Preview generation still works offline, with reduced frame-selection quality (blur-score ranking only) — see [Tech Stack](docs/tech-stack.md#local-detection-models).
 
 ### Startup
 

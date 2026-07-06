@@ -61,6 +61,7 @@ backend/*.db-journal
 backend/*.db-wal
 backend/*.db-shm
 backend/secrets.env
+backend/models/
 
 # Project-local caches
 .npm-cache/

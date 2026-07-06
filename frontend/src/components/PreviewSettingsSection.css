@@ -1,0 +1,131 @@
+.preview-settings__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.preview-settings__grid-dims {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.preview-settings__grid-dims .settings-modal__label {
+  flex: 1;
+}
+
+.preview-settings__custom-ratio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.preview-settings__custom-ratio input {
+  width: 80px;
+}
+
+/* Collage appearance is fixed for V1 (Specification §9.2.1): black
+   background, thin gaps between tiles, file-name caption bar. */
+.preview-canvas {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: var(--space-3);
+  background: #000;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.preview-canvas__grid {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  padding: 4px;
+}
+
+.preview-canvas__tile {
+  padding: 0;
+  background: var(--color-surface-raised);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.preview-canvas__tile:disabled {
+  cursor: default;
+}
+
+.preview-canvas__tile--enlarged {
+  background: var(--color-accent);
+  opacity: 0.6;
+}
+
+.preview-canvas__tile:not(:disabled):hover {
+  outline: 1px solid var(--color-accent);
+}
+
+.preview-canvas__caption {
+  flex-shrink: 0;
+  padding: 4px 0;
+  color: #e6e6e6;
+  font-size: 11px;
+  text-align: center;
+  background: #000;
+}
+
+.preview-canvas--mini {
+  width: 72px;
+  margin-top: 0;
+  pointer-events: none;
+}
+
+.preview-canvas--mini .preview-canvas__grid {
+  gap: 1px;
+  padding: 2px;
+}
+
+.preview-settings__presets,
+.preview-settings__quick-slots {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.preview-settings__preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.preview-settings__preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  width: 88px;
+  padding: var(--space-2);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.preview-settings__preset-card:hover {
+  color: var(--color-text);
+}
+
+.preview-settings__preset-card[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.preview-settings__quick-slot {
+  display: flex;
+  gap: var(--space-1);
+}

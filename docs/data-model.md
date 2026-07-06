@@ -22,6 +22,7 @@ This document defines the persistent data model for Video Archive. It focuses on
 - `files`
 - `conversion_profiles`
 - `preview_layout_presets`
+- `preview_settings`
 - `jobs`
 - `job_items`
 - `file_tags`
@@ -154,8 +155,24 @@ Saved preview layout definitions (see [Specification Section 9.2](./specificatio
 Notes:
 
 - The sampled frame count is derived: `grid_rows × grid_cols` minus cells absorbed by enlarged tiles.
-- The folder-preview frame count is a global preview setting, not part of layout presets.
+- The folder-preview frame count is a global preview setting, not part of layout presets (see `preview_settings` below).
 - Collage appearance (black background, thin gaps, file-name caption) is a rendering rule, not preset data (see [Specification Section 9.2.1](./specification.md#921-collage-appearance)).
+- Built-in presets (`is_builtin = 1`) are seeded once, idempotently, from application code (`app/preview_layouts.py`'s `seed_builtin_presets()`, called from `init_db()`) rather than from migration SQL, so their timestamps stay dynamic.
+
+## 5a. preview_settings
+
+Singleton row (`id` is always `1`) holding the two preview settings that are explicitly *not* part of a layout preset: the overall collage aspect ratio (independent of grid dimensions, [Specification §9.2](./specification.md#92-collage-grid-layout)) and the folder-preview frame count.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | integer | Always `1` (singleton) |
+| `aspect_ratio` | enum | `standard`, `phone-portrait`, `ultra-wide`, `custom` |
+| `aspect_ratio_custom_width` | integer nullable | Used only when `aspect_ratio = custom` |
+| `aspect_ratio_custom_height` | integer nullable | Used only when `aspect_ratio = custom` |
+| `folder_preview_frame_count` | integer | Default `4` |
+| `updated_at` | datetime | Audit |
+
+Seeded once (default row) from `app/preview_settings.py`'s `seed_default_settings()`, called from `init_db()` alongside the built-in preset seeding above.
 
 ## 6. jobs
 

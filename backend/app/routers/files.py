@@ -1,14 +1,24 @@
-"""File listing and detail endpoints (API §3)."""
+"""File listing and detail endpoints (API §3, §9)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 
 from app.db import get_engine
 from app.source_access import get_active_source_or_404
 
 router = APIRouter()
+
+
+def _file_not_found_error(file_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"error": {"code": "file_not_found", "message": f"File not found: {file_id}"}},
+    )
 
 
 def _file_row_to_dict(row) -> dict:
@@ -127,3 +137,52 @@ def get_file(file_id: str):
         "preview_generated_at": row.preview_generated_at,
         "tagged_at": row.tagged_at,
     }
+
+
+def _preview_path(conn, file_id: str) -> tuple[Path, dict] | None:
+    row = conn.execute(
+        text(
+            """
+            SELECT f.relative_path, f.has_preview_asset, f.preview_generated_at, s.root_path
+            FROM files f
+            JOIN sources s ON s.id = f.source_id
+            WHERE f.id = :id AND s.is_active = 1
+            """
+        ),
+        {"id": file_id},
+    ).fetchone()
+    if row is None:
+        return None
+    preview_path = (Path(row.root_path) / row.relative_path).with_suffix(".jpg")
+    return preview_path, {
+        "has_preview_asset": bool(row.has_preview_asset),
+        "preview_generated_at": row.preview_generated_at,
+    }
+
+
+@router.get("/files/{file_id}/preview")
+def get_file_preview_metadata(file_id: str):
+    with get_engine().connect() as conn:
+        result = _preview_path(conn, file_id)
+    if result is None:
+        raise _file_not_found_error(file_id)
+    preview_path, metadata = result
+    return {
+        "has_preview_asset": metadata["has_preview_asset"] and preview_path.exists(),
+        "preview_generated_at": metadata["preview_generated_at"],
+    }
+
+
+@router.get("/files/{file_id}/preview.jpg")
+def get_file_preview_image(file_id: str):
+    with get_engine().connect() as conn:
+        result = _preview_path(conn, file_id)
+    if result is None:
+        raise _file_not_found_error(file_id)
+    preview_path, _metadata = result
+    if not preview_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "preview_not_found", "message": "No preview asset for this file."}},
+        )
+    return FileResponse(preview_path, media_type="image/jpeg")

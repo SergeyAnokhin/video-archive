@@ -111,6 +111,7 @@ export interface DirectoryEntry {
   path: string
   name: string
   status?: DirectoryStatus
+  has_folder_preview: boolean
 }
 
 export interface FileEntry {
@@ -151,4 +152,49 @@ export interface VariantOverride {
   max_dimension?: number
   crf?: number
   video_codec?: string
+}
+
+export type TimelineFlow = 'row' | 'column' | 'shuffle'
+export type AspectRatioMode = 'standard' | 'phone-portrait' | 'ultra-wide' | 'custom'
+
+export interface EnlargedTile {
+  row: number
+  col: number
+  span: 2 | 3
+}
+
+export interface LayoutTile {
+  row: number
+  col: number
+  span: number
+  type: 'small' | 'enlarged'
+}
+
+export interface PreviewLayoutPreset {
+  id: string
+  name: string
+  grid_rows: number
+  grid_cols: number
+  timeline_flow: TimelineFlow
+  identity_diversity_enabled: boolean
+  layout_definition: EnlargedTile[]
+  is_builtin: boolean
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface PreviewSettings {
+  aspect_ratio: AspectRatioMode
+  aspect_ratio_custom_width: number | null
+  aspect_ratio_custom_height: number | null
+  folder_preview_frame_count: number
+  updated_at: string
+}
+
+export interface LayoutPreviewResponse {
+  grid_rows: number
+  grid_cols: number
+  tiles: LayoutTile[]
+  frame_count: number
 }

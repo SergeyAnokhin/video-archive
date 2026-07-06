@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion_profiles
+from app import conversion_profiles, preview_layouts
 from app.db import get_engine
 from app.jobs import service
 from app.source_access import get_active_source_or_404
@@ -244,4 +244,88 @@ def convert_file(body: ConvertFileRequest):
             "skip_processed": body.skip_processed,
             "variants": [v.model_dump(exclude_none=True) for v in body.variants] if body.variants else None,
         },
+    )
+
+
+def _preset_not_found_error(preset_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={
+            "error": {
+                "code": "preview_layout_preset_not_found",
+                "message": f"Preview layout preset not found: {preset_id}",
+            }
+        },
+    )
+
+
+class PreviewDirectoryRequest(BaseModel):
+    path: str = ""
+    layout_preset_id: str | None = None
+    skip_processed: bool = True
+
+
+@router.post("/jobs/preview-directory")
+def preview_directory(body: PreviewDirectoryRequest):
+    engine = get_engine()
+    if body.layout_preset_id and preview_layouts.get_preset(engine, body.layout_preset_id) is None:
+        raise _preset_not_found_error(body.layout_preset_id)
+
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+        if body.path:
+            dir_row = conn.execute(
+                text("SELECT id FROM directories WHERE source_id = :sid AND relative_path = :path"),
+                {"sid": source.id, "path": body.path},
+            ).fetchone()
+            if dir_row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "error": {
+                            "code": "directory_not_found",
+                            "message": f"Directory not found: {body.path}",
+                        }
+                    },
+                )
+
+    return service.create_job(
+        engine,
+        job_type="preview",
+        scope_type="directory" if body.path else "source",
+        scope_ref=body.path or None,
+        parameters={
+            "path": body.path,
+            "layout_preset_id": body.layout_preset_id,
+            "skip_processed": body.skip_processed,
+        },
+    )
+
+
+class PreviewFileRequest(BaseModel):
+    file_id: str
+    layout_preset_id: str | None = None
+
+
+@router.post("/jobs/preview-file")
+def preview_file(body: PreviewFileRequest):
+    engine = get_engine()
+    if body.layout_preset_id and preview_layouts.get_preset(engine, body.layout_preset_id) is None:
+        raise _preset_not_found_error(body.layout_preset_id)
+
+    with engine.connect() as conn:
+        get_active_source_or_404(conn)
+        file_row = conn.execute(text("SELECT id FROM files WHERE id = :id"), {"id": body.file_id}).fetchone()
+        if file_row is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"code": "file_not_found", "message": f"File not found: {body.file_id}"}},
+            )
+
+    return service.create_job(
+        engine,
+        job_type="preview",
+        scope_type="file",
+        scope_ref=body.file_id,
+        parameters={"file_id": body.file_id, "layout_preset_id": body.layout_preset_id},
     )

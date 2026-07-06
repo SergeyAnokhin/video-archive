@@ -14,6 +14,8 @@ from app.routers import (
     health,
     jobs,
     logs,
+    preview_layouts,
+    preview_settings,
     source,
     tree,
 )
@@ -40,5 +42,7 @@ app.include_router(tree.router, prefix="/api")
 app.include_router(directories.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(conversion_profiles.router, prefix="/api")
+app.include_router(preview_layouts.router, prefix="/api")
+app.include_router(preview_settings.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")

@@ -126,13 +126,21 @@
 }
 
 .library-card__thumb {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 72px;
+  overflow: hidden;
   color: var(--color-text-muted);
   background: var(--color-bg);
   border-radius: var(--radius-sm);
+}
+
+.library-card__thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .library-card__name {
@@ -147,10 +155,15 @@
   color: var(--color-text-muted);
 }
 
-.library-card__convert-btn {
+.library-card__file-actions {
   position: absolute;
   bottom: var(--space-2);
   right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+
+.library-card__convert-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;

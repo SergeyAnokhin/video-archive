@@ -70,7 +70,9 @@
     "empty": "Эта папка пуста.",
     "rescan": "Пересканировать папку",
     "convert": "Конвертировать папку",
-    "convertFile": "Конвертировать файл"
+    "convertFile": "Конвертировать файл",
+    "preview": "Создать превью для папки",
+    "previewFile": "Создать превью"
   },
   "convertDialog": {
     "directoryTitle": "Конвертация папки",
@@ -97,6 +99,44 @@
     "resultsWaiting": "Ожидание начала создания вариантов…",
     "saveAsProfile": "Сохранить как профиль",
     "saveAsProfileNamePlaceholder": "Название нового профиля"
+  },
+  "previewDialog": {
+    "directoryTitle": "Создать превью для папки",
+    "skipProcessed": "Пропускать файлы, у которых уже есть превью"
+  },
+  "previewSettings": {
+    "title": "Превью",
+    "aspectRatio": "Соотношение сторон коллажа",
+    "aspectRatioOption": {
+      "standard": "Стандартное",
+      "phone-portrait": "Портрет телефона (~19,5:9)",
+      "ultra-wide": "Широкоформатное (21:9 и шире)",
+      "custom": "Свой вариант"
+    },
+    "folderFrameCount": "Число кадров для превью папки",
+    "brush": "Кисть тайла",
+    "brushSmall": "Маленький тайл",
+    "brushEnlarged2": "Укрупнённый 2×2",
+    "brushEnlarged3": "Укрупнённый 3×3",
+    "fillAll": "Заполнить всё",
+    "clearAll": "Очистить всё",
+    "gridRows": "Строк сетки",
+    "gridCols": "Столбцов сетки",
+    "timelineFlow": "Порядок кадров",
+    "timelineFlowRow": "По строкам",
+    "timelineFlowColumn": "По столбцам",
+    "timelineFlowShuffle": "Вперемешку",
+    "identityDiversity": "Разнообразие лиц (два разных лица)",
+    "frameCount": "Кадров для этой раскладки: {{count}}",
+    "layoutInvalid": "Такая раскладка не помещается в сетку — измените укрупнённые тайлы.",
+    "captionSample": "example.mp4",
+    "presetGallery": "Пресеты раскладки",
+    "quickSlots": "Быстрые слоты",
+    "saveToSlot": "Сохранить в слот {{slot}}",
+    "loadSlot": "Загрузить слот {{slot}}",
+    "presetName": "Название пресета",
+    "savePreset": "Сохранить пресет",
+    "saveAsNewPreset": "Сохранить как новый пресет"
   },
   "jobs": {
     "title": "Задания",

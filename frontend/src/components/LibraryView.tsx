@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { File as FileIcon, Film, Folder, RefreshCw, Wand2 } from 'lucide-react'
+import { File as FileIcon, Film, Folder, Images, RefreshCw, Wand2 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
+import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { FileConvertModal } from './FileConvertModal'
+import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry } from '../types/api'
 import './LibraryView.css'
 
@@ -15,11 +17,14 @@ interface LibraryViewProps {
 export function LibraryView({ path, onNavigate }: LibraryViewProps) {
   const { t } = useTranslation()
   const { refresh: refreshJobs } = useJobs()
+  const { previewsVisible } = usePreviewVisibility()
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rescanning, setRescanning] = useState(false)
   const [convertDirOpen, setConvertDirOpen] = useState(false)
   const [convertFile, setConvertFile] = useState<FileEntry | null>(null)
+  const [previewDirOpen, setPreviewDirOpen] = useState(false)
+  const [previewingFileId, setPreviewingFileId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -66,6 +71,20 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
     }
   }
 
+  async function handlePreviewFile(fileId: string) {
+    setPreviewingFileId(fileId)
+    try {
+      await fetch('/api/jobs/preview-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_id: fileId }),
+      })
+      await refreshJobs()
+    } finally {
+      setPreviewingFileId(null)
+    }
+  }
+
   return (
     <div className="library-view">
       <div className="library-view__toolbar">
@@ -106,6 +125,16 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
         >
           <Wand2 size={16} />
         </button>
+
+        <button
+          type="button"
+          className="library-view__icon-btn"
+          aria-label={t('library.preview')}
+          title={t('library.preview')}
+          onClick={() => setPreviewDirOpen(true)}
+        >
+          <Images size={16} />
+        </button>
       </div>
 
       {error && (
@@ -123,10 +152,17 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
       {data && (data.directories.length > 0 || data.files.length > 0) && (
         <div className="library-view__grid">
           {data.directories.map((dir) => (
-            <FolderCard key={dir.path} dir={dir} onOpen={() => onNavigate(dir.path)} />
+            <FolderCard key={dir.path} dir={dir} previewsVisible={previewsVisible} onOpen={() => onNavigate(dir.path)} />
           ))}
           {data.files.map((file) => (
-            <FileCard key={file.id} file={file} onConvert={() => setConvertFile(file)} />
+            <FileCard
+              key={file.id}
+              file={file}
+              previewsVisible={previewsVisible}
+              previewing={previewingFileId === file.id}
+              onConvert={() => setConvertFile(file)}
+              onPreview={() => void handlePreviewFile(file.id)}
+            />
           ))}
         </div>
       )}
@@ -146,20 +182,45 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
           onStarted={refreshJobs}
         />
       )}
+
+      {previewDirOpen && (
+        <PreviewDirectoryDialog
+          path={path}
+          onClose={() => setPreviewDirOpen(false)}
+          onStarted={refreshJobs}
+        />
+      )}
     </div>
   )
 }
 
-function FolderCard({ dir, onOpen }: { dir: DirectoryEntry; onOpen: () => void }) {
+function FolderCard({
+  dir,
+  previewsVisible,
+  onOpen,
+}: {
+  dir: DirectoryEntry
+  previewsVisible: boolean
+  onOpen: () => void
+}) {
   const { t } = useTranslation()
   const status = dir.status
   const showConversionDot = Boolean(status && !status.conversion_complete)
   const showPreviewDot = Boolean(status && !status.preview_complete)
+  const showThumbnail = previewsVisible && dir.has_folder_preview
 
   return (
     <button type="button" className="library-card library-card--folder" onClick={onOpen}>
       <div className="library-card__thumb">
-        <Folder size={28} />
+        {showThumbnail ? (
+          <img
+            src={`/api/directories/preview.jpg?path=${encodeURIComponent(dir.path)}`}
+            alt=""
+            className="library-card__thumb-img"
+          />
+        ) : (
+          <Folder size={28} />
+        )}
       </div>
       <div className="library-card__name">{dir.name}</div>
       {(showConversionDot || showPreviewDot) && (
@@ -188,30 +249,57 @@ function FolderCard({ dir, onOpen }: { dir: DirectoryEntry; onOpen: () => void }
   )
 }
 
-function FileCard({ file, onConvert }: { file: FileEntry; onConvert: () => void }) {
+interface FileCardProps {
+  file: FileEntry
+  previewsVisible: boolean
+  previewing: boolean
+  onConvert: () => void
+  onPreview: () => void
+}
+
+function FileCard({ file, previewsVisible, previewing, onConvert, onPreview }: FileCardProps) {
   const { t } = useTranslation()
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
+  const showThumbnail = previewsVisible && file.is_video_supported && file.has_preview_asset
 
   return (
     <div className="library-card">
       <div className="library-card__thumb">
-        {file.is_video_supported ? <Film size={28} /> : <FileIcon size={28} />}
+        {showThumbnail ? (
+          <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="library-card__thumb-img" />
+        ) : file.is_video_supported ? (
+          <Film size={28} />
+        ) : (
+          <FileIcon size={28} />
+        )}
       </div>
       <div className="library-card__name" title={file.file_name}>
         {file.file_name}
       </div>
       <div className="library-card__meta">{formatSize(file.size_bytes)}</div>
       {file.is_video_supported && (
-        <button
-          type="button"
-          className="library-card__convert-btn"
-          aria-label={t('library.convertFile')}
-          title={t('library.convertFile')}
-          onClick={onConvert}
-        >
-          <Wand2 size={14} />
-        </button>
+        <div className="library-card__file-actions">
+          <button
+            type="button"
+            className="library-card__convert-btn"
+            aria-label={t('library.previewFile')}
+            title={t('library.previewFile')}
+            onClick={onPreview}
+            disabled={previewing}
+          >
+            <Images size={14} />
+          </button>
+          <button
+            type="button"
+            className="library-card__convert-btn"
+            aria-label={t('library.convertFile')}
+            title={t('library.convertFile')}
+            onClick={onConvert}
+          >
+            <Wand2 size={14} />
+          </button>
+        </div>
       )}
       {(showConversionDot || showPreviewDot) && (
         <div className="library-card__badges">

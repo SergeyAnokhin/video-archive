@@ -1,11 +1,15 @@
-"""Immediate folder contents endpoint (API §3, UI Screens §1)."""
+"""Immediate folder contents endpoint (API §3, §9, UI Screens §1)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 
 from app.db import get_engine
+from app.media import FOLDER_PREVIEW_FILENAME
 from app.source_access import get_active_source_or_404
 from app.status import compute_directory_status
 
@@ -47,7 +51,7 @@ def get_directory_children(
 
         subdir_rows = conn.execute(
             text(
-                "SELECT relative_path, name FROM directories "
+                "SELECT relative_path, name, has_folder_preview FROM directories "
                 "WHERE source_id = :sid AND parent_relative_path = :path "
                 "ORDER BY name COLLATE NOCASE"
             ),
@@ -56,7 +60,11 @@ def get_directory_children(
 
         directories = []
         for row in subdir_rows:
-            entry = {"path": row.relative_path, "name": row.name}
+            entry = {
+                "path": row.relative_path,
+                "name": row.name,
+                "has_folder_preview": bool(row.has_folder_preview),
+            }
             if include_status:
                 entry["status"] = compute_directory_status(conn, source.id, row.relative_path)
             directories.append(entry)
@@ -76,3 +84,20 @@ def get_directory_children(
         files = [_file_row_to_dict(row) for row in file_rows]
 
     return {"path": path, "directories": directories, "files": files}
+
+
+@router.get("/directories/preview.jpg")
+def get_directory_preview_image(path: str = Query(default="")):
+    engine = get_engine()
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+
+    preview_path = (Path(source.root_path) / path / FOLDER_PREVIEW_FILENAME) if path else (
+        Path(source.root_path) / FOLDER_PREVIEW_FILENAME
+    )
+    if not preview_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "preview_not_found", "message": "No folder preview for this directory."}},
+        )
+    return FileResponse(preview_path, media_type="image/jpeg")

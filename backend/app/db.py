@@ -163,6 +163,40 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Stage 5: preview layout presets and the global preview settings
+    # singleton (Data Model §5, Specification §9-10). Seeding the built-in
+    # preset gallery and the default settings row happens in application code
+    # (`app/preview_layouts.py`/`app/preview_settings.py`, called from
+    # `init_db()` below) rather than here, so timestamps stay dynamic and
+    # seeding stays idempotent across restarts, matching the DDL-only style
+    # of earlier migrations.
+    5: [
+        """
+        CREATE TABLE preview_layout_presets (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            grid_rows INTEGER NOT NULL,
+            grid_cols INTEGER NOT NULL,
+            timeline_flow TEXT NOT NULL DEFAULT 'row',
+            identity_diversity_enabled INTEGER NOT NULL DEFAULT 1,
+            layout_definition TEXT NOT NULL,
+            is_builtin INTEGER NOT NULL DEFAULT 0,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE preview_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            aspect_ratio TEXT NOT NULL DEFAULT 'standard',
+            aspect_ratio_custom_width INTEGER,
+            aspect_ratio_custom_height INTEGER,
+            folder_preview_frame_count INTEGER NOT NULL DEFAULT 4,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -221,6 +255,13 @@ def init_db() -> int:
                 ),
                 {"version": SCHEMA_VERSION, "updated_at": now},
             )
+
+        if current_version < 5 <= SCHEMA_VERSION:
+            from app.preview_layouts import seed_builtin_presets
+            from app.preview_settings import seed_default_settings
+
+            seed_builtin_presets(conn)
+            seed_default_settings(conn)
 
     return SCHEMA_VERSION
 

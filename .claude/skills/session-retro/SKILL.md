@@ -83,3 +83,8 @@ End with a short summary (not a new doc, not a persisted log):
 
 Keep it tight enough to read in 30 seconds. This is a retrospective, not an audit
 report.
+
+Write this final report in Russian, regardless of what language the rest of the
+session was conducted in. This applies only to the Step 5 report text itself -
+code, comments, docs, and everything else this skill touches stay in whatever
+language the project already uses.

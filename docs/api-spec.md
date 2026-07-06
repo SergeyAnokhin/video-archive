@@ -166,20 +166,30 @@ Deletes a preview layout preset.
 
 ### `POST /api/preview-layouts/preview`
 
-Generates a lightweight live preview payload for the preview settings page.
+Generates a lightweight live preview payload for the preview settings page: validates the enlarged-tile placements against the grid and returns the full tile list (small tiles auto-filled), so the frontend construction-set editor and the backend collage renderer share one source of truth for grid geometry.
 
 Request body includes:
 
-- grid size
-- enlarged tile placements (`{row, col, span}` list)
+- grid size (`grid_rows`, `grid_cols`)
+- enlarged tile placements (`{row, col, span}` list, `layout_definition`)
 - timeline flow
 - identity diversity setting
 
 Response:
 
-- tile geometry
-- tile labels or frame placeholders
-- optional representative images
+- `grid_rows`, `grid_cols`
+- `tiles`: full tile list (`{row, col, span, type}`, `type` is `small` or `enlarged`)
+- `frame_count`: number of frames the layout requires (Specification §9.2)
+
+Returns `400 invalid_layout` if an enlarged tile is out of bounds, has an invalid span (must be 2 or 3), or overlaps another.
+
+### `GET /api/preview-settings`
+
+Returns the global preview settings singleton: `aspect_ratio` (`standard | phone-portrait | ultra-wide | custom`), `aspect_ratio_custom_width`/`aspect_ratio_custom_height` (used only when `aspect_ratio` is `custom`), and `folder_preview_frame_count` (default 4). These two settings are deliberately not part of a layout preset (Data Model §5).
+
+### `PUT /api/preview-settings`
+
+Updates the global preview settings singleton. Applies immediately, like other settings groups.
 
 ## 6. Jobs
 
