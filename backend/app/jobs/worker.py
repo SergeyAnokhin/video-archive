@@ -13,9 +13,13 @@ import time
 
 from app.db import get_engine
 from app.jobs import service
+from app.jobs.backup import run_backup_job
+from app.jobs.cleanup import run_cleanup_job
 from app.jobs.convert import run_convert_job
+from app.jobs.optimize_db import run_optimize_db_job
 from app.jobs.preview import run_preview_job
 from app.jobs.rescan import run_rescan_job
+from app.jobs.restore import run_restore_job
 from app.jobs.tag import run_tag_job
 
 _POLL_INTERVAL_SECONDS = 0.3
@@ -26,6 +30,10 @@ _HANDLERS = {
     "convert": run_convert_job,
     "preview": run_preview_job,
     "tag": run_tag_job,
+    "cleanup": run_cleanup_job,
+    "optimize_db": run_optimize_db_job,
+    "backup": run_backup_job,
+    "restore": run_restore_job,
 }
 
 

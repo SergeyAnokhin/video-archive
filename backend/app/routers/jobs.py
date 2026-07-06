@@ -1,7 +1,8 @@
-"""Job endpoints (API §6-8): CRUD, cancellation, restart, the `rescan` job
-trigger, and the `convert` job triggers (directory and file scope, including
-the file-scope variant-comparison sweep). Preview/tag job endpoints arrive
-with their own stages.
+"""Job endpoints (API §6-9): CRUD, cancellation, restart, and the trigger
+endpoints for every job type — `rescan`, `convert` (directory/file scope,
+including the file-scope variant-comparison sweep), `preview`, `tag`, and the
+Stage 8 maintenance actions `cleanup`/`optimize_db`. Backup/restore triggers
+live in `app/routers/backups.py` instead, alongside backup listing/deletion.
 """
 
 from __future__ import annotations
@@ -434,4 +435,24 @@ def tag_file(body: TagFileRequest):
         scope_type="file",
         scope_ref=body.file_id,
         parameters={"file_id": body.file_id, "provider_name": provider_name},
+    )
+
+
+@router.post("/jobs/cleanup-stale-records")
+def cleanup_stale_records():
+    engine = get_engine()
+    with engine.connect() as conn:
+        get_active_source_or_404(conn)
+
+    return service.create_job(engine, job_type="cleanup", scope_type="maintenance", scope_ref=None, parameters={})
+
+
+@router.post("/jobs/optimize-database")
+def optimize_database():
+    engine = get_engine()
+    with engine.connect() as conn:
+        get_active_source_or_404(conn)
+
+    return service.create_job(
+        engine, job_type="optimize_db", scope_type="maintenance", scope_ref=None, parameters={}
     )

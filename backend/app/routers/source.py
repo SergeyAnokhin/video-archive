@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import secrets_store
+from app import backup, secrets_store
 from app.config import BACKEND_DIR
 from app.db import get_engine
 from app.scan import scan_source, scan_source_access
@@ -132,7 +132,16 @@ def put_source(body: SourceRequest):
     with engine.begin() as conn:
         # Replacing the active source is destructive: the frontend warns
         # first, then the backend wipes all previous library metadata
-        # (Specification §5.2).
+        # (Specification §5.2, Data Model §1) -- files, directories, assigned
+        # tags, and job history. Global settings (conversion profiles, the
+        # tag vocabulary itself, preview/tagging/provider/playback/backup
+        # settings) are not source-specific and survive the switch; a backup
+        # taken beforehand can restore the wiped rows once reconnected to the
+        # same source (see `detected_backups` below).
+        conn.execute(text("DELETE FROM file_tags"))
+        conn.execute(text("DELETE FROM app_events"))
+        conn.execute(text("DELETE FROM job_items"))
+        conn.execute(text("DELETE FROM jobs"))
         conn.execute(text("DELETE FROM files"))
         conn.execute(text("DELETE FROM directories"))
         conn.execute(text("DELETE FROM sources"))
@@ -172,8 +181,13 @@ def put_source(body: SourceRequest):
     with engine.connect() as conn:
         row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": new_id}).fetchone()
 
-    # Backup discovery arrives with Stage 8; no backups can exist yet.
-    return {**_source_row_to_dict(row), "detected_backups": []}
+    # A source freshly connected via this endpoint may still carry backups
+    # from a previous connection to the same disk (Specification §5.2): the
+    # technical folder lives on the source itself and survives the metadata
+    # wipe above. Surface them so the UI can offer to restore one.
+    access = get_source_access(row)
+    detected_backups = backup.list_backups(access)
+    return {**_source_row_to_dict(row), "detected_backups": detected_backups}
 
 
 @router.post("/source/reconnect")

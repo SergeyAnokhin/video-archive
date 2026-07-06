@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useJobs } from '../context/JobsContext'
 import { useSource } from '../context/SourceContext'
-import type { SourceConfig, SourceProtocol, TestConnectionResult } from '../types/api'
+import type { BackupSummary, SourceConfig, SourceProtocol, TestConnectionResult } from '../types/api'
 
 export function SourceSection() {
   const { t } = useTranslation()
   const { source, loading: sourceLoading, setSource } = useSource()
+  const { refresh: refreshJobs } = useJobs()
   const [protocol, setProtocol] = useState<SourceProtocol>('local')
   const [name, setName] = useState('')
   const [rootPath, setRootPath] = useState('')
@@ -20,6 +22,9 @@ export function SourceSection() {
   const [confirmingReplace, setConfirmingReplace] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectResult, setReconnectResult] = useState<TestConnectionResult | null>(null)
+  const [detectedBackups, setDetectedBackups] = useState<BackupSummary[]>([])
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (source) {
@@ -83,15 +88,40 @@ export function SourceSection() {
         const json = await res.json().catch(() => null)
         throw new Error(json?.error?.message ?? `HTTP ${res.status}`)
       }
-      const json: SourceConfig = await res.json()
+      const json: SourceConfig & { detected_backups: BackupSummary[] } = await res.json()
       setSource(json)
       setConfirmingReplace(false)
       setTestResult(null)
       setPassword('')
+      setDetectedBackups(json.detected_backups)
+      setRestoreMessage(null)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleRestoreDetected(backupId: string) {
+    if (!window.confirm(t('settings.confirmRestoreDetected'))) return
+    setRestoringId(backupId)
+    setRestoreMessage(null)
+    try {
+      const res = await fetch('/api/backups/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backup_id: backupId }),
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => null)
+        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
+      }
+      await refreshJobs()
+      setRestoreMessage(t('settings.restoreStarted'))
+    } catch (err) {
+      setRestoreMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -275,6 +305,32 @@ export function SourceSection() {
           </button>
         )}
       </div>
+
+      {detectedBackups.length > 0 && (
+        <>
+          <p className="settings-modal__hint settings-modal__hint--warning">
+            {t('settings.detectedBackupsHint', { count: detectedBackups.length })}
+          </p>
+          {detectedBackups.map((entry) => (
+            <div key={entry.id} className="backup-row">
+              <span className="settings-modal__field-label">
+                {new Date(entry.created_at).toLocaleString()}
+              </span>
+              <div className="settings-modal__actions">
+                <button
+                  type="button"
+                  className="settings-modal__option"
+                  onClick={() => handleRestoreDetected(entry.id)}
+                  disabled={restoringId === entry.id}
+                >
+                  {t('settings.restoreDetected')}
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+      {restoreMessage && <p className="settings-modal__hint">{restoreMessage}</p>}
     </section>
   )
 }

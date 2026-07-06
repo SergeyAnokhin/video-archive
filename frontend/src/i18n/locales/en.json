@@ -43,7 +43,11 @@
     "lastScan": "Last scanned {{date}}.",
     "neverScanned": "Not scanned yet.",
     "reconnect": "Reconnect",
-    "reconnectOk": "Reconnected successfully."
+    "reconnectOk": "Reconnected successfully.",
+    "detectedBackupsHint": "Found {{count}} backup(s) on this source.",
+    "restoreDetected": "Restore",
+    "confirmRestoreDetected": "Restoring replaces the current library metadata with this backup's contents. Continue?",
+    "restoreStarted": "Restore started — see Jobs for progress."
   },
   "playbackSettings": {
     "title": "Playback",
@@ -194,6 +198,24 @@
     "defaultProvider": "Default provider",
     "noDefaultProvider": "None selected",
     "defaultVisionModel": "Default vision model"
+  },
+  "backupMaintenance": {
+    "title": "Backup & Maintenance",
+    "empty": "No backups yet.",
+    "includesSecretsBadge": "Includes secrets",
+    "summary": "{{source}} · {{size}}",
+    "restore": "Restore",
+    "delete": "Delete",
+    "confirmRestore": "Restoring replaces the current library metadata with this backup's contents. Continue?",
+    "includeSecrets": "Include provider/source secrets in the backup",
+    "retentionCount": "Retention count",
+    "createBackup": "Create backup",
+    "refresh": "Refresh",
+    "maintenanceTitle": "Maintenance",
+    "fullRescan": "Full rescan",
+    "cleanupStale": "Clean up stale records",
+    "optimizeDb": "Optimize database",
+    "actionStarted": "Started as a background job — see Jobs for progress."
   },
   "providerSettings": {
     "title": "AI providers",

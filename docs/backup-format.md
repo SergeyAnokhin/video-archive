@@ -79,3 +79,12 @@ Suggested manifest example:
   "includes_secrets": true
 }
 ```
+
+## Implementation Notes (Stage 8)
+
+The implementation (`backend/app/backup.py`) resolves the choices left open above as follows:
+
+- **Package shape**: a single zip containing `manifest.json`, `data.json` (JSON dump of the included tables' rows), and an optional raw `secrets.env` copy when `include_secrets` was requested at backup time.
+- **Job history is not included**: `jobs`/`job_items`/`app_events` are short-lived (24h retention, [Job Model](./job-model.md#retention)) and not restored; only `directories`, `files`, `file_tags`, `conversion_profiles`, non-built-in `preview_layout_presets`, `tag_catalog`, and the `preview_settings`/`tagging_settings`/`provider_configs`/`playback_settings`/`backup_settings` singletons are captured.
+- **Restore mode**: source-scoped tables (`directories`, `files`, `file_tags`) are fully replaced and remapped to the *currently* active source id (a restore normally follows a source switch, which assigns a new source row for the same physical disk); global settings tables are upserted by id rather than wiped, so a restore never deletes a global entity (e.g. a conversion profile) the backup simply didn't know about.
+- **Backup id**: the id used by `GET /api/backups`, `POST /api/backups/restore`, and `DELETE /api/backups/{backup_id}` is the package filename without its `.zip` extension (`<timestamp>_<short-uuid>`), not the full `manifest.backup_id` UUID.

@@ -7,6 +7,7 @@ import { PreviewSettingsSection } from './PreviewSettingsSection'
 import { TaggingSettingsSection } from './TaggingSettingsSection'
 import { ProviderSettingsSection } from './ProviderSettingsSection'
 import { PlaybackSettingsSection } from './PlaybackSettingsSection'
+import { BackupMaintenanceSection } from './BackupMaintenanceSection'
 import { InterfaceSection } from './InterfaceSection'
 import './SettingsModal.css'
 
@@ -59,6 +60,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <TaggingSettingsSection />
 
         <ProviderSettingsSection />
+
+        <BackupMaintenanceSection />
 
         <InterfaceSection />
       </div>

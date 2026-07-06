@@ -273,6 +273,20 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Stage 8: the backup-retention setting (Specification §19, Settings §7).
+    # Backup packages themselves live on the source disk (`.video-archive/
+    # backups/`, see `app/backup.py`), not in this database; this singleton
+    # only holds how many of them to keep. Same convention as
+    # preview_settings/tagging_settings/playback_settings.
+    8: [
+        """
+        CREATE TABLE IF NOT EXISTS backup_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            retention_count INTEGER NOT NULL DEFAULT 5,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -350,6 +364,11 @@ def init_db() -> int:
             from app.playback_settings import seed_default_settings as seed_default_playback_settings
 
             seed_default_playback_settings(conn)
+
+        if current_version < 8 <= SCHEMA_VERSION:
+            from app.backup_settings import seed_default_settings as seed_default_backup_settings
+
+            seed_default_backup_settings(conn)
 
     return SCHEMA_VERSION
 

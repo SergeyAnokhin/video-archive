@@ -255,3 +255,20 @@ export interface PlaybackInfo {
   stream_url: string
   direct_path: string
 }
+
+export interface BackupSummary {
+  id: string
+  filename: string
+  backup_id: string
+  created_at: string
+  app_version: string
+  schema_version: number
+  source_name: string
+  includes_secrets: boolean
+  size_bytes: number | null
+}
+
+export interface BackupSettings {
+  retention_count: number
+  updated_at: string
+}

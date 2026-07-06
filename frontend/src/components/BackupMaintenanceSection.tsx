@@ -1,0 +1,241 @@
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useJobs } from '../context/JobsContext'
+import type { BackupSettings, BackupSummary } from '../types/api'
+
+async function postJob(url: string, body?: unknown): Promise<{ id: string }> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+export function BackupMaintenanceSection() {
+  const { t } = useTranslation()
+  const { jobs, refresh: refreshJobs } = useJobs()
+  const [backups, setBackups] = useState<BackupSummary[]>([])
+  const [loadingBackups, setLoadingBackups] = useState(true)
+  const [settings, setSettings] = useState<BackupSettings | null>(null)
+  const [includeSecrets, setIncludeSecrets] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [maintenanceBusy, setMaintenanceBusy] = useState<string | null>(null)
+  const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null)
+
+  async function loadBackups() {
+    setLoadingBackups(true)
+    try {
+      const res = await fetch('/api/backups')
+      if (res.ok) {
+        const json: { backups: BackupSummary[] } = await res.json()
+        setBackups(json.backups)
+      }
+    } finally {
+      setLoadingBackups(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadBackups()
+    void (async () => {
+      const res = await fetch('/api/backup-settings')
+      if (res.ok) setSettings(await res.json())
+    })()
+  }, [])
+
+  // Once a backup/restore job started from this section finishes, refresh
+  // the list automatically instead of making the user click "Refresh".
+  useEffect(() => {
+    if (!pendingJobId) return
+    const job = jobs.find((j) => j.id === pendingJobId)
+    if (job && job.status !== 'queued' && job.status !== 'running') {
+      setPendingJobId(null)
+      void loadBackups()
+    }
+  }, [jobs, pendingJobId])
+
+  async function handleCreateBackup() {
+    setCreating(true)
+    setError(null)
+    try {
+      const job = await postJob('/api/backups', { include_secrets: includeSecrets })
+      setPendingJobId(job.id)
+      await refreshJobs()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleRestore(backupId: string) {
+    if (!window.confirm(t('backupMaintenance.confirmRestore'))) return
+    setBusyId(backupId)
+    setError(null)
+    try {
+      const job = await postJob('/api/backups/restore', { backup_id: backupId })
+      setPendingJobId(job.id)
+      await refreshJobs()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleDelete(backupId: string) {
+    setBusyId(backupId)
+    try {
+      await fetch(`/api/backups/${backupId}`, { method: 'DELETE' })
+      await loadBackups()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleRetentionChange(value: number) {
+    setSettings((prev) => (prev ? { ...prev, retention_count: value } : prev))
+    const res = await fetch('/api/backup-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retention_count: value }),
+    })
+    if (res.ok) setSettings(await res.json())
+  }
+
+  async function runMaintenance(key: string, url: string, body?: unknown) {
+    setMaintenanceBusy(key)
+    setMaintenanceMessage(null)
+    try {
+      await postJob(url, body)
+      await refreshJobs()
+      setMaintenanceMessage(t('backupMaintenance.actionStarted'))
+    } catch (err) {
+      setMaintenanceMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setMaintenanceBusy(null)
+    }
+  }
+
+  return (
+    <section className="settings-modal__section">
+      <h3 className="settings-modal__section-title">{t('backupMaintenance.title')}</h3>
+
+      {!loadingBackups && backups.length === 0 && (
+        <p className="settings-modal__hint">{t('backupMaintenance.empty')}</p>
+      )}
+
+      {backups.map((entry) => (
+        <div key={entry.id} className="backup-row">
+          <div>
+            <span className="settings-modal__field-label">
+              {new Date(entry.created_at).toLocaleString()}
+            </span>
+            {entry.includes_secrets && (
+              <span className="backup-row__badge">{t('backupMaintenance.includesSecretsBadge')}</span>
+            )}
+            <p className="settings-modal__hint">
+              {t('backupMaintenance.summary', {
+                source: entry.source_name,
+                size: entry.size_bytes ? `${Math.max(1, Math.ceil(entry.size_bytes / 1024))} KB` : '?',
+              })}
+            </p>
+          </div>
+          <div className="settings-modal__actions">
+            <button
+              type="button"
+              className="settings-modal__option"
+              onClick={() => handleRestore(entry.id)}
+              disabled={busyId === entry.id}
+            >
+              {t('backupMaintenance.restore')}
+            </button>
+            <button
+              type="button"
+              className="settings-modal__option"
+              onClick={() => handleDelete(entry.id)}
+              disabled={busyId === entry.id}
+            >
+              {t('backupMaintenance.delete')}
+            </button>
+          </div>
+        </div>
+      ))}
+
+      <label className="settings-modal__field">
+        <span className="settings-modal__field-label">{t('backupMaintenance.includeSecrets')}</span>
+        <input
+          type="checkbox"
+          checked={includeSecrets}
+          onChange={(event) => setIncludeSecrets(event.target.checked)}
+        />
+      </label>
+
+      {settings && (
+        <label className="settings-modal__label">
+          {t('backupMaintenance.retentionCount')}
+          <input
+            className="settings-modal__input"
+            type="number"
+            min={1}
+            value={settings.retention_count}
+            onChange={(event) => void handleRetentionChange(Number(event.target.value))}
+          />
+        </label>
+      )}
+
+      {error && <p className="settings-modal__hint settings-modal__hint--error">{error}</p>}
+
+      <div className="settings-modal__actions">
+        <button
+          type="button"
+          className="settings-modal__option"
+          onClick={handleCreateBackup}
+          disabled={creating}
+        >
+          {t('backupMaintenance.createBackup')}
+        </button>
+        <button type="button" className="settings-modal__option" onClick={() => void loadBackups()}>
+          {t('backupMaintenance.refresh')}
+        </button>
+      </div>
+
+      <h4 className="settings-modal__section-title">{t('backupMaintenance.maintenanceTitle')}</h4>
+      <div className="settings-modal__actions">
+        <button
+          type="button"
+          className="settings-modal__option"
+          onClick={() => void runMaintenance('rescan', '/api/jobs/rescan-directory', { path: '' })}
+          disabled={maintenanceBusy !== null}
+        >
+          {t('backupMaintenance.fullRescan')}
+        </button>
+        <button
+          type="button"
+          className="settings-modal__option"
+          onClick={() => void runMaintenance('cleanup', '/api/jobs/cleanup-stale-records')}
+          disabled={maintenanceBusy !== null}
+        >
+          {t('backupMaintenance.cleanupStale')}
+        </button>
+        <button
+          type="button"
+          className="settings-modal__option"
+          onClick={() => void runMaintenance('optimize', '/api/jobs/optimize-database')}
+          disabled={maintenanceBusy !== null}
+        >
+          {t('backupMaintenance.optimizeDb')}
+        </button>
+      </div>
+      {maintenanceMessage && <p className="settings-modal__hint">{maintenanceMessage}</p>}
+    </section>
+  )
+}

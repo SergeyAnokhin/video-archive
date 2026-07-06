@@ -3,6 +3,15 @@ other credentials never enter the SQLite database — they live in a
 git-ignored `.env`-style file next to the backend, read/written with
 `python-dotenv`. Only key *presence* should ever be exposed to the frontend
 (see `app/provider_configs.py`), never the value itself.
+
+Convention for other modules that need the secrets file path directly (e.g.
+`app/backup.py` zipping/restoring it): import this module and use
+`secrets_store.SECRETS_PATH` via attribute access, not
+`from app.config import SECRETS_PATH`. Tests isolate every case that touches
+real secrets by monkeypatching `secrets_store.SECRETS_PATH` (see
+`tests/conftest.py`'s `isolated_secrets_file` fixture) — a direct
+`from app.config import SECRETS_PATH` binds the pre-patch value and silently
+reads/writes the real `backend/secrets.env` instead of the per-test temp file.
 """
 
 from __future__ import annotations

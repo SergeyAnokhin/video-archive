@@ -8,6 +8,8 @@ from app.ffmpeg import check_ffmpeg
 from app.jobs.worker import JobWorker
 from app.routers import (
     app_info,
+    backup_settings,
+    backups,
     conversion_profiles,
     directories,
     files,
@@ -56,3 +58,5 @@ app.include_router(playback.router, prefix="/api")
 app.include_router(playback_settings.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
+app.include_router(backups.router, prefix="/api")
+app.include_router(backup_settings.router, prefix="/api")
