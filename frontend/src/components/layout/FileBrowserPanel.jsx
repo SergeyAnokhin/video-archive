@@ -51,53 +51,58 @@ export default function FileBrowserPanel({
     <section className="file-panel floating-library">
       <div className="panel browser-toolbar">
         <div className="panel-header compact-file-header">
-        <div className="file-header-main">
-          <p className="section-kicker">{t("files.kicker")}</p>
-          <div className="file-header-title-row">
-            <h2>{formatDirectoryLabel(selectedDirectory)}</h2>
-            {selectedDirectory ? (
-              <div className="inline-actions file-nav-actions">
-              <button type="button" className="ghost-button nav-chip" onClick={() => onSelectDirectory(parentDirectory)}>
-                <ArrowUpLeft size={15} />
-              </button>
-              <button type="button" className="ghost-button nav-chip" onClick={() => onSelectDirectory("")}>
-                <Folder size={15} />
-              </button>
-              </div>
-            ) : null}
+          <div className="file-header-main">
+            <p className="section-kicker">{t("files.kicker")}</p>
+            <div className="file-header-title-row">
+              <h2>{formatDirectoryLabel(selectedDirectory)}</h2>
+              {selectedDirectory ? (
+                <div className="inline-actions file-nav-actions">
+                  <button type="button" className="ghost-button nav-chip" onClick={() => onSelectDirectory(parentDirectory)}>
+                    <ArrowUpLeft size={15} />
+                  </button>
+                  <button type="button" className="ghost-button nav-chip" onClick={() => onSelectDirectory("")}>
+                    <Folder size={15} />
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <div className="inline-actions toolbar-inline-cluster">
-          <button
-            type="button"
-            className="ghost-button icon-only-button"
-            disabled={!source || isWorking}
-            aria-label={t("directory.rescanSource")}
-            title={t("directory.rescanSource")}
-            onClick={onScanSource}
-          >
-            <RefreshCcw size={16} />
-          </button>
-          <div className="directory-task-picker">
-            <select value={directoryAction} onChange={(event) => setDirectoryAction(event.target.value)} disabled={!source || isWorking}>
-              <option value="preview">{t("files.previewSubtree")}</option>
-              <option value="convert">{t("files.convertSubtree")}</option>
-              <option value="tag">{t("files.tagSubtree")}</option>
-              <option value="rescan">{t("files.rescanSubtree")}</option>
-            </select>
+          <div className="inline-actions toolbar-inline-cluster">
             <button
               type="button"
-              className="primary-button icon-only-button"
+              className="ghost-button icon-only-button"
               disabled={!source || isWorking}
-              aria-label={t("files.runTask")}
-              title={t("files.runTask")}
-              onClick={() => onRunDirectoryAction(directoryAction)}
+              aria-label={t("directory.rescanSource")}
+              title={t("directory.rescanSource")}
+              onClick={onScanSource}
             >
-              <Play size={15} />
+              <RefreshCcw size={16} />
             </button>
+            <div className="directory-task-picker">
+              <select
+                className="directory-action-select"
+                value={directoryAction}
+                onChange={(event) => setDirectoryAction(event.target.value)}
+                disabled={!source || isWorking}
+              >
+                <option value="preview">{t("files.previewSubtree")}</option>
+                <option value="convert">{t("files.convertSubtree")}</option>
+                <option value="tag">{t("files.tagSubtree")}</option>
+                <option value="rescan">{t("files.rescanSubtree")}</option>
+              </select>
+              <button
+                type="button"
+                className="primary-button icon-only-button"
+                disabled={!source || isWorking}
+                aria-label={t("files.runTask")}
+                title={t("files.runTask")}
+                onClick={() => onRunDirectoryAction(directoryAction)}
+              >
+                <Play size={15} />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       </div>
 
       <div className="file-list">

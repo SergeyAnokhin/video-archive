@@ -1207,6 +1207,7 @@ function App() {
         onRestartJob={handleRestartJob}
         onOpenLogViewer={openLogViewer}
         formatDate={formatDateValue}
+        formatStatusLabel={(value) => formatStatusLabel(value, t)}
         formatJobScope={(job) => formatJobScope(job, t)}
         formatJobTypeLabel={(value) => formatJobTypeLabel(value, t)}
         t={t}

@@ -1,4 +1,13 @@
-import { Ban, RefreshCcw, RotateCcw, TextSearch, X } from "lucide-react";
+import { Ban, Folder, ImageIcon, Play, RefreshCcw, RotateCcw, SlidersHorizontal, Tag, TextSearch, X } from "lucide-react";
+
+const JOB_TYPE_ICONS = {
+  scan: Folder,
+  rescan: RefreshCcw,
+  convert: Play,
+  preview: ImageIcon,
+  tag: Tag,
+  tune: SlidersHorizontal
+};
 
 export default function JobsModal({
   isOpen,
@@ -14,6 +23,7 @@ export default function JobsModal({
   onRestartJob,
   onOpenLogViewer,
   formatDate,
+  formatStatusLabel,
   formatJobScope,
   formatJobTypeLabel,
   t
@@ -38,22 +48,64 @@ export default function JobsModal({
           {jobs.length ? (
             <>
               <div className="job-list">
-                {jobs.map((job) => (
-                  <button
-                    key={job.id}
-                    type="button"
-                    className={`job-card job-select-card ${selectedJobId === job.id ? "active" : ""}`}
-                    onClick={() => onSelectJob(job.id)}
-                  >
-                    <div className="job-header">
-                      <strong>{formatJobTypeLabel(job.job_type)}</strong>
-                      <span className={`state-pill state-${job.status}`}>{job.status}</span>
-                    </div>
-                    <p>{formatJobScope(job)}</p>
-                    <p className="muted">{job.summary_message || t("jobs.noSummary")}</p>
-                    <p className="muted">{t("jobs.itemsProgress", { completed: job.item_counts.completed, total: job.item_counts.total })}</p>
-                  </button>
-                ))}
+                {jobs.map((job) => {
+                  const JobTypeIcon = JOB_TYPE_ICONS[job.job_type] || Folder;
+                  return (
+                    <article key={job.id} className={`job-card job-select-card ${selectedJobId === job.id ? "active" : ""}`}>
+                      <button type="button" className="job-select-main" onClick={() => onSelectJob(job.id)}>
+                        <div className="job-card-top">
+                          <span className="job-card-icon" aria-hidden="true">
+                            <JobTypeIcon size={18} />
+                          </span>
+                          <div className="job-card-copy">
+                            <div className="job-header">
+                              <strong>{formatJobTypeLabel(job.job_type)}</strong>
+                              <span className={`state-pill state-${job.status}`}>{formatStatusLabel(job.status)}</span>
+                            </div>
+                            <p className="job-scope">{formatJobScope(job)}</p>
+                          </div>
+                        </div>
+                        <p className="muted job-summary">{job.summary_message || t("jobs.noSummary")}</p>
+                        <div className="job-card-stats">
+                          <span>{t("jobs.itemsProgress", { completed: job.item_counts.completed, total: job.item_counts.total })}</span>
+                          <span>{t("jobs.running")}: {job.item_counts.running}</span>
+                          <span>{t("jobs.failed")}: {job.item_counts.failed}</span>
+                        </div>
+                      </button>
+                      <div className="job-card-actions">
+                        <button
+                          type="button"
+                          className="ghost-button icon-only-button"
+                          aria-label={t("jobs.openLogs")}
+                          title={t("jobs.openLogs")}
+                          onClick={() => onOpenLogViewer({ jobId: job.id, fileId: "", level: "" })}
+                        >
+                          <TextSearch size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button icon-only-button"
+                          aria-label={t("jobs.cancel")}
+                          title={t("jobs.cancel")}
+                          disabled={!["queued", "running"].includes(job.status)}
+                          onClick={() => onCancelJob(job.id)}
+                        >
+                          <Ban size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-button icon-only-button"
+                          aria-label={t("jobs.restart")}
+                          title={t("jobs.restart")}
+                          disabled={!["completed", "failed", "cancelled"].includes(job.status)}
+                          onClick={() => onRestartJob(job.id)}
+                        >
+                          <RotateCcw size={15} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
               <section className="job-detail panel">
                 {selectedJob ? (
@@ -64,6 +116,7 @@ export default function JobsModal({
                         <h3>
                           {formatJobTypeLabel(selectedJob.job_type)} - {formatJobScope(selectedJob)}
                         </h3>
+                        <p className="muted job-detail-status">{formatStatusLabel(selectedJob.status)}</p>
                       </div>
                       <div className="inline-actions">
                         <button type="button" className="ghost-button icon-button" onClick={() => onRefreshJob(selectedJob.id)}>
@@ -101,7 +154,7 @@ export default function JobsModal({
                     <div className="job-meta-grid">
                       <div>
                         <span className="muted">{t("files.status")}</span>
-                        <strong>{selectedJob.status}</strong>
+                        <strong>{formatStatusLabel(selectedJob.status)}</strong>
                       </div>
                       <div>
                         <span className="muted">{t("jobs.queued")}</span>
@@ -134,7 +187,7 @@ export default function JobsModal({
                               <strong>{item.file_name || item.item_key || t("jobs.scopeItem")}</strong>
                               <p className="row-subtitle">{item.relative_path || item.message || "-"}</p>
                             </div>
-                            <span className={`state-pill state-${item.status}`}>{item.status}</span>
+                            <span className={`state-pill state-${item.status}`}>{formatStatusLabel(item.status)}</span>
                           </article>
                         ))}
                       </div>

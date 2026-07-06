@@ -740,12 +740,20 @@ Object.assign(messages.ru.header, {
 })
 
 Object.assign(messages.en.files, {
+  convertSubtree: "Convert",
+  previewSubtree: "Preview",
+  tagSubtree: "Tag",
+  rescanSubtree: "Rescan",
   runTask: "Run selected task",
   searchEmptyTitle: "Nothing matched the search",
   searchEmptyBody: "Try a shorter name or clear the search field in the top bar."
 })
 
 Object.assign(messages.ru.files, {
+  convertSubtree: "\u041a\u043e\u043d\u0432\u0435\u0440\u0442\u0430\u0446\u0438\u044f",
+  previewSubtree: "\u041f\u0440\u0435\u0432\u044c\u044e",
+  tagSubtree: "\u0422\u0435\u0433\u0438",
+  rescanSubtree: "\u041f\u0435\u0440\u0435\u0441\u043a\u0430\u043d\u0438\u0440\u043e\u0432\u0430\u0442\u044c",
   runTask: "\u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0437\u0430\u0434\u0430\u0447\u0443",
   searchEmptyTitle: "\u041d\u0438\u0447\u0435\u0433\u043e \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e",
   searchEmptyBody: "\u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0441\u043e\u043a\u0440\u0430\u0442\u0438\u0442\u044c \u0437\u0430\u043f\u0440\u043e\u0441 \u0438\u043b\u0438 \u043e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043f\u043e\u0438\u0441\u043a \u0432 \u0432\u0435\u0440\u0445\u043d\u0435\u0439 \u043f\u043e\u043b\u043e\u0441\u0435."
