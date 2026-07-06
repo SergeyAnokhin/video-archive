@@ -12,10 +12,56 @@ const fallbackInfo = {
   }
 };
 
+function isSourceRecord(value) {
+  return Boolean(value) && typeof value === "object" && typeof value.protocol === "string" && typeof value.root_path === "string";
+}
+
+function normalizeSourcePayload(payload) {
+  if (payload?.source === null) {
+    return null;
+  }
+  if (isSourceRecord(payload?.source)) {
+    return payload.source;
+  }
+  if (isSourceRecord(payload)) {
+    return payload;
+  }
+  return null;
+}
+
+function normalizeInfoPayload(payload) {
+  const normalized = payload && typeof payload === "object" ? payload : {};
+  const activeSource = isSourceRecord(normalized.active_source)
+    ? normalized.active_source
+    : isSourceRecord(normalized.source)
+      ? normalized.source
+      : null;
+
+  return {
+    ...normalized,
+    version: normalized.version ?? normalized.app_version ?? fallbackInfo.version,
+    active_source: activeSource
+  };
+}
+
 async function readJsonOrThrow(response, label) {
-  const payload = await response.json();
+  const rawBody = await response.text();
+  let payload = null;
+  if (rawBody) {
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      payload = null;
+    }
+  }
   if (!response.ok) {
-    throw new Error(payload?.error?.message ?? `${label} failed with ${response.status}`);
+    const error = new Error(payload?.error?.message ?? payload?.detail ?? `${label} failed with ${response.status}`);
+    error.status = response.status;
+    error.code = payload?.error?.code ?? null;
+    throw error;
+  }
+  if (payload === null) {
+    throw new Error(`${label} returned an empty or invalid JSON response.`);
   }
 
   return payload;
@@ -43,7 +89,7 @@ export async function loadAppShellData() {
     health,
     info: {
       ...fallbackInfo,
-      ...infoPayload,
+      ...normalizeInfoPayload(infoPayload),
       database: {
         ...fallbackInfo.database,
         ...infoPayload.database
@@ -53,7 +99,7 @@ export async function loadAppShellData() {
         ...infoPayload.queue
       }
     },
-    source: sourcePayload.source ?? null
+    source: normalizeSourcePayload(sourcePayload)
   };
 }
 
@@ -210,7 +256,7 @@ export function saveSource(payload) {
       body: JSON.stringify(payload)
     },
     "Save source"
-  );
+  ).then((responsePayload) => ({ source: normalizeSourcePayload(responsePayload) }));
 }
 
 export function testSourceConnection(payload) {

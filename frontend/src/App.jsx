@@ -333,24 +333,32 @@ function App() {
   }, [activeOverlay, tuningJobId]);
 
   async function loadBootstrap(preferredDirectory = "", preserveForm = false) {
+    let payload;
     try {
-      const payload = await loadAppShellData();
+      payload = await loadAppShellData();
       setHealth({ state: "ready", status: payload.health.status, error: null });
-      setInfo(payload.info);
-      setSource(payload.source);
-      if (!preserveForm) {
-        setSourceForm(toSourceForm(payload.source));
-      }
+    } catch (error) {
+      setHealth({ state: "error", status: null, error: error.message });
+      setActionError(error.message);
+      return;
+    }
 
-      if (!payload.source) {
-        setTree([]);
-        setFiles([]);
-        setJobs([]);
-        setSelectedDirectory("");
-        setLibraryPreview(null);
-        return;
-      }
+    setInfo(payload.info);
+    setSource(payload.source);
+    if (!preserveForm) {
+      setSourceForm(toSourceForm(payload.source));
+    }
 
+    if (!payload.source) {
+      setTree([]);
+      setFiles([]);
+      setJobs([]);
+      setSelectedDirectory("");
+      setLibraryPreview(null);
+      return;
+    }
+
+    try {
       const [treePayload, jobsPayload] = await Promise.all([fetchTree(), fetchJobs()]);
       const flatNodes = flattenTree(treePayload.tree);
       const nextDirectory = flatNodes.some((node) => node.path === preferredDirectory) ? preferredDirectory : "";
@@ -361,7 +369,7 @@ function App() {
       setFiles(filesPayload.files);
       setSelectedDirectory(nextDirectory);
     } catch (error) {
-      setHealth({ state: "error", status: null, error: error.message });
+      setActionError(error.message);
     }
   }
 
@@ -468,6 +476,10 @@ function App() {
       const payload = await fetchDirectoryPreview(directoryPath);
       setLibraryPreview(payload.preview ? { ...payload.preview, scope: "directory" } : null);
     } catch (error) {
+      if (error?.status === 404) {
+        setLibraryPreview(null);
+        return;
+      }
       setActionError(error.message);
     }
   }
@@ -515,6 +527,7 @@ function App() {
   }
 
   function updateSourceField(field, value) {
+    setTestResult(null);
     setSourceForm((current) => {
       const next = { ...current, [field]: value };
       if (field === "protocol" && value === "local") {
@@ -605,11 +618,24 @@ function App() {
     setIsWorking(true);
     setActionError(null);
     setActionMessage(null);
+    setTestResult(null);
     try {
       const payload = await saveSource(toSourcePayload(sourceForm));
-      setSource(payload.source);
-      setSourceForm(toSourceForm(payload.source));
+      const savedSource = payload?.source ?? null;
+      if (!savedSource) {
+        throw new Error("Save source response did not include the active source.");
+      }
+      setSource(savedSource);
+      setSourceForm(toSourceForm(savedSource));
       setActionMessage(t("messages.sourceSaved"));
+      setTestResult({
+        ok: true,
+        protocol: savedSource.protocol,
+        host: savedSource.host,
+        port: savedSource.port,
+        root_path: savedSource.root_path,
+        message: t("messages.sourceSaved")
+      });
       await refreshLibrary("");
     } catch (error) {
       setActionError(error.message);

@@ -117,6 +117,30 @@ class SourceServiceTests(unittest.TestCase):
             self.assertEqual(result["port"], None)
             self.assertEqual(calls, [])
 
+    def test_replace_active_source_round_trips_local_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_root = root / "library"
+            source_root.mkdir()
+            db_path = root / "video_archive.db"
+            secrets_path = root / "secrets.json"
+            initialize_database(db_path)
+            service = SourceService(db_path, SecretStore(secrets_path))
+
+            payload = parse_source_payload(
+                {
+                    "name": "Local Test Library",
+                    "protocol": "local",
+                    "root_path": str(source_root),
+                }
+            )
+
+            saved = service.replace_active_source(payload)
+
+            self.assertEqual(saved["protocol"], "local")
+            self.assertEqual(saved["host"], "")
+            self.assertEqual(saved["root_path"], str(source_root))
+
     def test_list_local_directories_returns_children_for_absolute_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -132,6 +156,20 @@ class SourceServiceTests(unittest.TestCase):
             self.assertEqual(listing["path"], str(root.resolve()))
             self.assertEqual([entry["name"] for entry in listing["directories"]], ["alpha", "beta"])
             self.assertIn("favorites", listing)
+
+    def test_list_local_directories_accepts_trailing_separator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "alpha").mkdir()
+            db_path = root / "video_archive.db"
+            secrets_path = root / "secrets.json"
+            initialize_database(db_path)
+            service = SourceService(db_path, SecretStore(secrets_path))
+
+            listing = service.list_local_directories(f"{root}\\")
+
+            self.assertEqual(listing["path"], str(root.resolve()))
+            self.assertEqual([entry["name"] for entry in listing["directories"]], ["alpha"])
 
     def test_replace_active_source_keeps_existing_password_when_new_payload_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

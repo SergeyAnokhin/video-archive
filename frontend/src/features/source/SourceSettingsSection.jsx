@@ -1,5 +1,19 @@
 import { ArrowUp, Folder, HardDriveDownload, Save, ScanSearch, ServerCog, TestTube2 } from "lucide-react";
 
+function formatResultLocation(testResult) {
+  if (!testResult) {
+    return "";
+  }
+  if (testResult.protocol === "local") {
+    return testResult.root_path || "";
+  }
+
+  const host = testResult.host || "";
+  const port = testResult.port ?? "";
+  const remoteTarget = host && port ? `${host}:${port}` : host || String(port);
+  return remoteTarget ? `${remoteTarget} - ${testResult.root_path}` : testResult.root_path || "";
+}
+
 export default function SourceSettingsSection({
   source,
   sourceForm,
@@ -22,6 +36,8 @@ export default function SourceSettingsSection({
     backend_folder: t("sourceSettings.backendFolder"),
     backend_local_data: t("sourceSettings.backendData")
   };
+  const testResultLocation = formatResultLocation(testResult);
+  const testResultTitle = testResult?.ok ? t("sourceSettings.ready") : t("sourceSettings.partial");
 
   return (
     <div className="source-settings">
@@ -167,13 +183,9 @@ export default function SourceSettingsSection({
       ) : null}
       {testResult ? (
         <div className={`note-card ${testResult.ok ? "note-card-success" : "note-card-warning"}`}>
-          <strong>{testResult.ok ? t("sourceSettings.ready") : t("sourceSettings.partial")}</strong>
+          <strong>{testResultTitle}</strong>
           <p>{testResult.message}</p>
-          <p className="muted">
-            {testResult.protocol === "local"
-              ? testResult.root_path
-              : `${testResult.host}:${testResult.port} - ${testResult.root_path}`}
-          </p>
+          {testResultLocation ? <p className="muted">{testResultLocation}</p> : null}
         </div>
       ) : null}
     </div>

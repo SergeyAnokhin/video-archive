@@ -16,7 +16,7 @@ This page is the short router for the main frontend flows that cross multiple fi
 - Localization: start in [`../frontend/src/i18n.js`](../frontend/src/i18n.js); grep the key prefix before opening any component.
 - Visual mode or gradients: start in [`../frontend/src/styles/theme.css`](../frontend/src/styles/theme.css); open [`../frontend/src/styles.css`](../frontend/src/styles.css) only for consuming selectors.
 - Preview layout math: start in [`../backend/app/preview_layout.py`](../backend/app/preview_layout.py); open [`../backend/app/preview_service.py`](../backend/app/preview_service.py) only if the change also touches persistence or sampling orchestration.
-- Local source / test archive flow: start in [`../frontend/src/features/source/SourceSettingsSection.jsx`](../frontend/src/features/source/SourceSettingsSection.jsx), then [`../frontend/src/features/source/sourceHelpers.js`](../frontend/src/features/source/sourceHelpers.js).
+- Local source / test archive flow: start in [`../frontend/src/features/source/SourceSettingsSection.jsx`](../frontend/src/features/source/SourceSettingsSection.jsx), then [`../frontend/src/features/source/sourceHelpers.js`](../frontend/src/features/source/sourceHelpers.js). Save/test feedback for the active source also renders in this section, not only in the top header.
 
 ## Quick Rules
 

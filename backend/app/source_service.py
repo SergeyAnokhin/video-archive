@@ -76,6 +76,8 @@ class SourceService:
         now = utc_now()
         current_source = self.get_active_source()
         password = payload.password
+        stored_protocol = "smb" if payload.protocol == "local" else payload.protocol
+        stored_host = LOCAL_SOURCE_PROTOCOL_SENTINEL if payload.protocol == "local" else payload.host
         if password is None and current_source is not None and current_source["has_password"]:
             active_secret_ref = self._get_active_secret_ref()
             password = self._secret_store.get(active_secret_ref)
@@ -98,8 +100,8 @@ class SourceService:
                 (
                     source_id,
                     payload.name,
-                    payload.protocol,
-                    payload.host,
+                    stored_protocol,
+                    stored_host,
                     payload.port,
                     payload.root_path,
                     username_ref,
@@ -109,7 +111,18 @@ class SourceService:
                 ),
             )
 
-        return self.get_active_source() or {}
+        saved = self.get_active_source()
+        if saved is None:
+            raise RuntimeError(
+                f"Active source row {source_id} could not be reloaded after save. "
+                f"stored_protocol={stored_protocol!r} stored_host={stored_host!r} root_path={payload.root_path!r}"
+            )
+        if saved["id"] != source_id:
+            raise RuntimeError(
+                f"Active source mismatch after save. expected_id={source_id!r} got_id={saved['id']!r} "
+                f"stored_protocol={stored_protocol!r} stored_host={stored_host!r} root_path={payload.root_path!r}"
+            )
+        return saved
 
     def _get_active_secret_ref(self) -> str | None:
         with connection(self._database_path) as conn:
@@ -184,7 +197,7 @@ class SourceService:
         return result
 
     def list_local_directories(self, raw_path: str | None) -> dict:
-        normalized = (raw_path or "").strip()
+        normalized = _normalize_local_directory_path(raw_path)
         if not normalized:
             return {
                 "path": "",
@@ -329,3 +342,14 @@ def _parent_directory_path(path: Path) -> str | None:
     if parent == path:
         return None
     return str(parent)
+
+
+def _normalize_local_directory_path(raw_path: str | None) -> str:
+    normalized = (raw_path or "").strip().strip('"')
+    if not normalized:
+        return ""
+
+    trimmed = normalized.rstrip("\\/")
+    if trimmed and not trimmed.endswith(":"):
+        return trimmed
+    return normalized

@@ -30,7 +30,7 @@ def load_config(base_dir: Path | None = None, environ: dict[str, str] | None = N
     return AppConfig(
         app_version=env.get("VIDEO_ARCHIVE_APP_VERSION", "0.1.0"),
         host=env.get("VIDEO_ARCHIVE_HOST", "127.0.0.1"),
-        port=int(env.get("VIDEO_ARCHIVE_PORT", "8000")),
+        port=int(env.get("VIDEO_ARCHIVE_PORT", "18637")),
         data_dir=data_dir,
         database_path=database_path,
         secrets_path=secrets_path,

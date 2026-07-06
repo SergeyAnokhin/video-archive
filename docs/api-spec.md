@@ -71,6 +71,7 @@ Notes:
 
 - `protocol` currently supports `local`, `smb`, `ftp`, `sftp`, and `webdav`.
 - local sources skip TCP probing and only validate backend access to `root_path`.
+- the persisted backend row keeps local sources compatible with the existing `sources` table by storing the local sentinel host and mapping the result back to `protocol: "local"` in API responses.
 - Secrets may be routed into secret storage rather than the main database.
 - Only one active source is supported.
 
@@ -447,6 +448,11 @@ Recommended response structure:
   }
 }
 ```
+
+Current implementation notes:
+
+- unhandled backend exceptions return `500` with `error.code = "internal_server_error"` and the exception type/message in `error.message`
+- the backend also prints the full Python stack trace, request method, and request path to the terminal where `python -m app.main` is running
 
 ## Notes
 

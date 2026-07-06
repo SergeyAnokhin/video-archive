@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import sys
+import traceback
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -188,6 +190,8 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._write_error(exc)
         except (BrokenPipeError, ConnectionResetError):
             return
+        except Exception as exc:  # pragma: no cover - defensive server logging
+            self._handle_unexpected_exception("GET", self.path, exc)
 
     def do_PUT(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         try:
@@ -239,6 +243,10 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception as exc:  # pragma: no cover - defensive server logging
+            self._handle_unexpected_exception("PUT", self.path, exc)
 
     def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         try:
@@ -355,6 +363,8 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._write_error(exc)
         except (BrokenPipeError, ConnectionResetError):
             return
+        except Exception as exc:  # pragma: no cover - defensive server logging
+            self._handle_unexpected_exception("POST", self.path, exc)
 
     def do_DELETE(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         try:
@@ -367,6 +377,10 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception as exc:  # pragma: no cover - defensive server logging
+            self._handle_unexpected_exception("DELETE", self.path, exc)
 
     def _serve_file_content(self, file_path: Path) -> None:
         if not file_path.exists() or not file_path.is_file():
@@ -415,6 +429,18 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:
         print(f"{self.address_string()} - {format % args}")
+
+    def _handle_unexpected_exception(self, method: str, path: str, error: Exception) -> None:
+        self._log_exception(method, path, error)
+        self._write_json(
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            {"error": {"code": "internal_server_error", "message": f"{type(error).__name__}: {error}"}},
+        )
+
+    def _log_exception(self, method: str, path: str, error: Exception) -> None:
+        print(f"[backend-error] {method} {path}", file=sys.stderr, flush=True)
+        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+        print("", file=sys.stderr, flush=True)
 
     def _read_json_body(self) -> dict:
         content_length = self.headers.get("Content-Length")
@@ -532,6 +558,8 @@ def main() -> None:
 
     server = ThreadingHTTPServer((APP_STATE.config.host, APP_STATE.config.port), VideoArchiveHandler)
     print(f"Video Archive backend listening on http://{APP_STATE.config.host}:{APP_STATE.config.port}")
+    print(f"Video Archive database: {APP_STATE.config.database_path}")
+    print(f"Video Archive secrets: {APP_STATE.config.secrets_path}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -84,8 +84,8 @@ npm.cmd install --prefix frontend
 npm.cmd run dev
 ```
 
-- Frontend: `http://127.0.0.1:5173`
-- Backend: `http://127.0.0.1:8000`
+- Frontend: `http://127.0.0.1:18673`
+- Backend: `http://127.0.0.1:18637`
 
 ### Start frontend only
 
@@ -107,6 +107,8 @@ The backend-local npm wrapper runs:
 ```powershell
 python -m app.main
 ```
+
+On startup the backend now also prints the resolved database and secrets paths. Unexpected request-time exceptions are written to the same terminal with a Python stack trace, request method, and request path.
 
 ### Backend local data and config
 
@@ -134,6 +136,13 @@ Optional local overrides can be placed in `backend/.env.local`. Start from [`bac
 - `VIDEO_ARCHIVE_DATA_DIR`
 - `VIDEO_ARCHIVE_DB_PATH`
 - `VIDEO_ARCHIVE_SECRETS_PATH`
+
+The default local ports are intentionally non-standard to avoid collisions with other local projects:
+
+- frontend: `127.0.0.1:18673`
+- backend: `127.0.0.1:18637`
+
+If you still need a different backend port, set `VIDEO_ARCHIVE_PORT` before starting `npm.cmd run dev`. The frontend Vite proxy follows the same `VIDEO_ARCHIVE_PORT` value instead of hardcoding the backend target.
 
 ### Run backend tests
 
