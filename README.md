@@ -56,6 +56,7 @@ test-data/VideoArchive/
 - Top-level folders are camera names; nested folders are date-partitioned (`YYYY/MM/DD`).
 - This directory is git-ignored (`/test-data/` in [`.gitignore`](.gitignore)) — it stays local, is not committed, and is not part of the application source.
 - To use it as a source, point a `local` source's root path at `test-data/VideoArchive` (or a subfolder of it).
+- If a dev session already has this connected as the active source (common across sessions, since source config persists in the SQLite db), prefer dropping extra scratch files into a throwaway subfolder and rescanning that subfolder, rather than replacing the source — replacing wipes all accumulated `directories`/`files`/job metadata for a fresh scan ([Specification §5.2](docs/specification.md#52-source-switching)). Delete the scratch subfolder and rescan again afterward to restore the previous state.
 
 ## Documentation
 
