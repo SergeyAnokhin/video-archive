@@ -5,7 +5,7 @@ A backup is a single zip package written into the source's technical folder
 works the same way for `local` and `smb` sources and survives a local
 metadata wipe (source switch) since it never leaves the source disk.
 
-Package contents (see `docs/backup-format.md`):
+Package contents (see `docs/spec/backup-format.md`):
 
 - `manifest.json`: backup id, timestamps, app/schema version, source name.
 - `data.json`: the local metadata a source switch wipes (`directories`,

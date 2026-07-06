@@ -33,7 +33,7 @@ _SFACE_URL = (
 )
 # No stable, official direct-download URL exists for a pre-exported
 # YOLOv8n ONNX file; person detection is enabled by placing the file
-# manually at `backend/models/yolov8n.onnx` (see docs/tech-stack.md).
+# manually at `backend/models/yolov8n.onnx` (see docs/spec/tech-stack.md).
 _YOLOV8N_FILENAME = "yolov8n.onnx"
 
 _PERSON_CLASS_ID = 0  # COCO class index for "person"

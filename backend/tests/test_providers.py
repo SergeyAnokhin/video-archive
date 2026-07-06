@@ -2,7 +2,7 @@
 §18): request construction and response parsing for each of
 `app/providers/{openrouter,gemini,mistral,fal}.py`, with `httpx.post`
 monkeypatched so no real network call is ever made. Real-provider behavior
-(actually reaching OpenRouter) was verified manually — see `docs/roadmap.md`
+(actually reaching OpenRouter) was verified manually — see `docs/spec/roadmap.md`
 Stage 6 "Done when" — this file only protects the request/response
 plumbing from regressing silently.
 """

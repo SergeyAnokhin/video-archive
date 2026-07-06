@@ -26,7 +26,7 @@ Scope:
 
 Done when: a `library` folder next to the backend is scanned and browsable, indicators reflect missing conversions/previews.
 
-Manual testing can point the `local` source at [`test-data/VideoArchive/`](../README.md#local-test-data), a local-only sample of real camera-recording folders (git-ignored, not part of the app).
+Manual testing can point the `local` source at [`test-data/VideoArchive/`](../../README.md#local-test-data), a local-only sample of real camera-recording folders (git-ignored, not part of the app).
 
 ## Stage 3 — Job Infrastructure
 
@@ -106,5 +106,5 @@ Done when: V1 scope from [Specification](./specification.md) is fully covered.
 ## Cross-Stage Rules
 
 - EN/RU string parity is maintained in every stage, not retrofitted at the end.
-- [Code Map](./code-map.md) is updated whenever files are added or moved.
+- [Code Map](../code-map.md) is updated whenever files are added or moved.
 - Docs are updated in the same change as behavior they describe.

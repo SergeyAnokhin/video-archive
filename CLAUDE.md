@@ -36,6 +36,10 @@ Before any non-trivial task:
 1. Read [`README.md`](README.md).
 2. Read the relevant local documentation for the area you are changing, if it exists.
 
+### Frozen specification archive
+
+[`docs/spec/`](docs/spec/) holds the completed V1 specification, kept for reference only. **Do not read anything in `docs/spec/` unless the user explicitly asks for it.** It is not part of the living documentation, is not updated with code changes, and must not be used as a source of current behavior — trust the code and the living docs (`docs/*.md`, `README.md`) instead.
+
 ### Update docs when behavior or structure changes
 
 Update the relevant doc whenever you change documented architecture or behavior, including:

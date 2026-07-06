@@ -4,7 +4,7 @@ Video Archive is a local-first, Windows-targeted web application for browsing a 
 
 ## Current Status
 
-**All V1 scope from [docs/specification.md](docs/specification.md) is implemented (Roadmap Stages 1-9), with the exception of the WebDAV source protocol, which the specification itself lists as out of scope for V1 (§3).** `frontend/` and `backend/` run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n, talking to a FastAPI backend with a schema-versioned SQLite database. On top of that:
+**All V1 scope from [docs/spec/specification.md](docs/spec/specification.md) is implemented (Roadmap Stages 1-9), with the exception of the WebDAV source protocol, which the specification itself lists as out of scope for V1 (§3).** `frontend/` and `backend/` run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n, talking to a FastAPI backend with a schema-versioned SQLite database. On top of that:
 
 - Stage 2 adds configuring a `local` source (a folder next to the backend, or any absolute path) from Settings, with test-connection and a destructive-replace warning; a synchronous filesystem scan on connect that discovers folders/files, detects supported video extensions, and recognizes preview assets (`<name>.jpg`, `folder-preview.jpg`) without listing them as separate files; and a directory tree and folder/file card grid in the main library screen, with conversion/preview indicators shown only for incomplete folders and files.
 - Stage 3 adds a job queue (`jobs`/`job_items` tables) driven by a single sequential background worker with a `queued → running → completed|failed|cancelled` state machine; a `rescan` job (triggered from a folder's toolbar) that refreshes one directory subtree file-by-file with live per-file progress and cooperative cancellation; a structured event log (`app_events`) streamed to the frontend over SSE; a top-bar activity indicator, a Jobs modal (cancel/restart/remove/clear-finished), and a Log Viewer (job/file/level filters); and 24-hour automatic retention for finished jobs.
@@ -15,7 +15,7 @@ Video Archive is a local-first, Windows-targeted web application for browsing a 
 - Stage 8 adds manual backup/restore: a `backup` job zips the local library metadata (directories/files/tags, conversion profiles, preview/tagging/provider/playback settings) plus an optional secrets-file copy into `.video-archive/backups/` on the source itself, with a configurable retention count trimming the oldest packages; a `restore` job replaces the current library metadata from a chosen package; connecting a source now surfaces any backups already sitting in its technical folder so the UI can offer a restore right away; replacing the active source now correctly warns and wipes the *full* local-metadata set (files, directories, tags, job history — previously only files/directories were cleared); and a Backup & Maintenance settings section adds `cleanup` (stale-record removal) and `optimize_db` (SQLite `VACUUM`/`ANALYZE`) maintenance actions alongside a full-rescan shortcut.
 - Stage 9 adds a Playful theme preset alongside Strict (a top-bar icon toggle, warmer/more saturated colors, small decorative hover/glow animations that respect `prefers-reduced-motion`), with both the theme choice and the UI language now persisted server-side through a new interface-settings singleton instead of language living only in browser `localStorage`; a responsive/mobile refinement pass (an overflow menu for secondary folder actions in the library toolbar below 640px, restored 40×40 touch targets on the directory tree and breadcrumbs at mobile widths, and a fix for file-card action buttons that used to overlap the file name/size text); optional similar-video detection that computes a perceptual-hash signature from each video's sampled preview frames as a best-effort side effect of preview generation, surfaced through a per-file "Similar videos" action; and optional provider-side batch tagging for Gemini/Mistral (a directory-scope tagging job submits every pending file in one batch request when enabled, falling back per-file for anything the batch pass couldn't resolve). WebDAV, the other "optional" Stage 9 item, was intentionally not built — the specification lists it as out of scope for V1.
 
-See [docs/roadmap.md](docs/roadmap.md) for the full stage-by-stage implementation history.
+See [docs/spec/roadmap.md](docs/spec/roadmap.md) for the full stage-by-stage implementation history.
 
 ## Local Run
 
@@ -26,7 +26,7 @@ The repository root is the single developer entrypoint: one command starts front
 - Node.js 20+
 - Python 3.11+
 - ffmpeg on `PATH` (`winget install ffmpeg`)
-- Internet access on first preview generation (or first `pytest` run touching preview code): face-detection model files (~39 MB total) are downloaded once into `backend/models/` (git-ignored) and cached from then on. Preview generation still works offline, with reduced frame-selection quality (blur-score ranking only) — see [Tech Stack](docs/tech-stack.md#local-detection-models).
+- Internet access on first preview generation (or first `pytest` run touching preview code): face-detection model files (~39 MB total) are downloaded once into `backend/models/` (git-ignored) and cached from then on. Preview generation still works offline, with reduced frame-selection quality (blur-score ranking only) — see [Tech Stack](docs/spec/tech-stack.md#local-detection-models).
 
 ### Startup
 
@@ -43,7 +43,7 @@ Frontend and backend also remain independently runnable from their own directori
 ## Project Structure
 
 - [`package.json`](package.json) — root developer entrypoint that starts frontend and backend together.
-- [`docs/`](docs/) — the product and architecture specifications that drive the implementation.
+- [`docs/`](docs/) — living project documentation; the frozen V1 specification is archived in [`docs/spec/`](docs/spec/).
 - [`frontend/`](frontend/) — Vite + React + TypeScript app.
 - [`backend/`](backend/) — FastAPI app, SQLite database (git-ignored), schema versioning.
 
@@ -51,7 +51,7 @@ See [docs/code-map.md](docs/code-map.md) for the full file-by-file map.
 
 ## Local Test Data
 
-`test-data/VideoArchive/` holds real camera-recording samples for manually exercising the `local` source (scanning, browsing, conversion, etc. from [Stage 2](docs/roadmap.md#stage-2--local-source-scan-browsing) onward). It mirrors what a real source root looks like:
+`test-data/VideoArchive/` holds real camera-recording samples for manually exercising the `local` source (scanning, browsing, conversion, etc. from [Stage 2](docs/spec/roadmap.md#stage-2--local-source-scan-browsing) onward). It mirrors what a real source root looks like:
 
 ```text
 test-data/VideoArchive/
@@ -62,20 +62,14 @@ test-data/VideoArchive/
 - Top-level folders are camera names; nested folders are date-partitioned (`YYYY/MM/DD`).
 - This directory is git-ignored (`/test-data/` in [`.gitignore`](.gitignore)) — it stays local, is not committed, and is not part of the application source.
 - To use it as a source, point a `local` source's root path at `test-data/VideoArchive` (or a subfolder of it).
-- If a dev session already has this connected as the active source (common across sessions, since source config persists in the SQLite db), prefer dropping extra scratch files into a throwaway subfolder and rescanning that subfolder, rather than replacing the source — replacing wipes all accumulated `directories`/`files`/job metadata for a fresh scan ([Specification §5.2](docs/specification.md#52-source-switching)). Delete the scratch subfolder and rescan again afterward to restore the previous state.
+- If a dev session already has this connected as the active source (common across sessions, since source config persists in the SQLite db), prefer dropping extra scratch files into a throwaway subfolder and rescanning that subfolder, rather than replacing the source — replacing wipes all accumulated `directories`/`files`/job metadata for a fresh scan ([Specification §5.2](docs/spec/specification.md#52-source-switching)). Delete the scratch subfolder and rescan again afterward to restore the previous state.
 
 ## Documentation
 
-Core specification set:
+Living docs — read and update these during development (see [`docs/README.md`](docs/README.md) for the full index):
 
-- [`docs/specification.md`](docs/specification.md) — main technical specification
-- [`docs/tech-stack.md`](docs/tech-stack.md) — fixed technology choices
-- [`docs/roadmap.md`](docs/roadmap.md) — implementation stages and completion criteria
-- [`docs/data-model.md`](docs/data-model.md)
-- [`docs/api-spec.md`](docs/api-spec.md)
-- [`docs/job-model.md`](docs/job-model.md)
-- [`docs/settings-spec.md`](docs/settings-spec.md)
-- [`docs/ui-screens.md`](docs/ui-screens.md)
-- [`docs/design-system.md`](docs/design-system.md)
-- [`docs/backup-format.md`](docs/backup-format.md)
 - [`docs/code-map.md`](docs/code-map.md) — living map of implementation files
+- [`docs/architecture.md`](docs/architecture.md) — current high-level architecture and cross-cutting conventions
+- [`docs/development.md`](docs/development.md) — developer workflow: run, test, verify
+
+Frozen V1 specification — [`docs/spec/`](docs/spec/): the complete pre-implementation spec set (specification, roadmap, data model, API, UI screens, design system, tech stack, job model, settings, backup format). V1 is fully implemented, so this set is archived for reference. **Do not read it by default** — consult it only when explicitly asked or when a question is specifically about original V1 spec intent.
