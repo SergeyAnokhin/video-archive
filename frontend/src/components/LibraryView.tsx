@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { File as FileIcon, Film, Folder } from 'lucide-react'
+import { File as FileIcon, Film, Folder, RefreshCw } from 'lucide-react'
+import { useJobs } from '../context/JobsContext'
 import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry } from '../types/api'
 import './LibraryView.css'
 
@@ -11,8 +12,10 @@ interface LibraryViewProps {
 
 export function LibraryView({ path, onNavigate }: LibraryViewProps) {
   const { t } = useTranslation()
+  const { refresh: refreshJobs } = useJobs()
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [rescanning, setRescanning] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -45,24 +48,51 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
 
   const segments = path ? path.split('/') : []
 
+  async function handleRescan() {
+    setRescanning(true)
+    try {
+      await fetch('/api/jobs/rescan-directory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      })
+      await refreshJobs()
+    } finally {
+      setRescanning(false)
+    }
+  }
+
   return (
     <div className="library-view">
-      <nav className="library-view__breadcrumb" aria-label={t('library.breadcrumb')}>
-        <button type="button" onClick={() => onNavigate('')}>
-          {t('library.root')}
+      <div className="library-view__toolbar">
+        <nav className="library-view__breadcrumb" aria-label={t('library.breadcrumb')}>
+          <button type="button" onClick={() => onNavigate('')}>
+            {t('library.root')}
+          </button>
+          {segments.map((segment, index) => {
+            const segmentPath = segments.slice(0, index + 1).join('/')
+            return (
+              <span key={segmentPath}>
+                <span className="library-view__breadcrumb-sep">/</span>
+                <button type="button" onClick={() => onNavigate(segmentPath)}>
+                  {segment}
+                </button>
+              </span>
+            )
+          })}
+        </nav>
+
+        <button
+          type="button"
+          className="library-view__icon-btn"
+          aria-label={t('library.rescan')}
+          title={t('library.rescan')}
+          onClick={handleRescan}
+          disabled={rescanning}
+        >
+          <RefreshCw size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
         </button>
-        {segments.map((segment, index) => {
-          const segmentPath = segments.slice(0, index + 1).join('/')
-          return (
-            <span key={segmentPath}>
-              <span className="library-view__breadcrumb-sep">/</span>
-              <button type="button" onClick={() => onNavigate(segmentPath)}>
-                {segment}
-              </button>
-            </span>
-          )
-        })}
-      </nav>
+      </div>
 
       {error && (
         <p className="library-view__message library-view__message--error">

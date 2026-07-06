@@ -1,9 +1,10 @@
 """Filesystem scan for the active local source (Specification §6.1).
 
 Walks the source root, upserts `directories`/`files` rows, detects preview
-assets, and removes rows for files/directories that no longer exist. Runs
-synchronously for now; Stage 3 wires this behind the job queue instead of
-calling it inline from the request handler.
+assets, and removes rows for files/directories that no longer exist.
+`discover_filesystem()` and the `upsert_*` helpers are also reused by the
+Stage 3 `rescan` job (`app/jobs/rescan.py`) to refresh a single directory
+subtree with per-file job-item granularity instead of one whole-source scan.
 """
 
 from __future__ import annotations
@@ -38,15 +39,16 @@ class ScanResult:
     video_files_count: int
 
 
-def scan_source(engine: Engine, source_id: str, root_path: Path) -> ScanResult:
-    root_path = root_path.resolve()
-
-    # relative_path -> (name, parent_relative_path, has_folder_preview)
+def discover_filesystem(
+    root_path: Path, scan_root: Path
+) -> tuple[dict[str, tuple[str, str | None, bool]], dict[str, dict]]:
+    """Walk `scan_root` (the source root, or a subtree of it) and return the
+    directories/files found there, keyed by path relative to `root_path`.
+    """
     touched_dirs: dict[str, tuple[str, str | None, bool]] = {}
-    # relative_path -> file attributes
     touched_files: dict[str, dict] = {}
 
-    for current_dir, subdirs, filenames in os.walk(root_path):
+    for current_dir, subdirs, filenames in os.walk(scan_root):
         subdirs[:] = [d for d in subdirs if d != TECHNICAL_FOLDER_NAME]
 
         current_path = Path(current_dir)
@@ -101,6 +103,13 @@ def scan_source(engine: Engine, source_id: str, root_path: Path) -> ScanResult:
                 "has_preview_asset": has_preview,
             }
 
+    return touched_dirs, touched_files
+
+
+def scan_source(engine: Engine, source_id: str, root_path: Path) -> ScanResult:
+    root_path = root_path.resolve()
+    touched_dirs, touched_files = discover_filesystem(root_path, root_path)
+
     now = _now()
     with engine.begin() as conn:
         dir_ids = _sync_directories(conn, source_id, touched_dirs, now)
@@ -118,6 +127,125 @@ def scan_source(engine: Engine, source_id: str, root_path: Path) -> ScanResult:
     )
 
 
+def upsert_directory(
+    conn,
+    source_id: str,
+    rel_path: str,
+    name: str,
+    parent_rel: str | None,
+    has_folder_preview: bool,
+    now: str,
+    existing_id: str | None = None,
+) -> str:
+    if existing_id:
+        conn.execute(
+            text(
+                """
+                UPDATE directories
+                SET name = :name, parent_relative_path = :parent_rel,
+                    has_folder_preview = :has_preview, last_scanned_at = :now, updated_at = :now
+                WHERE id = :id
+                """
+            ),
+            {
+                "name": name,
+                "parent_rel": parent_rel,
+                "has_preview": has_folder_preview,
+                "now": now,
+                "id": existing_id,
+            },
+        )
+        return existing_id
+
+    new_id = str(uuid.uuid4())
+    conn.execute(
+        text(
+            """
+            INSERT INTO directories
+                (id, source_id, relative_path, name, parent_relative_path,
+                 has_folder_preview, last_scanned_at, created_at, updated_at)
+            VALUES (:id, :sid, :rel, :name, :parent_rel, :has_preview, :now, :now, :now)
+            """
+        ),
+        {
+            "id": new_id,
+            "sid": source_id,
+            "rel": rel_path,
+            "name": name,
+            "parent_rel": parent_rel,
+            "has_preview": has_folder_preview,
+            "now": now,
+        },
+    )
+    return new_id
+
+
+def upsert_file(
+    conn,
+    source_id: str,
+    directory_id: str,
+    rel_path: str,
+    attrs: dict,
+    now: str,
+    existing_id: str | None = None,
+) -> str:
+    if existing_id:
+        conn.execute(
+            text(
+                """
+                UPDATE files
+                SET directory_id = :dir_id, file_name = :file_name, extension = :ext,
+                    size_bytes = :size, modified_at = :modified_at,
+                    is_video_supported = :is_video, has_preview_asset = :has_preview,
+                    last_scanned_at = :now, updated_at = :now
+                WHERE id = :id
+                """
+            ),
+            {
+                "dir_id": directory_id,
+                "file_name": attrs["file_name"],
+                "ext": attrs["extension"],
+                "size": attrs["size_bytes"],
+                "modified_at": attrs["modified_at"],
+                "is_video": attrs["is_video_supported"],
+                "has_preview": attrs["has_preview_asset"],
+                "now": now,
+                "id": existing_id,
+            },
+        )
+        return existing_id
+
+    new_id = str(uuid.uuid4())
+    conn.execute(
+        text(
+            """
+            INSERT INTO files
+                (id, source_id, directory_id, relative_path, file_name, extension,
+                 size_bytes, modified_at, discovered_at, last_scanned_at,
+                 is_video_supported, has_preview_asset, created_at, updated_at)
+            VALUES
+                (:id, :sid, :dir_id, :rel, :file_name, :ext,
+                 :size, :modified_at, :now, :now,
+                 :is_video, :has_preview, :now, :now)
+            """
+        ),
+        {
+            "id": new_id,
+            "sid": source_id,
+            "dir_id": directory_id,
+            "rel": rel_path,
+            "file_name": attrs["file_name"],
+            "ext": attrs["extension"],
+            "size": attrs["size_bytes"],
+            "modified_at": attrs["modified_at"],
+            "now": now,
+            "is_video": attrs["is_video_supported"],
+            "has_preview": attrs["has_preview_asset"],
+        },
+    )
+    return new_id
+
+
 def _sync_directories(
     conn,
     source_id: str,
@@ -132,48 +260,10 @@ def _sync_directories(
 
     dir_ids: dict[str, str] = {}
     for rel_path, (name, parent_rel, has_folder_preview) in touched_dirs.items():
-        existing_id = existing_ids.get(rel_path)
-        if existing_id:
-            dir_ids[rel_path] = existing_id
-            conn.execute(
-                text(
-                    """
-                    UPDATE directories
-                    SET name = :name, parent_relative_path = :parent_rel,
-                        has_folder_preview = :has_preview, last_scanned_at = :now, updated_at = :now
-                    WHERE id = :id
-                    """
-                ),
-                {
-                    "name": name,
-                    "parent_rel": parent_rel,
-                    "has_preview": has_folder_preview,
-                    "now": now,
-                    "id": existing_id,
-                },
-            )
-        else:
-            new_id = str(uuid.uuid4())
-            dir_ids[rel_path] = new_id
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO directories
-                        (id, source_id, relative_path, name, parent_relative_path,
-                         has_folder_preview, last_scanned_at, created_at, updated_at)
-                    VALUES (:id, :sid, :rel, :name, :parent_rel, :has_preview, :now, :now, :now)
-                    """
-                ),
-                {
-                    "id": new_id,
-                    "sid": source_id,
-                    "rel": rel_path,
-                    "name": name,
-                    "parent_rel": parent_rel,
-                    "has_preview": has_folder_preview,
-                    "now": now,
-                },
-            )
+        dir_ids[rel_path] = upsert_directory(
+            conn, source_id, rel_path, name, parent_rel, has_folder_preview, now,
+            existing_id=existing_ids.get(rel_path),
+        )
 
     stale = [{"sid": source_id, "rel": rel} for rel in existing_ids if rel not in touched_dirs]
     if stale:
@@ -197,60 +287,10 @@ def _sync_files(
 
     for rel_path, attrs in touched_files.items():
         directory_id = dir_ids[attrs["directory_rel"]]
-        existing_id = existing_ids.get(rel_path)
-        if existing_id:
-            conn.execute(
-                text(
-                    """
-                    UPDATE files
-                    SET directory_id = :dir_id, file_name = :file_name, extension = :ext,
-                        size_bytes = :size, modified_at = :modified_at,
-                        is_video_supported = :is_video, has_preview_asset = :has_preview,
-                        last_scanned_at = :now, updated_at = :now
-                    WHERE id = :id
-                    """
-                ),
-                {
-                    "dir_id": directory_id,
-                    "file_name": attrs["file_name"],
-                    "ext": attrs["extension"],
-                    "size": attrs["size_bytes"],
-                    "modified_at": attrs["modified_at"],
-                    "is_video": attrs["is_video_supported"],
-                    "has_preview": attrs["has_preview_asset"],
-                    "now": now,
-                    "id": existing_id,
-                },
-            )
-        else:
-            new_id = str(uuid.uuid4())
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO files
-                        (id, source_id, directory_id, relative_path, file_name, extension,
-                         size_bytes, modified_at, discovered_at, last_scanned_at,
-                         is_video_supported, has_preview_asset, created_at, updated_at)
-                    VALUES
-                        (:id, :sid, :dir_id, :rel, :file_name, :ext,
-                         :size, :modified_at, :now, :now,
-                         :is_video, :has_preview, :now, :now)
-                    """
-                ),
-                {
-                    "id": new_id,
-                    "sid": source_id,
-                    "dir_id": directory_id,
-                    "rel": rel_path,
-                    "file_name": attrs["file_name"],
-                    "ext": attrs["extension"],
-                    "size": attrs["size_bytes"],
-                    "modified_at": attrs["modified_at"],
-                    "now": now,
-                    "is_video": attrs["is_video_supported"],
-                    "has_preview": attrs["has_preview_asset"],
-                },
-            )
+        upsert_file(
+            conn, source_id, directory_id, rel_path, attrs, now,
+            existing_id=existing_ids.get(rel_path),
+        )
 
     stale = [{"sid": source_id, "rel": rel} for rel in existing_ids if rel not in touched_files]
     if stale:

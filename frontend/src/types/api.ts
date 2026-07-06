@@ -13,8 +13,50 @@ export interface DatabaseInfo {
   schema_version: number | null
 }
 
+export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type JobItemStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped'
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
+
+export interface JobSummary {
+  id: string
+  job_type: string
+  scope_type: string
+  scope_ref: string | null
+  status: JobStatus
+  parameters: Record<string, unknown>
+  started_at: string | null
+  finished_at: string | null
+  summary_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface JobItem {
+  id: string
+  job_id: string
+  file_id: string | null
+  item_key: string | null
+  status: JobItemStatus
+  step_name: string | null
+  message: string | null
+  started_at: string | null
+  finished_at: string | null
+  output_ref: string | null
+}
+
+export interface LogEvent {
+  id: string
+  job_id: string | null
+  file_id: string | null
+  level: LogLevel
+  event_type: string
+  message: string
+  payload: Record<string, unknown> | null
+  created_at: string
+}
+
 export interface QueueInfo {
-  current_job: unknown | null
+  current_job: JobSummary | null
 }
 
 export interface SourceSummary {

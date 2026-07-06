@@ -4,13 +4,12 @@ Video Archive is a local-first, Windows-targeted web application for browsing a 
 
 ## Current Status
 
-**Roadmap Stage 1 ("Skeleton") and Stage 2 ("Local Source, Scan, Browsing") are implemented.** `frontend/` and `backend/` run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n, talking to a FastAPI backend with a schema-versioned SQLite database. On top of that, Stage 2 adds:
+**Roadmap Stage 1 ("Skeleton"), Stage 2 ("Local Source, Scan, Browsing"), and Stage 3 ("Job Infrastructure") are implemented.** `frontend/` and `backend/` run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n, talking to a FastAPI backend with a schema-versioned SQLite database. On top of that:
 
-- configuring a `local` source (a folder next to the backend, or any absolute path) from Settings, with test-connection and a destructive-replace warning;
-- a synchronous filesystem scan on connect that discovers folders/files, detects supported video extensions, and recognizes preview assets (`<name>.jpg`, `folder-preview.jpg`) without listing them as separate files;
-- a directory tree and folder/file card grid in the main library screen, with conversion/preview indicators shown only for incomplete folders and files.
+- Stage 2 adds configuring a `local` source (a folder next to the backend, or any absolute path) from Settings, with test-connection and a destructive-replace warning; a synchronous filesystem scan on connect that discovers folders/files, detects supported video extensions, and recognizes preview assets (`<name>.jpg`, `folder-preview.jpg`) without listing them as separate files; and a directory tree and folder/file card grid in the main library screen, with conversion/preview indicators shown only for incomplete folders and files.
+- Stage 3 adds a job queue (`jobs`/`job_items` tables) driven by a single sequential background worker with a `queued → running → completed|failed|cancelled` state machine; a `rescan` job (triggered from a folder's toolbar) that refreshes one directory subtree file-by-file with live per-file progress and cooperative cancellation; a structured event log (`app_events`) streamed to the frontend over SSE; a top-bar activity indicator, a Jobs modal (cancel/restart/remove/clear-finished), and a Log Viewer (job/file/level filters); and 24-hour automatic retention for finished jobs.
 
-See [docs/roadmap.md](docs/roadmap.md) for what comes next (jobs, conversion, previews, tagging, playback).
+See [docs/roadmap.md](docs/roadmap.md) for what comes next (conversion, previews, tagging, playback).
 
 ## Local Run
 

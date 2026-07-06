@@ -1,0 +1,140 @@
+.log-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  padding: var(--space-4);
+  z-index: 40;
+}
+
+.log-viewer {
+  width: min(640px, 100%);
+  height: min(560px, 90vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.log-viewer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.log-viewer__title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.log-viewer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.log-viewer__close:hover {
+  background: var(--color-surface-raised);
+}
+
+.log-viewer__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.log-viewer__filter-input,
+.log-viewer__filter-select {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.log-viewer__filter-input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.log-viewer__list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+
+.log-viewer__empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+}
+
+.log-viewer__row {
+  display: flex;
+  gap: var(--space-2);
+  padding: 2px 0;
+  color: var(--color-text);
+}
+
+.log-viewer__time {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.log-viewer__level {
+  flex-shrink: 0;
+  width: 60px;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.log-viewer__row--warning .log-viewer__level {
+  color: var(--color-warning);
+}
+
+.log-viewer__row--error .log-viewer__level,
+.log-viewer__row--error .log-viewer__message {
+  color: var(--color-danger);
+}
+
+.log-viewer__message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Mobile: modals become full-screen sheets (Design System §5). */
+@media (max-width: 639px) {
+  .log-viewer-overlay {
+    padding: 0;
+  }
+
+  .log-viewer {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+}

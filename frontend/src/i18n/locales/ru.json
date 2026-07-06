@@ -6,7 +6,8 @@
     "menuToggle": "Переключить навигацию",
     "showPreviews": "Показать превью",
     "hidePreviews": "Скрыть превью",
-    "settingsToggle": "Настройки"
+    "settingsToggle": "Настройки",
+    "jobsToggle": "Задания"
   },
   "language": {
     "en": "Английский",
@@ -47,7 +48,51 @@
     "breadcrumb": "Текущая папка",
     "loading": "Загрузка…",
     "loadError": "Не удалось загрузить эту папку: {{message}}",
-    "empty": "Эта папка пуста."
+    "empty": "Эта папка пуста.",
+    "rescan": "Пересканировать папку"
+  },
+  "jobs": {
+    "title": "Задания",
+    "close": "Закрыть",
+    "empty": "Заданий пока нет.",
+    "clearFinished": "Очистить завершённые",
+    "cancel": "Отменить",
+    "restart": "Перезапустить",
+    "remove": "Удалить",
+    "scopeWholeSource": "Весь источник",
+    "indicatorTooltip": "{{jobType}} — {{current}}",
+    "section": {
+      "queued": "В очереди",
+      "running": "Выполняется",
+      "completed": "Завершено",
+      "failed": "Ошибка",
+      "cancelled": "Отменено"
+    },
+    "type": {
+      "scan": "Сканирование",
+      "rescan": "Пересканирование",
+      "convert": "Конвертация",
+      "preview": "Превью",
+      "tag": "Тегирование",
+      "cleanup": "Очистка",
+      "optimize_db": "Оптимизация базы данных",
+      "backup": "Резервная копия",
+      "restore": "Восстановление"
+    }
+  },
+  "logs": {
+    "title": "Просмотр логов",
+    "close": "Закрыть",
+    "filterJob": "ID задания",
+    "filterFile": "ID файла",
+    "filterLevelAll": "Все уровни",
+    "level": {
+      "debug": "Отладка",
+      "info": "Инфо",
+      "warning": "Предупреждение",
+      "error": "Ошибка"
+    },
+    "empty": "Событий пока нет."
   },
   "indicators": {
     "conversionIncomplete": "Не все видео сконвертированы ({{converted}}/{{total}})",

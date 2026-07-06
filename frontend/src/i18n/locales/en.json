@@ -6,7 +6,8 @@
     "menuToggle": "Toggle navigation",
     "showPreviews": "Show previews",
     "hidePreviews": "Hide previews",
-    "settingsToggle": "Settings"
+    "settingsToggle": "Settings",
+    "jobsToggle": "Jobs"
   },
   "language": {
     "en": "English",
@@ -47,7 +48,51 @@
     "breadcrumb": "Current folder",
     "loading": "Loading…",
     "loadError": "Could not load this folder: {{message}}",
-    "empty": "This folder is empty."
+    "empty": "This folder is empty.",
+    "rescan": "Rescan folder"
+  },
+  "jobs": {
+    "title": "Jobs",
+    "close": "Close",
+    "empty": "No jobs yet.",
+    "clearFinished": "Clear finished",
+    "cancel": "Cancel",
+    "restart": "Restart",
+    "remove": "Remove",
+    "scopeWholeSource": "Whole source",
+    "indicatorTooltip": "{{jobType}} — {{current}}",
+    "section": {
+      "queued": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "type": {
+      "scan": "Scan",
+      "rescan": "Rescan",
+      "convert": "Convert",
+      "preview": "Preview",
+      "tag": "Tag",
+      "cleanup": "Cleanup",
+      "optimize_db": "Optimize database",
+      "backup": "Backup",
+      "restore": "Restore"
+    }
+  },
+  "logs": {
+    "title": "Log Viewer",
+    "close": "Close",
+    "filterJob": "Job ID",
+    "filterFile": "File ID",
+    "filterLevelAll": "All levels",
+    "level": {
+      "debug": "Debug",
+      "info": "Info",
+      "warning": "Warning",
+      "error": "Error"
+    },
+    "empty": "No log events yet."
   },
   "indicators": {
     "conversionIncomplete": "Not all videos converted yet ({{converted}}/{{total}})",

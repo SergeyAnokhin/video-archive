@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TopBar } from './TopBar'
 import { SettingsModal } from './SettingsModal'
+import { JobsModal } from './JobsModal'
 import { DirectoryTree } from './DirectoryTree'
 import { LibraryView } from './LibraryView'
 import { BackendStatusPanel } from './BackendStatusPanel'
@@ -13,6 +14,7 @@ export function AppLayout() {
   const { source, loading } = useSource()
   const [navOpen, setNavOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [jobsOpen, setJobsOpen] = useState(false)
   const [selectedPath, setSelectedPath] = useState('')
 
   function handleSelectPath(path: string) {
@@ -25,6 +27,7 @@ export function AppLayout() {
       <TopBar
         onMenuToggle={() => setNavOpen((open) => !open)}
         onSettingsToggle={() => setSettingsOpen((open) => !open)}
+        onJobsToggle={() => setJobsOpen((open) => !open)}
       />
       <div className="app-body">
         <nav
@@ -63,6 +66,7 @@ export function AppLayout() {
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {jobsOpen && <JobsModal onClose={() => setJobsOpen(false)} />}
     </div>
   )
 }

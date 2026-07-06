@@ -31,6 +31,21 @@
   flex: 1;
 }
 
+/* Functional loading state, not decorative motion: spins while a job is
+   queued/running, in both theme presets (Design System §2.1, §3). */
+.top-bar__activity-spinner {
+  animation: top-bar-spin 1.2s linear infinite;
+}
+
+@keyframes top-bar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Desktop: the directory tree is persistent, so the menu toggle is not needed. */
 @media (min-width: 1024px) {
   .top-bar__menu-toggle {

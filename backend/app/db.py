@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Engine, MetaData, Table, Column, Integer, String, text, create_engine
+from sqlalchemy import Engine, MetaData, Table, Column, Integer, String, event, text, create_engine
 
 from app.config import DATABASE_PATH
 
@@ -91,6 +91,58 @@ MIGRATIONS: dict[int, list[str]] = {
         "CREATE INDEX idx_files_directory ON files (directory_id)",
         "CREATE INDEX idx_files_source ON files (source_id)",
     ],
+    # Stage 3: job queue, per-item progress, and the log/event stream
+    # (Data Model §6-7, §11; Job Model). A single background worker thread
+    # now shares this database with request-handling threads, hence the
+    # check_same_thread/WAL setup below in get_engine().
+    3: [
+        """
+        CREATE TABLE jobs (
+            id TEXT PRIMARY KEY,
+            job_type TEXT NOT NULL,
+            scope_type TEXT NOT NULL,
+            scope_ref TEXT,
+            status TEXT NOT NULL DEFAULT 'queued',
+            parameters TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            summary_message TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX idx_jobs_status ON jobs (status)",
+        "CREATE INDEX idx_jobs_created_at ON jobs (created_at)",
+        """
+        CREATE TABLE job_items (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES jobs(id),
+            file_id TEXT REFERENCES files(id),
+            item_key TEXT,
+            status TEXT NOT NULL DEFAULT 'queued',
+            step_name TEXT,
+            message TEXT,
+            started_at TEXT,
+            finished_at TEXT,
+            output_ref TEXT
+        )
+        """,
+        "CREATE INDEX idx_job_items_job ON job_items (job_id)",
+        """
+        CREATE TABLE app_events (
+            id TEXT PRIMARY KEY,
+            job_id TEXT REFERENCES jobs(id),
+            file_id TEXT REFERENCES files(id),
+            level TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            message TEXT NOT NULL,
+            payload TEXT,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX idx_app_events_job ON app_events (job_id)",
+        "CREATE INDEX idx_app_events_created_at ON app_events (created_at)",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -101,7 +153,23 @@ _engine: Engine | None = None
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
-        _engine = create_engine(f"sqlite:///{DATABASE_PATH}", future=True)
+        # Stage 3's job worker runs on its own background thread and shares
+        # this engine with request-handling threads; check_same_thread=False
+        # plus WAL allow that concurrent access without "database is locked"
+        # errors under SQLite's default rollback-journal mode.
+        _engine = create_engine(
+            f"sqlite:///{DATABASE_PATH}",
+            future=True,
+            connect_args={"check_same_thread": False},
+        )
+
+        @event.listens_for(_engine, "connect")
+        def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+
     return _engine
 
 

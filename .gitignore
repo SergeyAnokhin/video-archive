@@ -58,6 +58,8 @@ pip-wheel-metadata/
 # Backend runtime data
 backend/*.db
 backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm
 backend/secrets.env
 
 # Project-local caches

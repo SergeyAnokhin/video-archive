@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from app.db import get_engine, get_schema_version
+from app.jobs import service as jobs_service
 
 router = APIRouter()
 
@@ -32,8 +33,7 @@ def get_app_info(request: Request) -> dict:
             "status": "ok",
             "schema_version": get_schema_version(),
         },
-        # No job queue yet; jobs arrive in Stage 3.
-        "queue": {"current_job": None},
+        "queue": {"current_job": jobs_service.get_current_job_summary(get_engine())},
         "ffmpeg": {
             "available": ffmpeg_status.available,
             "version": ffmpeg_status.version,
