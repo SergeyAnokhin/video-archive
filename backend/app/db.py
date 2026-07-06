@@ -197,6 +197,82 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Stage 6: tag vocabulary, assigned tags, the tagging settings singleton,
+    # and per-provider (non-secret) configuration (Data Model §8-9,
+    # Specification §12, §18). API keys never land in this database — they
+    # live in `backend/secrets.env` (see `app/secrets_store.py`); only
+    # `provider_configs` rows (enabled flag, model choices) are stored here,
+    # following the same singleton-table convention as `preview_settings`.
+    # Seeding the tagging settings row and the four fixed provider rows
+    # happens in application code (`app/tagging_settings.py`,
+    # `app/provider_configs.py`, called from `init_db()` below) for the same
+    # reason as Stage 5's seeding: dynamic timestamps, idempotent restarts.
+    # DDL uses IF NOT EXISTS/INDEX (unlike earlier migrations): a dev-time
+    # incident showed a crash between table creation and the schema_meta
+    # version bump leaves tables present but the version stuck at the prior
+    # number, so a retry re-runs this migration's statements against
+    # already-created tables — this must not raise.
+    6: [
+        """
+        CREATE TABLE IF NOT EXISTS tag_catalog (
+            id TEXT PRIMARY KEY,
+            tag_key TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_tag_catalog_key ON tag_catalog (tag_key)",
+        """
+        CREATE TABLE IF NOT EXISTS file_tags (
+            id TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL REFERENCES files(id),
+            tag_id TEXT NOT NULL REFERENCES tag_catalog(id),
+            score INTEGER NOT NULL,
+            provider_name TEXT,
+            model_name TEXT,
+            assigned_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_file_tags_file ON file_tags (file_id)",
+        "CREATE INDEX IF NOT EXISTS idx_file_tags_tag ON file_tags (tag_id)",
+        """
+        CREATE TABLE IF NOT EXISTS tagging_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            sample_frame_count INTEGER NOT NULL DEFAULT 9,
+            combine_into_collage INTEGER NOT NULL DEFAULT 1,
+            top_tag_count INTEGER NOT NULL DEFAULT 10,
+            default_provider TEXT,
+            default_vision_model TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS provider_configs (
+            provider_name TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            vision_model TEXT,
+            text_model TEXT,
+            batch_enabled INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
+    # Stage 7: SMB source support (host/port/username_ref/secret_ref on
+    # `sources` already exist since migration 2) plus the playback settings
+    # singleton (Specification §11.5, Settings §4), following the same
+    # singleton-table convention as `preview_settings`/`tagging_settings`.
+    7: [
+        """
+        CREATE TABLE IF NOT EXISTS playback_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            mode TEXT NOT NULL DEFAULT 'stream',
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -262,6 +338,18 @@ def init_db() -> int:
 
             seed_builtin_presets(conn)
             seed_default_settings(conn)
+
+        if current_version < 6 <= SCHEMA_VERSION:
+            from app.provider_configs import seed_default_providers
+            from app.tagging_settings import seed_default_settings as seed_default_tagging_settings
+
+            seed_default_tagging_settings(conn)
+            seed_default_providers(conn)
+
+        if current_version < 7 <= SCHEMA_VERSION:
+            from app.playback_settings import seed_default_settings as seed_default_playback_settings
+
+            seed_default_playback_settings(conn)
 
     return SCHEMA_VERSION
 

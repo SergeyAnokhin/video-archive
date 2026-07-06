@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import text
 
 from app.db import get_engine
 from app.media import FOLDER_PREVIEW_FILENAME
 from app.source_access import get_active_source_or_404
+from app.sources import get_source_access
 from app.status import compute_directory_status
 
 router = APIRouter()
@@ -92,12 +91,13 @@ def get_directory_preview_image(path: str = Query(default="")):
     with engine.connect() as conn:
         source = get_active_source_or_404(conn)
 
-    preview_path = (Path(source.root_path) / path / FOLDER_PREVIEW_FILENAME) if path else (
-        Path(source.root_path) / FOLDER_PREVIEW_FILENAME
-    )
-    if not preview_path.exists():
+    access = get_source_access(source)
+    preview_rel = f"{path}/{FOLDER_PREVIEW_FILENAME}" if path else FOLDER_PREVIEW_FILENAME
+    if not access.exists(preview_rel):
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No folder preview for this directory."}},
         )
-    return FileResponse(preview_path, media_type="image/jpeg")
+    if access.protocol == "local":
+        return FileResponse(access.direct_path(preview_rel), media_type="image/jpeg")
+    return Response(content=access.read_bytes(preview_rel), media_type="image/jpeg")

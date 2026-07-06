@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import PurePosixPath
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import text
 
 from app.db import get_engine
 from app.source_access import get_active_source_or_404
+from app.sources import get_source_access
 
 router = APIRouter()
 
@@ -42,6 +43,7 @@ def list_files(
     recursive: bool = Query(default=False),
     video_only: bool = Query(default=False),
     search: str | None = Query(default=None),
+    tags: str | None = Query(default=None, description="Comma-separated tag keys; matches any of them"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ):
@@ -80,6 +82,17 @@ def list_files(
         if search:
             clauses.append("file_name LIKE :search")
             params["search"] = f"%{search}%"
+
+        if tags:
+            tag_keys = [key.strip().lower() for key in tags.split(",") if key.strip()]
+            if tag_keys:
+                placeholders = ", ".join(f":tag_{i}" for i in range(len(tag_keys)))
+                clauses.append(
+                    "id IN (SELECT ft.file_id FROM file_tags ft JOIN tag_catalog tc ON tc.id = ft.tag_id "
+                    f"WHERE tc.tag_key IN ({placeholders}))"
+                )
+                for i, key in enumerate(tag_keys):
+                    params[f"tag_{i}"] = key
 
         where_sql = " AND ".join(clauses)
         rows = conn.execute(
@@ -139,11 +152,15 @@ def get_file(file_id: str):
     }
 
 
-def _preview_path(conn, file_id: str) -> tuple[Path, dict] | None:
+def _preview_rel(row) -> str:
+    return str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
+
+
+def _preview_lookup(conn, file_id: str):
     row = conn.execute(
         text(
             """
-            SELECT f.relative_path, f.has_preview_asset, f.preview_generated_at, s.root_path
+            SELECT f.relative_path, f.has_preview_asset, f.preview_generated_at, s.*
             FROM files f
             JOIN sources s ON s.id = f.source_id
             WHERE f.id = :id AND s.is_active = 1
@@ -153,36 +170,73 @@ def _preview_path(conn, file_id: str) -> tuple[Path, dict] | None:
     ).fetchone()
     if row is None:
         return None
-    preview_path = (Path(row.root_path) / row.relative_path).with_suffix(".jpg")
-    return preview_path, {
-        "has_preview_asset": bool(row.has_preview_asset),
-        "preview_generated_at": row.preview_generated_at,
-    }
+    return row
 
 
 @router.get("/files/{file_id}/preview")
 def get_file_preview_metadata(file_id: str):
     with get_engine().connect() as conn:
-        result = _preview_path(conn, file_id)
-    if result is None:
+        row = _preview_lookup(conn, file_id)
+    if row is None:
         raise _file_not_found_error(file_id)
-    preview_path, metadata = result
+    access = get_source_access(row)
     return {
-        "has_preview_asset": metadata["has_preview_asset"] and preview_path.exists(),
-        "preview_generated_at": metadata["preview_generated_at"],
+        "has_preview_asset": bool(row.has_preview_asset) and access.exists(_preview_rel(row)),
+        "preview_generated_at": row.preview_generated_at,
     }
 
 
 @router.get("/files/{file_id}/preview.jpg")
 def get_file_preview_image(file_id: str):
     with get_engine().connect() as conn:
-        result = _preview_path(conn, file_id)
-    if result is None:
+        row = _preview_lookup(conn, file_id)
+    if row is None:
         raise _file_not_found_error(file_id)
-    preview_path, _metadata = result
-    if not preview_path.exists():
+
+    access = get_source_access(row)
+    preview_rel = _preview_rel(row)
+    if not access.exists(preview_rel):
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No preview asset for this file."}},
         )
-    return FileResponse(preview_path, media_type="image/jpeg")
+    if access.protocol == "local":
+        return FileResponse(access.direct_path(preview_rel), media_type="image/jpeg")
+    # SMB previews are small JPEGs; buffering the whole file in memory keeps
+    # this endpoint simple instead of needing a streamed-download-then-serve
+    # dance for an asset that's typically a few hundred KB.
+    return Response(content=access.read_bytes(preview_rel), media_type="image/jpeg")
+
+
+@router.get("/files/{file_id}/tags")
+def get_file_tags(file_id: str):
+    with get_engine().connect() as conn:
+        file_row = conn.execute(text("SELECT id FROM files WHERE id = :id"), {"id": file_id}).fetchone()
+        if file_row is None:
+            raise _file_not_found_error(file_id)
+        rows = conn.execute(
+            text(
+                """
+                SELECT tc.id AS tag_id, tc.display_name, ft.score, ft.provider_name, ft.model_name, ft.assigned_at
+                FROM file_tags ft
+                JOIN tag_catalog tc ON tc.id = ft.tag_id
+                WHERE ft.file_id = :file_id
+                ORDER BY ft.score DESC
+                """
+            ),
+            {"file_id": file_id},
+        ).all()
+
+    return {
+        "tags": [
+            {
+                "tag_id": row.tag_id,
+                "display_name": row.display_name,
+                "score": row.score,
+                "provider_name": row.provider_name,
+                "model_name": row.model_name,
+                "assigned_at": row.assigned_at,
+            }
+            for row in rows
+        ]
+    }

@@ -1,17 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { File as FileIcon, Film, Folder, Images, RefreshCw, Wand2 } from 'lucide-react'
+import { File as FileIcon, Film, Folder, Images, Play, RefreshCw, Search, Tags, Wand2, X } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
+import { useTags } from '../context/TagsContext'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { FileConvertModal } from './FileConvertModal'
+import { PlaybackModal } from './PlaybackModal'
 import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
-import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry } from '../types/api'
+import { TagDirectoryDialog } from './TagDirectoryDialog'
+import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry, Tag } from '../types/api'
 import './LibraryView.css'
 
 interface LibraryViewProps {
   path: string
   onNavigate: (path: string) => void
+}
+
+interface ActiveSearch {
+  kind: 'tag' | 'name'
+  label: string
+  value: string
 }
 
 export function LibraryView({ path, onNavigate }: LibraryViewProps) {
@@ -25,8 +34,51 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
   const [convertFile, setConvertFile] = useState<FileEntry | null>(null)
   const [previewDirOpen, setPreviewDirOpen] = useState(false)
   const [previewingFileId, setPreviewingFileId] = useState<string | null>(null)
+  const [tagDirOpen, setTagDirOpen] = useState(false)
+  const [taggingFileId, setTaggingFileId] = useState<string | null>(null)
+  const [playingFile, setPlayingFile] = useState<FileEntry | null>(null)
+  const [activeSearch, setActiveSearch] = useState<ActiveSearch | null>(null)
+  const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!activeSearch) {
+      return
+    }
+    let cancelled = false
+    setSearchResults(null)
+    setSearchError(null)
+
+    async function loadSearch() {
+      try {
+        const params = new URLSearchParams(
+          activeSearch!.kind === 'tag' ? { tags: activeSearch!.value } : { search: activeSearch!.value },
+        )
+        const res = await fetch(`/api/files?${params.toString()}`)
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`)
+        }
+        const json: { files: FileEntry[] } = await res.json()
+        if (!cancelled) {
+          setSearchResults(json.files)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSearchError(err instanceof Error ? err.message : String(err))
+        }
+      }
+    }
+
+    void loadSearch()
+    return () => {
+      cancelled = true
+    }
+  }, [activeSearch])
+
+  useEffect(() => {
+    if (activeSearch) {
+      return
+    }
     let cancelled = false
     setData(null)
     setError(null)
@@ -53,7 +105,7 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, activeSearch])
 
   const segments = path ? path.split('/') : []
 
@@ -85,6 +137,20 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
     }
   }
 
+  async function handleTagFile(fileId: string) {
+    setTaggingFileId(fileId)
+    try {
+      await fetch('/api/jobs/tag-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_id: fileId }),
+      })
+      await refreshJobs()
+    } finally {
+      setTaggingFileId(null)
+    }
+  }
+
   return (
     <div className="library-view">
       <div className="library-view__toolbar">
@@ -104,6 +170,11 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
             )
           })}
         </nav>
+
+        <LibrarySearchBox
+          onSearch={(search) => setActiveSearch(search)}
+          onClear={() => setActiveSearch(null)}
+        />
 
         <button
           type="button"
@@ -135,36 +206,91 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
         >
           <Images size={16} />
         </button>
+
+        <button
+          type="button"
+          className="library-view__icon-btn"
+          aria-label={t('library.tag')}
+          title={t('library.tag')}
+          onClick={() => setTagDirOpen(true)}
+        >
+          <Tags size={16} />
+        </button>
       </div>
 
-      {error && (
-        <p className="library-view__message library-view__message--error">
-          {t('library.loadError', { message: error })}
-        </p>
-      )}
-
-      {!error && !data && <p className="library-view__message">{t('library.loading')}</p>}
-
-      {data && data.directories.length === 0 && data.files.length === 0 && (
-        <p className="library-view__message">{t('library.empty')}</p>
-      )}
-
-      {data && (data.directories.length > 0 || data.files.length > 0) && (
-        <div className="library-view__grid">
-          {data.directories.map((dir) => (
-            <FolderCard key={dir.path} dir={dir} previewsVisible={previewsVisible} onOpen={() => onNavigate(dir.path)} />
-          ))}
-          {data.files.map((file) => (
-            <FileCard
-              key={file.id}
-              file={file}
-              previewsVisible={previewsVisible}
-              previewing={previewingFileId === file.id}
-              onConvert={() => setConvertFile(file)}
-              onPreview={() => void handlePreviewFile(file.id)}
-            />
-          ))}
+      {activeSearch && (
+        <div className="library-view__search-banner">
+          <span>{t('library.searchResultsFor', { query: activeSearch.label })}</span>
+          <button type="button" className="library-view__icon-btn" onClick={() => setActiveSearch(null)}>
+            <X size={14} />
+          </button>
         </div>
+      )}
+
+      {activeSearch ? (
+        <>
+          {searchError && (
+            <p className="library-view__message library-view__message--error">
+              {t('library.loadError', { message: searchError })}
+            </p>
+          )}
+          {!searchError && !searchResults && <p className="library-view__message">{t('library.loading')}</p>}
+          {searchResults && searchResults.length === 0 && (
+            <p className="library-view__message">{t('library.searchEmpty')}</p>
+          )}
+          {searchResults && searchResults.length > 0 && (
+            <div className="library-view__grid">
+              {searchResults.map((file) => (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  previewsVisible={previewsVisible}
+                  previewing={previewingFileId === file.id}
+                  tagging={taggingFileId === file.id}
+                  onConvert={() => setConvertFile(file)}
+                  onPreview={() => void handlePreviewFile(file.id)}
+                  onTag={() => void handleTagFile(file.id)}
+                  onPlay={() => setPlayingFile(file)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {error && (
+            <p className="library-view__message library-view__message--error">
+              {t('library.loadError', { message: error })}
+            </p>
+          )}
+
+          {!error && !data && <p className="library-view__message">{t('library.loading')}</p>}
+
+          {data && data.directories.length === 0 && data.files.length === 0 && (
+            <p className="library-view__message">{t('library.empty')}</p>
+          )}
+
+          {data && (data.directories.length > 0 || data.files.length > 0) && (
+            <div className="library-view__grid">
+              {data.directories.map((dir) => (
+                <FolderCard key={dir.path} dir={dir} previewsVisible={previewsVisible} onOpen={() => onNavigate(dir.path)} />
+              ))}
+              {data.files.map((file) => (
+                <FileCard
+                  key={file.id}
+                  file={file}
+                  previewsVisible={previewsVisible}
+                  previewing={previewingFileId === file.id}
+                  tagging={taggingFileId === file.id}
+                  onConvert={() => setConvertFile(file)}
+                  onPreview={() => void handlePreviewFile(file.id)}
+                  onTag={() => void handleTagFile(file.id)}
+                  onPlay={() => setPlayingFile(file)}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {convertDirOpen && (
@@ -189,6 +315,109 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
           onClose={() => setPreviewDirOpen(false)}
           onStarted={refreshJobs}
         />
+      )}
+
+      {tagDirOpen && (
+        <TagDirectoryDialog
+          path={path}
+          onClose={() => setTagDirOpen(false)}
+          onStarted={refreshJobs}
+        />
+      )}
+
+      {playingFile && <PlaybackModal file={playingFile} onClose={() => setPlayingFile(null)} />}
+    </div>
+  )
+}
+
+interface LibrarySearchBoxProps {
+  onSearch: (search: ActiveSearch) => void
+  onClear: () => void
+}
+
+function LibrarySearchBox({ onSearch, onClear }: LibrarySearchBoxProps) {
+  const { t } = useTranslation()
+  const { tags } = useTags()
+  const [value, setValue] = useState('')
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const prefix = value.trim().toLowerCase()
+  const suggestions: Tag[] = prefix
+    ? tags.filter((tag) => tag.tag_key.startsWith(prefix)).slice(0, 8)
+    : []
+
+  function selectTag(tag: Tag) {
+    setValue(tag.display_name)
+    setOpen(false)
+    onSearch({ kind: 'tag', label: tag.display_name, value: tag.tag_key })
+  }
+
+  function submitFreeText() {
+    if (!value.trim()) {
+      return
+    }
+    setOpen(false)
+    onSearch({ kind: 'name', label: value.trim(), value: value.trim() })
+  }
+
+  function clear() {
+    setValue('')
+    setOpen(false)
+    onClear()
+  }
+
+  return (
+    <div className="library-view__search" ref={containerRef}>
+      <Search size={14} className="library-view__search-icon" />
+      <input
+        type="text"
+        className="library-view__search-input"
+        placeholder={t('library.searchPlaceholder')}
+        value={value}
+        onChange={(event) => {
+          setValue(event.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            submitFreeText()
+          } else if (event.key === 'Escape') {
+            setOpen(false)
+          }
+        }}
+      />
+      {value && (
+        <button
+          type="button"
+          className="library-view__search-clear"
+          aria-label={t('library.searchClear')}
+          onClick={clear}
+        >
+          <X size={12} />
+        </button>
+      )}
+      {open && suggestions.length > 0 && (
+        <ul className="library-view__search-suggestions">
+          {suggestions.map((tag) => (
+            <li key={tag.id}>
+              <button type="button" onClick={() => selectTag(tag)}>
+                {tag.display_name}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )
@@ -253,11 +482,14 @@ interface FileCardProps {
   file: FileEntry
   previewsVisible: boolean
   previewing: boolean
+  tagging: boolean
   onConvert: () => void
   onPreview: () => void
+  onTag: () => void
+  onPlay: () => void
 }
 
-function FileCard({ file, previewsVisible, previewing, onConvert, onPreview }: FileCardProps) {
+function FileCard({ file, previewsVisible, previewing, tagging, onConvert, onPreview, onTag, onPlay }: FileCardProps) {
   const { t } = useTranslation()
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
@@ -283,12 +515,31 @@ function FileCard({ file, previewsVisible, previewing, onConvert, onPreview }: F
           <button
             type="button"
             className="library-card__convert-btn"
+            aria-label={t('library.play')}
+            title={t('library.play')}
+            onClick={onPlay}
+          >
+            <Play size={14} />
+          </button>
+          <button
+            type="button"
+            className="library-card__convert-btn"
             aria-label={t('library.previewFile')}
             title={t('library.previewFile')}
             onClick={onPreview}
             disabled={previewing}
           >
             <Images size={14} />
+          </button>
+          <button
+            type="button"
+            className="library-card__convert-btn"
+            aria-label={t('library.tagFile')}
+            title={t('library.tagFile')}
+            onClick={onTag}
+            disabled={tagging}
+          >
+            <Tags size={14} />
           </button>
           <button
             type="button"

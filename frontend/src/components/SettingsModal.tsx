@@ -4,6 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { SourceSection } from './SourceSection'
 import { ConversionProfilesSection } from './ConversionProfilesSection'
 import { PreviewSettingsSection } from './PreviewSettingsSection'
+import { TaggingSettingsSection } from './TaggingSettingsSection'
+import { ProviderSettingsSection } from './ProviderSettingsSection'
+import { PlaybackSettingsSection } from './PlaybackSettingsSection'
 import { InterfaceSection } from './InterfaceSection'
 import './SettingsModal.css'
 
@@ -50,6 +53,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <ConversionProfilesSection />
 
         <PreviewSettingsSection />
+
+        <PlaybackSettingsSection />
+
+        <TaggingSettingsSection />
+
+        <ProviderSettingsSection />
 
         <InterfaceSection />
       </div>

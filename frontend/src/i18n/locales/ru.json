@@ -21,7 +21,16 @@
     "sourceSection": "Источник",
     "sourceName": "Название источника",
     "sourcePath": "Путь к локальной папке",
-    "sourceProtocolLocal": "Протокол: локальная папка (SMB появится на следующем этапе)",
+    "sourceProtocol": "Протокол",
+    "sourceProtocolLocalOption": "Локальная папка",
+    "sourceProtocolSmbOption": "SMB-шара",
+    "sourceProtocolLocal": "Протокол: локальная папка",
+    "sourceHost": "Хост",
+    "sourcePort": "Порт",
+    "sourceRemotePath": "Шара (можно с подпапкой, например «videos/archive»)",
+    "sourceUsername": "Имя пользователя",
+    "sourcePassword": "Пароль",
+    "sourcePasswordHint": "•••••••• (оставьте пустым, чтобы сохранить текущий пароль)",
     "testConnection": "Проверить подключение",
     "saveSource": "Подключить",
     "confirmReplace": "Подтвердить замену",
@@ -32,7 +41,16 @@
     "noSourceYet": "Источник ещё не настроен. Укажите путь к локальной папке и подключитесь.",
     "currentSource": "Подключено: {{name}} ({{path}})",
     "lastScan": "Последнее сканирование: {{date}}.",
-    "neverScanned": "Ещё не сканировалось."
+    "neverScanned": "Ещё не сканировалось.",
+    "reconnect": "Переподключиться",
+    "reconnectOk": "Переподключение выполнено успешно."
+  },
+  "playbackSettings": {
+    "title": "Воспроизведение",
+    "mode": "Режим воспроизведения",
+    "modeStream": "Поток (встроенный плеер)",
+    "modeDirectLink": "Прямая ссылка (открыть во внешнем плеере)",
+    "hint": "Оба способа воспроизведения остаются доступны из библиотеки — здесь выбирается только тот, который «Воспроизвести» использует по умолчанию."
   },
   "conversionProfiles": {
     "title": "Профили конвертации",
@@ -72,7 +90,26 @@
     "convert": "Конвертировать папку",
     "convertFile": "Конвертировать файл",
     "preview": "Создать превью для папки",
-    "previewFile": "Создать превью"
+    "previewFile": "Создать превью",
+    "tag": "Тегировать папку",
+    "tagFile": "Тегировать файл",
+    "play": "Воспроизвести",
+    "searchPlaceholder": "Поиск по тегам или именам файлов…",
+    "searchClear": "Очистить поиск",
+    "searchResultsFor": "Результаты поиска: «{{query}}»",
+    "searchEmpty": "Нет файлов, подходящих под этот поиск."
+  },
+  "playbackModal": {
+    "title": "Воспроизведение",
+    "close": "Закрыть",
+    "loading": "Загрузка…",
+    "loadError": "Не удалось загрузить данные воспроизведения: {{message}}",
+    "streamNotSupported": "Ваш браузер не может воспроизвести этот файл встроенным плеером.",
+    "directLinkHint": "Откройте этот путь напрямую (проводник, VLC и т. п.):",
+    "copyPath": "Скопировать путь",
+    "copied": "Скопировано.",
+    "switchToStream": "Переключиться на встроенное воспроизведение",
+    "switchToDirectLink": "Переключиться на прямую ссылку"
   },
   "convertDialog": {
     "directoryTitle": "Конвертация папки",
@@ -103,6 +140,10 @@
   "previewDialog": {
     "directoryTitle": "Создать превью для папки",
     "skipProcessed": "Пропускать файлы, у которых уже есть превью"
+  },
+  "tagDialog": {
+    "directoryTitle": "Тегировать папку",
+    "skipProcessed": "Пропускать уже тегированные файлы"
   },
   "previewSettings": {
     "title": "Превью",
@@ -137,6 +178,39 @@
     "presetName": "Название пресета",
     "savePreset": "Сохранить пресет",
     "saveAsNewPreset": "Сохранить как новый пресет"
+  },
+  "tagging": {
+    "title": "Тегирование",
+    "vocabularyHint": "Словарь тегов — это закрытый набор, по которому ИИ оценивает каждое видео.",
+    "vocabularyEmpty": "Тегов пока нет. Добавьте теги ниже, чтобы начать тегировать видео.",
+    "activate": "Включить",
+    "deactivate": "Отключить",
+    "delete": "Удалить",
+    "newTagPlaceholder": "Название нового тега",
+    "add": "Добавить тег",
+    "sampleFrameCount": "Число сэмплируемых кадров",
+    "combineIntoCollage": "Объединять кадры в один коллаж",
+    "topTagCount": "Сколько лучших тегов сохранять",
+    "defaultProvider": "Провайдер по умолчанию",
+    "noDefaultProvider": "Не выбран",
+    "defaultVisionModel": "Модель распознавания по умолчанию"
+  },
+  "providerSettings": {
+    "title": "AI-провайдеры",
+    "enabled": "Включён",
+    "apiKey": "API-ключ",
+    "keySet": "API-ключ задан.",
+    "keyMissing": "API-ключ не задан.",
+    "keySetPlaceholder": "•••••••• (без изменений)",
+    "visionModel": "Модель распознавания",
+    "textModel": "Текстовая модель (опционально)",
+    "batchEnabled": "Использовать пакетную отправку, если доступна"
+  },
+  "providers": {
+    "openrouter": "OpenRouter",
+    "gemini": "Google Gemini",
+    "fal": "FAL",
+    "mistral": "Mistral"
   },
   "jobs": {
     "title": "Задания",

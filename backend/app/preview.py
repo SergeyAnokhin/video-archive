@@ -40,7 +40,7 @@ class PreviewError(Exception):
 # --- frame extraction -----------------------------------------------------
 
 
-def _extract_frame_image(video_path: Path, timestamp: float):
+def extract_frame_image(video_path: Path, timestamp: float):
     ffmpeg_bin = conversion.ffmpeg_path()
     if not ffmpeg_bin:
         return None
@@ -65,7 +65,7 @@ def _extract_frame_image(video_path: Path, timestamp: float):
             tmp_path.unlink()
 
 
-def _fill_missing(images: list):
+def fill_missing_frames(images: list):
     """Replace failed extractions (`None`) with the nearest successful
     neighbor so a single ffmpeg hiccup never breaks the whole collage."""
     filled = list(images)
@@ -246,7 +246,7 @@ def generate_file_preview(video_path: Path, dest_path: Path, *, layout: dict, as
         raise PreviewError("Source is not a probeable video with a video stream and duration.")
 
     timestamps = sample_interior_timestamps(info["duration"], len(tiles))
-    images = _fill_missing([_extract_frame_image(video_path, ts) for ts in timestamps])
+    images = fill_missing_frames([extract_frame_image(video_path, ts) for ts in timestamps])
     if not any(img is not None for img in images):
         raise PreviewError("Could not extract any frames from the source video.")
 
@@ -271,7 +271,7 @@ def _grid_dims_for_count(count: int) -> tuple[int, int]:
     return rows, cols
 
 
-def _evenly_spaced(items: list, count: int) -> list:
+def evenly_spaced_sample(items: list, count: int) -> list:
     if len(items) <= count:
         return list(items)
     if count <= 1:
@@ -286,7 +286,7 @@ def _pick_representative_frame(video_path: Path, candidate_count: int = 3):
         return None
 
     timestamps = sample_interior_timestamps(info["duration"], candidate_count) or [info["duration"] / 2]
-    candidates = [img for ts in timestamps if (img := _extract_frame_image(video_path, ts)) is not None]
+    candidates = [img for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]
     if not candidates:
         return None
 
@@ -307,7 +307,7 @@ def generate_folder_preview(
     if not video_paths:
         raise PreviewError("No videos available to build a folder preview.")
 
-    chosen_paths = _evenly_spaced(video_paths, frame_count)
+    chosen_paths = evenly_spaced_sample(video_paths, frame_count)
     images = [img for img in (_pick_representative_frame(p) for p in chosen_paths) if img is not None]
     if not images:
         raise PreviewError("Could not extract any frames for the folder preview.")

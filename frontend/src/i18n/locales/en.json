@@ -21,7 +21,16 @@
     "sourceSection": "Source",
     "sourceName": "Source name",
     "sourcePath": "Local folder path",
-    "sourceProtocolLocal": "Protocol: Local folder (SMB arrives in a later stage)",
+    "sourceProtocol": "Protocol",
+    "sourceProtocolLocalOption": "Local folder",
+    "sourceProtocolSmbOption": "SMB share",
+    "sourceProtocolLocal": "Protocol: Local folder",
+    "sourceHost": "Host",
+    "sourcePort": "Port",
+    "sourceRemotePath": "Share (optionally with a subpath, e.g. \"videos/archive\")",
+    "sourceUsername": "Username",
+    "sourcePassword": "Password",
+    "sourcePasswordHint": "•••••••• (leave blank to keep the current password)",
     "testConnection": "Test connection",
     "saveSource": "Connect",
     "confirmReplace": "Confirm replace",
@@ -32,7 +41,16 @@
     "noSourceYet": "No source configured yet. Enter a local folder path and connect.",
     "currentSource": "Connected: {{name}} ({{path}})",
     "lastScan": "Last scanned {{date}}.",
-    "neverScanned": "Not scanned yet."
+    "neverScanned": "Not scanned yet.",
+    "reconnect": "Reconnect",
+    "reconnectOk": "Reconnected successfully."
+  },
+  "playbackSettings": {
+    "title": "Playback",
+    "mode": "Playback mode",
+    "modeStream": "Stream (embedded player)",
+    "modeDirectLink": "Direct link (open externally)",
+    "hint": "Both playback strategies stay available from the library — this only sets which one \"Play\" uses by default."
   },
   "conversionProfiles": {
     "title": "Conversion profiles",
@@ -72,7 +90,26 @@
     "convert": "Convert folder",
     "convertFile": "Convert file",
     "preview": "Generate previews for folder",
-    "previewFile": "Generate preview"
+    "previewFile": "Generate preview",
+    "tag": "Tag folder",
+    "tagFile": "Tag file",
+    "play": "Play",
+    "searchPlaceholder": "Search tags or file names…",
+    "searchClear": "Clear search",
+    "searchResultsFor": "Search results for \"{{query}}\"",
+    "searchEmpty": "No files match this search."
+  },
+  "playbackModal": {
+    "title": "Playback",
+    "close": "Close",
+    "loading": "Loading…",
+    "loadError": "Could not load playback info: {{message}}",
+    "streamNotSupported": "Your browser cannot play this file embedded.",
+    "directLinkHint": "Open this path directly (file browser, VLC, etc.):",
+    "copyPath": "Copy path",
+    "copied": "Copied.",
+    "switchToStream": "Switch to embedded playback",
+    "switchToDirectLink": "Switch to direct link"
   },
   "convertDialog": {
     "directoryTitle": "Convert folder",
@@ -103,6 +140,10 @@
   "previewDialog": {
     "directoryTitle": "Generate previews for folder",
     "skipProcessed": "Skip files that already have a preview"
+  },
+  "tagDialog": {
+    "directoryTitle": "Tag folder",
+    "skipProcessed": "Skip files that are already tagged"
   },
   "previewSettings": {
     "title": "Preview",
@@ -137,6 +178,39 @@
     "presetName": "Preset name",
     "savePreset": "Save preset",
     "saveAsNewPreset": "Save as new preset"
+  },
+  "tagging": {
+    "title": "Tagging",
+    "vocabularyHint": "The tag vocabulary is the closed set the AI scores each video against.",
+    "vocabularyEmpty": "No tags yet. Add tags below to start tagging videos.",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "delete": "Delete",
+    "newTagPlaceholder": "New tag name",
+    "add": "Add tag",
+    "sampleFrameCount": "Sampled frame count",
+    "combineIntoCollage": "Combine frames into one collage image",
+    "topTagCount": "Top tag count to keep",
+    "defaultProvider": "Default provider",
+    "noDefaultProvider": "None selected",
+    "defaultVisionModel": "Default vision model"
+  },
+  "providerSettings": {
+    "title": "AI providers",
+    "enabled": "Enabled",
+    "apiKey": "API key",
+    "keySet": "API key is set.",
+    "keyMissing": "No API key set.",
+    "keySetPlaceholder": "•••••••• (unchanged)",
+    "visionModel": "Vision model",
+    "textModel": "Text model (optional)",
+    "batchEnabled": "Use batch submission when available"
+  },
+  "providers": {
+    "openrouter": "OpenRouter",
+    "gemini": "Google Gemini",
+    "fal": "FAL",
+    "mistral": "Mistral"
   },
   "jobs": {
     "title": "Jobs",

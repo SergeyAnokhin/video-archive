@@ -18,22 +18,19 @@ count) are resolved once at launch and reused for the whole job (Job Model
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy import text
 
 from app import preview, preview_layouts, preview_settings
 from app.jobs import service
-from app.media import is_test_artifact
+from app.media import is_test_artifact, sibling_relative_path
+from app.sources import SourceAccess, get_source_access
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _rel(source_root: Path, path: Path) -> str:
-    return path.relative_to(source_root).as_posix()
 
 
 def _resolve_layout(engine, preset_id: str | None) -> dict:
@@ -67,13 +64,15 @@ def _mark_folder_previewed(engine, directory_id: str) -> None:
         )
 
 
-def _generate_one_file(source_root: Path, file_row, layout: dict, aspect_ratio: float) -> str:
-    video_path = source_root / file_row.relative_path
-    if not video_path.exists():
-        raise RuntimeError("Source file no longer exists on disk.")
-    dest_path = video_path.with_suffix(".jpg")
-    preview.generate_file_preview(video_path, dest_path, layout=layout, aspect_ratio=aspect_ratio)
-    return _rel(source_root, dest_path)
+def _generate_one_file(access: SourceAccess, file_row, layout: dict, aspect_ratio: float) -> str:
+    if not access.exists(file_row.relative_path):
+        raise RuntimeError("Source file no longer exists on the source.")
+    with access.local_copy(file_row.relative_path) as video_path:
+        local_dest = video_path.with_suffix(".jpg")
+        preview.generate_file_preview(video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio)
+        dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
+        access.commit_new_file(local_dest, dest_rel)
+    return dest_rel
 
 
 def run_preview_job(engine, job: dict) -> tuple[str, str]:
@@ -86,14 +85,14 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
     if source_row is None:
         raise RuntimeError("No active source is configured.")
-    source_root = Path(source_row.root_path)
+    access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, source_root, params, layout, aspect_ratio)
-    return _run_directory_scope(engine, job, source_root, params, layout, aspect_ratio, settings)
+        return _run_file_scope(engine, job, access, params, layout, aspect_ratio)
+    return _run_directory_scope(engine, job, access, params, layout, aspect_ratio, settings)
 
 
-def _run_file_scope(engine, job: dict, source_root: Path, params: dict, layout: dict, aspect_ratio: float) -> tuple[str, str]:
+def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, layout: dict, aspect_ratio: float) -> tuple[str, str]:
     file_id = params.get("file_id")
     with engine.connect() as conn:
         row = conn.execute(text("SELECT * FROM files WHERE id = :id"), {"id": file_id}).fetchone()
@@ -103,7 +102,7 @@ def _run_file_scope(engine, job: dict, source_root: Path, params: dict, layout: 
     item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
     service.start_job_item(engine, item_id)
     try:
-        output_ref = _generate_one_file(source_root, row, layout, aspect_ratio)
+        output_ref = _generate_one_file(access, row, layout, aspect_ratio)
         _mark_file_previewed(engine, row.id)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
@@ -120,7 +119,7 @@ def _run_file_scope(engine, job: dict, source_root: Path, params: dict, layout: 
 
 
 def _run_directory_scope(
-    engine, job: dict, source_root: Path, params: dict, layout: dict, aspect_ratio: float, settings: dict
+    engine, job: dict, access: SourceAccess, params: dict, layout: dict, aspect_ratio: float, settings: dict
 ) -> tuple[str, str]:
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
@@ -166,7 +165,7 @@ def _run_directory_scope(
 
         service.start_job_item(engine, item_id)
         try:
-            output_ref = _generate_one_file(source_root, row, layout, aspect_ratio)
+            output_ref = _generate_one_file(access, row, layout, aspect_ratio)
             _mark_file_previewed(engine, row.id)
             service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
             service.log_event(
@@ -183,7 +182,7 @@ def _run_directory_scope(
 
     folder_count = 0
     if not cancelled:
-        folder_count, cancelled = _generate_folder_previews(engine, job, source_id, source_root, relative_path, settings)
+        folder_count, cancelled = _generate_folder_previews(engine, job, source_id, access, relative_path, settings)
 
     if cancelled:
         message = f"Cancelled after {processed} of {total} file(s)."
@@ -202,7 +201,7 @@ def _run_directory_scope(
 
 
 def _generate_folder_previews(
-    engine, job: dict, source_id: str, source_root: Path, relative_path: str, settings: dict
+    engine, job: dict, source_id: str, access: SourceAccess, relative_path: str, settings: dict
 ) -> tuple[int, bool]:
     """Refresh folder-preview.jpg for the target directory and every
     descendant directory that contains at least one supported video
@@ -245,18 +244,27 @@ def _generate_folder_previews(
                     {"sid": source_id},
                 ).all()
 
-        candidates = [
-            source_root / row.relative_path for row in video_rows if not is_test_artifact(row.file_name)
+        candidate_rels = [
+            row.relative_path for row in video_rows if not is_test_artifact(row.file_name)
         ]
-        if not candidates:
+        if not candidate_rels:
             continue
 
-        directory_path = source_root / directory.relative_path if directory.relative_path else source_root
-        dest_path = directory_path / "folder-preview.jpg"
-        caption = directory.name or source_root.name
+        # Only materialize the videos actually used by the collage (Specification
+        # §9.1 "representative frames", default 4) — matters for SMB sources,
+        # where materializing means a network download per video.
+        chosen_rels = preview.evenly_spaced_sample(candidate_rels, frame_count)
+        dest_name = "folder-preview.jpg"
+        dest_rel = f"{directory.relative_path}/{dest_name}" if directory.relative_path else dest_name
+        caption = directory.name or access.root_name()
 
         try:
-            preview.generate_folder_preview(candidates, frame_count, dest_path, caption, aspect_ratio)
+            with ExitStack() as stack:
+                local_paths = [stack.enter_context(access.local_copy(rel)) for rel in chosen_rels]
+                stage_dir = stack.enter_context(access.stage_output_dir(directory.relative_path))
+                local_dest = stage_dir / dest_name
+                preview.generate_folder_preview(local_paths, frame_count, local_dest, caption, aspect_ratio)
+                access.commit_new_file(local_dest, dest_rel)
             _mark_folder_previewed(engine, directory.id)
             service.log_event(
                 engine, job["id"], None, "info", "job_item_completed",

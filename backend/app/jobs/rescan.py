@@ -10,12 +10,12 @@ own progress, and the loop checks for cooperative cancellation between files
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy import text
 
 from app.jobs import service
 from app.scan import discover_filesystem, upsert_directory, upsert_file
+from app.sources import get_source_access
 
 
 def _now() -> str:
@@ -31,13 +31,12 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
         raise RuntimeError("No active source is configured.")
 
     source_id = source_row.id
-    source_root = Path(source_row.root_path)
-    scan_root = (source_root / relative_path) if relative_path else source_root
+    access = get_source_access(source_row)
 
-    if not scan_root.exists() or not scan_root.is_dir():
-        raise RuntimeError(f"Directory not found on disk: {relative_path or '(source root)'}")
+    if relative_path and not access.is_dir(relative_path):
+        raise RuntimeError(f"Directory not found on source: {relative_path}")
 
-    touched_dirs, touched_files = discover_filesystem(source_root, scan_root)
+    touched_dirs, touched_files = discover_filesystem(access, relative_path)
     now = _now()
 
     # Directories aren't individually meaningful job items; sync them as one

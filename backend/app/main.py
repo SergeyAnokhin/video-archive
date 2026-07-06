@@ -14,9 +14,14 @@ from app.routers import (
     health,
     jobs,
     logs,
+    playback,
+    playback_settings,
     preview_layouts,
     preview_settings,
+    providers,
     source,
+    tagging_settings,
+    tags,
     tree,
 )
 
@@ -44,5 +49,10 @@ app.include_router(files.router, prefix="/api")
 app.include_router(conversion_profiles.router, prefix="/api")
 app.include_router(preview_layouts.router, prefix="/api")
 app.include_router(preview_settings.router, prefix="/api")
+app.include_router(tags.router, prefix="/api")
+app.include_router(tagging_settings.router, prefix="/api")
+app.include_router(providers.router, prefix="/api")
+app.include_router(playback.router, prefix="/api")
+app.include_router(playback_settings.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")

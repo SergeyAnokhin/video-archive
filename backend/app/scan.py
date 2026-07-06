@@ -1,6 +1,7 @@
-"""Filesystem scan for the active local source (Specification §6.1).
+"""Filesystem scan for the active source (Specification §6.1).
 
-Walks the source root, upserts `directories`/`files` rows, detects preview
+Walks the source root (`local` filesystem or an `smb` share, via
+`app/sources/access.py`), upserts `directories`/`files` rows, detects preview
 assets, and removes rows for files/directories that no longer exist.
 `discover_filesystem()` and the `upsert_*` helpers are also reused by the
 Stage 3 `rescan` job (`app/jobs/rescan.py`) to refresh a single directory
@@ -9,7 +10,6 @@ subtree with per-file job-item granularity instead of one whole-source scan.
 
 from __future__ import annotations
 
-import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,7 +17,9 @@ from pathlib import Path
 
 from sqlalchemy import Engine, text
 
-from app.media import FOLDER_PREVIEW_FILENAME, SUPPORTED_VIDEO_EXTENSIONS, TECHNICAL_FOLDER_NAME
+from app.media import FOLDER_PREVIEW_FILENAME, SUPPORTED_VIDEO_EXTENSIONS
+from app.sources import SourceAccess
+from app.sources.local_backend import LocalBackend
 
 
 def _now() -> str:
@@ -40,28 +42,17 @@ class ScanResult:
 
 
 def discover_filesystem(
-    root_path: Path, scan_root: Path
+    access: SourceAccess, subtree_rel: str = ""
 ) -> tuple[dict[str, tuple[str, str | None, bool]], dict[str, dict]]:
-    """Walk `scan_root` (the source root, or a subtree of it) and return the
-    directories/files found there, keyed by path relative to `root_path`.
+    """Walk `subtree_rel` (the source root by default, or a subtree of it via
+    `access`) and return the directories/files found there, keyed by path
+    relative to the source root.
     """
     touched_dirs: dict[str, tuple[str, str | None, bool]] = {}
     touched_files: dict[str, dict] = {}
 
-    for current_dir, subdirs, filenames in os.walk(scan_root):
-        subdirs[:] = [d for d in subdirs if d != TECHNICAL_FOLDER_NAME]
-
-        current_path = Path(current_dir)
-        rel_dir = current_path.relative_to(root_path).as_posix()
-        if rel_dir == ".":
-            rel_dir = ""
-
-        if rel_dir == "":
-            parent_rel = None
-        else:
-            parent_path = current_path.parent.relative_to(root_path).as_posix()
-            parent_rel = "" if parent_path == "." else parent_path
-
+    for rel_dir, parent_rel, entries in access.walk(subtree_rel):
+        filenames = [e.name for e in entries if not e.is_dir]
         lower_names = {name.lower() for name in filenames}
         video_stems_lower = {
             _stem_of(name).lower()
@@ -70,9 +61,13 @@ def discover_filesystem(
         }
         has_folder_preview = FOLDER_PREVIEW_FILENAME in lower_names
 
-        touched_dirs[rel_dir] = (current_path.name, parent_rel, has_folder_preview)
+        dir_name = rel_dir.rsplit("/", 1)[-1] if rel_dir else access.root_name()
+        touched_dirs[rel_dir] = (dir_name, parent_rel, has_folder_preview)
 
-        for filename in filenames:
+        for entry in entries:
+            if entry.is_dir:
+                continue
+            filename = entry.name
             ext = _extension_of(filename)
             stem = _stem_of(filename)
 
@@ -83,13 +78,7 @@ def discover_filesystem(
                     # Matched video's own preview asset, not an independent item.
                     continue
 
-            file_path = current_path / filename
-            try:
-                stat = file_path.stat()
-            except OSError:
-                continue
-
-            rel_file = file_path.relative_to(root_path).as_posix()
+            rel_file = f"{rel_dir}/{filename}" if rel_dir else filename
             is_video = ext in SUPPORTED_VIDEO_EXTENSIONS
             has_preview = is_video and f"{stem.lower()}.jpg" in lower_names
 
@@ -97,8 +86,8 @@ def discover_filesystem(
                 "directory_rel": rel_dir,
                 "file_name": filename,
                 "extension": ext,
-                "size_bytes": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                "size_bytes": entry.stat.size,
+                "modified_at": entry.stat.modified_at,
                 "is_video_supported": is_video,
                 "has_preview_asset": has_preview,
             }
@@ -107,8 +96,15 @@ def discover_filesystem(
 
 
 def scan_source(engine: Engine, source_id: str, root_path: Path) -> ScanResult:
-    root_path = root_path.resolve()
-    touched_dirs, touched_files = discover_filesystem(root_path, root_path)
+    """Scan a `local` source. SMB sources are scanned through
+    `scan_source_access()` instead (see `app/routers/source.py`)."""
+    root_path = Path(root_path).resolve()
+    access = SourceAccess(LocalBackend(root_path), "local")
+    return scan_source_access(engine, source_id, access)
+
+
+def scan_source_access(engine: Engine, source_id: str, access: SourceAccess) -> ScanResult:
+    touched_dirs, touched_files = discover_filesystem(access)
 
     now = _now()
     with engine.begin() as conn:

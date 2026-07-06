@@ -75,10 +75,14 @@ export interface AppInfoResponse {
   ffmpeg: FfmpegInfo
 }
 
+export type SourceProtocol = 'local' | 'smb'
+
 export interface SourceConfig {
   id: string
   name: string
   protocol: string
+  host: string | null
+  port: number | null
   root_path: string
   is_active: boolean
   created_at: string
@@ -197,4 +201,57 @@ export interface LayoutPreviewResponse {
   grid_cols: number
   tiles: LayoutTile[]
   frame_count: number
+}
+
+export interface Tag {
+  id: string
+  tag_key: string
+  display_name: string
+  is_active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface FileTagAssignment {
+  tag_id: string
+  display_name: string
+  score: number
+  provider_name: string | null
+  model_name: string | null
+  assigned_at: string
+}
+
+export interface TaggingSettings {
+  sample_frame_count: number
+  combine_into_collage: boolean
+  top_tag_count: number
+  default_provider: string | null
+  default_vision_model: string | null
+  updated_at: string
+}
+
+export type ProviderName = 'openrouter' | 'gemini' | 'fal' | 'mistral'
+
+export interface ProviderConfig {
+  provider_name: ProviderName
+  enabled: boolean
+  vision_model: string | null
+  text_model: string | null
+  batch_enabled: boolean
+  has_api_key: boolean
+  updated_at: string
+}
+
+export type PlaybackMode = 'stream' | 'direct_link'
+
+export interface PlaybackSettings {
+  mode: PlaybackMode
+  updated_at: string
+}
+
+export interface PlaybackInfo {
+  mode: PlaybackMode
+  stream_url: string
+  direct_path: string
 }

@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion_profiles, preview_layouts
+from app import conversion_profiles, preview_layouts, provider_configs, tagging_settings, tags as tags_service
 from app.db import get_engine
 from app.jobs import service
 from app.source_access import get_active_source_or_404
@@ -328,4 +328,110 @@ def preview_file(body: PreviewFileRequest):
         scope_type="file",
         scope_ref=body.file_id,
         parameters={"file_id": body.file_id, "layout_preset_id": body.layout_preset_id},
+    )
+
+
+def _resolve_tagging_provider(engine) -> str:
+    """Picks the provider a tag job should use: the configured default if
+    it's enabled, otherwise the first enabled provider. Raises 400 if none
+    is enabled (Specification §18 — provider setup is a settings-time
+    concern, not a per-job parameter)."""
+    settings = tagging_settings.get_settings(engine)
+    default_name = settings.get("default_provider")
+    if default_name:
+        config = provider_configs.get_provider(engine, default_name)
+        if config and config["enabled"]:
+            return default_name
+
+    for config in provider_configs.list_providers(engine):
+        if config["enabled"]:
+            return config["provider_name"]
+
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "error": {
+                "code": "no_provider_configured",
+                "message": "No AI provider is enabled. Configure one in Settings first.",
+            }
+        },
+    )
+
+
+def _require_tag_vocabulary(engine) -> None:
+    if not tags_service.list_tags(engine, active_only=True):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "empty_tag_vocabulary",
+                    "message": "Add at least one active tag in settings before tagging.",
+                }
+            },
+        )
+
+
+class TagDirectoryRequest(BaseModel):
+    path: str = ""
+    skip_processed: bool = True
+
+
+@router.post("/jobs/tag-directory")
+def tag_directory(body: TagDirectoryRequest):
+    engine = get_engine()
+    provider_name = _resolve_tagging_provider(engine)
+    _require_tag_vocabulary(engine)
+
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+        if body.path:
+            dir_row = conn.execute(
+                text("SELECT id FROM directories WHERE source_id = :sid AND relative_path = :path"),
+                {"sid": source.id, "path": body.path},
+            ).fetchone()
+            if dir_row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "error": {
+                            "code": "directory_not_found",
+                            "message": f"Directory not found: {body.path}",
+                        }
+                    },
+                )
+
+    return service.create_job(
+        engine,
+        job_type="tag",
+        scope_type="directory" if body.path else "source",
+        scope_ref=body.path or None,
+        parameters={"path": body.path, "skip_processed": body.skip_processed, "provider_name": provider_name},
+    )
+
+
+class TagFileRequest(BaseModel):
+    file_id: str
+
+
+@router.post("/jobs/tag-file")
+def tag_file(body: TagFileRequest):
+    engine = get_engine()
+    provider_name = _resolve_tagging_provider(engine)
+    _require_tag_vocabulary(engine)
+
+    with engine.connect() as conn:
+        get_active_source_or_404(conn)
+        file_row = conn.execute(text("SELECT id FROM files WHERE id = :id"), {"id": body.file_id}).fetchone()
+        if file_row is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"code": "file_not_found", "message": f"File not found: {body.file_id}"}},
+            )
+
+    return service.create_job(
+        engine,
+        job_type="tag",
+        scope_type="file",
+        scope_ref=body.file_id,
+        parameters={"file_id": body.file_id, "provider_name": provider_name},
     )

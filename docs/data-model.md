@@ -41,7 +41,7 @@ Represents the currently configured source connection, either a remote protocol 
 | `protocol` | enum | `local`, `smb` (`webdav` reserved as optional) |
 | `host` | string nullable | Remote host; unused for `local` |
 | `port` | integer nullable | Optional explicit port; unused for `local` |
-| `root_path` | string | Remote base directory for protocol sources, or absolute/backend-relative local path for `local` |
+| `root_path` | string | For `local`: absolute/backend-relative local path. For `smb`: the share name plus an optional nested subpath, as one posix-style string (e.g. `videos` or `videos/archive`) — there is no separate "share" field; the first path segment is always the share name (see `app/sources/smb_backend.py`'s `_split_share()`). |
 | `username_ref` | string nullable | Key name in the secrets file; unused for `local` |
 | `secret_ref` | string nullable | Key name in the secrets file; unused for `local` |
 | `is_active` | boolean | Only one active source at a time |

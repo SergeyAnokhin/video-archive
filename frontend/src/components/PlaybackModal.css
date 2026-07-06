@@ -1,0 +1,25 @@
+.playback-modal {
+  width: min(90vw, 800px);
+}
+
+.playback-modal__video {
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+  border-radius: var(--radius-md);
+}
+
+.playback-modal__direct-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.playback-modal__path {
+  display: block;
+  padding: var(--space-2);
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+  font-size: 0.85rem;
+}

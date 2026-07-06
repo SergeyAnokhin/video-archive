@@ -12,11 +12,18 @@ Handles both scopes:
 Production mode replaces the source only after the converted output passes
 validation (Specification §8.1); test mode (single-profile or variants) never
 deletes the source (Specification §8.2-8.3).
+
+All file access goes through `app.sources.SourceAccess` (Stage 7) instead of
+raw `pathlib`: for a `local` source this is a zero-cost passthrough (same
+behavior as before Stage 7); for an `smb` source, the file being converted is
+downloaded once to a throwaway local temp directory, encoded there exactly as
+before, and the result is uploaded back — renames/removals of files that were
+never re-encoded (marking an original, deleting a superseded original) happen
+directly on the remote source without re-uploading their bytes.
 """
 
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +32,8 @@ from sqlalchemy import text
 
 from app import conversion, conversion_profiles
 from app.jobs import service
-from app.media import is_test_artifact
+from app.media import is_test_artifact, sibling_relative_path
+from app.sources import SourceAccess, get_source_access
 
 
 class ConversionError(Exception):
@@ -35,10 +43,6 @@ class ConversionError(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _rel(source_root: Path, path: Path) -> str:
-    return path.relative_to(source_root).as_posix()
 
 
 def _effective_params(profile: dict, overrides: dict | None) -> dict:
@@ -85,12 +89,11 @@ def _encode_and_validate(source_path: Path, temp_path: Path, params: dict) -> No
         raise ConversionError(f"Validation failed: {reason}")
 
 
-def _has_preview(directory: Path, stem: str) -> bool:
-    return (directory / f"{stem}.jpg").exists()
+def _has_preview(access: SourceAccess, rel_path: str, stem: str) -> bool:
+    return access.exists(sibling_relative_path(rel_path, f"{stem}.jpg"))
 
 
-def _replace_production(engine, source_root: Path, file_row, profile: dict, profile_id: str) -> dict:
-    old_path = source_root / file_row.relative_path
+def _replace_production(engine, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str) -> dict:
     directory = old_path.parent
     stem = old_path.stem
     params = _effective_params(profile, None)
@@ -98,12 +101,13 @@ def _replace_production(engine, source_root: Path, file_row, profile: dict, prof
     temp_path = _temp_output_path(directory, stem, params["container"])
     _encode_and_validate(old_path, temp_path, params)
 
-    final_path = directory / f"{stem}.{params['container']}"
-    os.replace(temp_path, final_path)
-    if final_path != old_path and old_path.exists():
-        old_path.unlink()
+    final_name = f"{stem}.{params['container']}"
+    final_rel = sibling_relative_path(file_row.relative_path, final_name)
+    access.commit_new_file(temp_path, final_rel)
+    if final_rel != file_row.relative_path:
+        access.remote_remove(file_row.relative_path)
 
-    stat = final_path.stat()
+    final_stat = access.stat_rel(final_rel)
     now = _now()
 
     with engine.begin() as conn:
@@ -119,23 +123,22 @@ def _replace_production(engine, source_root: Path, file_row, profile: dict, prof
                 """
             ),
             {
-                "rel": _rel(source_root, final_path),
-                "file_name": final_path.name,
+                "rel": final_rel,
+                "file_name": final_name,
                 "ext": params["container"],
-                "size": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                "has_preview": _has_preview(directory, stem),
+                "size": final_stat.size,
+                "modified_at": final_stat.modified_at,
+                "has_preview": _has_preview(access, file_row.relative_path, stem),
                 "now": now,
                 "profile_id": profile_id,
                 "id": file_row.id,
             },
         )
 
-    return {"output_ref": _rel(source_root, final_path)}
+    return {"output_ref": final_rel}
 
 
-def _replace_test_mode(engine, source_root: Path, file_row, profile: dict, profile_id: str) -> dict:
-    old_path = source_root / file_row.relative_path
+def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str) -> dict:
     directory = old_path.parent
     stem = old_path.stem
     original_ext = file_row.extension
@@ -145,16 +148,19 @@ def _replace_test_mode(engine, source_root: Path, file_row, profile: dict, profi
     _encode_and_validate(old_path, temp_path, params)
 
     # Original is always renamed, even without a name collision, so preserved
-    # originals stay uniformly recognizable (Specification §8.2).
-    renamed_original_path = directory / f"{stem}.original.{original_ext}"
-    os.replace(old_path, renamed_original_path)
-    new_output_path = directory / f"{stem}.{params['container']}"
-    os.replace(temp_path, new_output_path)
+    # originals stay uniformly recognizable (Specification §8.2). Renaming
+    # happens directly on the source: the original's bytes never changed, so
+    # there is nothing to re-upload for an SMB source.
+    original_marked_rel = sibling_relative_path(file_row.relative_path, f"{stem}.original.{original_ext}")
+    access.remote_rename(file_row.relative_path, original_marked_rel)
+    new_output_name = f"{stem}.{params['container']}"
+    new_output_rel = sibling_relative_path(file_row.relative_path, new_output_name)
+    access.commit_new_file(temp_path, new_output_rel)
 
     now = _now()
-    has_preview = _has_preview(directory, stem)
-    orig_stat = renamed_original_path.stat()
-    new_stat = new_output_path.stat()
+    has_preview = _has_preview(access, file_row.relative_path, stem)
+    orig_stat = access.stat_rel(original_marked_rel)
+    new_stat = access.stat_rel(new_output_rel)
     new_file_id = str(uuid.uuid4())
 
     with engine.begin() as conn:
@@ -169,11 +175,11 @@ def _replace_test_mode(engine, source_root: Path, file_row, profile: dict, profi
                 """
             ),
             {
-                "rel": _rel(source_root, renamed_original_path),
-                "file_name": renamed_original_path.name,
+                "rel": original_marked_rel,
+                "file_name": f"{stem}.original.{original_ext}",
                 "ext": original_ext,
-                "size": orig_stat.st_size,
-                "modified_at": datetime.fromtimestamp(orig_stat.st_mtime, tz=timezone.utc).isoformat(),
+                "size": orig_stat.size,
+                "modified_at": orig_stat.modified_at,
                 "has_preview": has_preview,
                 "now": now,
                 "id": file_row.id,
@@ -198,22 +204,21 @@ def _replace_test_mode(engine, source_root: Path, file_row, profile: dict, profi
                 "id": new_file_id,
                 "sid": file_row.source_id,
                 "dir_id": file_row.directory_id,
-                "rel": _rel(source_root, new_output_path),
-                "file_name": new_output_path.name,
+                "rel": new_output_rel,
+                "file_name": new_output_name,
                 "ext": params["container"],
-                "size": new_stat.st_size,
-                "modified_at": datetime.fromtimestamp(new_stat.st_mtime, tz=timezone.utc).isoformat(),
+                "size": new_stat.size,
+                "modified_at": new_stat.modified_at,
                 "has_preview": has_preview,
                 "now": now,
                 "profile_id": profile_id,
             },
         )
 
-    return {"output_ref": _rel(source_root, new_output_path)}
+    return {"output_ref": new_output_rel}
 
 
-def _create_variant(engine, source_root: Path, file_row, profile: dict, overrides: dict) -> dict:
-    old_path = source_root / file_row.relative_path
+def _create_variant(engine, access: SourceAccess, old_path: Path, file_row, profile: dict, overrides: dict) -> dict:
     directory = old_path.parent
     stem = old_path.stem
     params = _effective_params(profile, overrides)
@@ -222,10 +227,11 @@ def _create_variant(engine, source_root: Path, file_row, profile: dict, override
     temp_path = _temp_output_path(directory, stem, params["container"])
     _encode_and_validate(old_path, temp_path, params)
 
-    variant_path = directory / f"{stem}.variant-{suffix}.{params['container']}"
-    os.replace(temp_path, variant_path)
+    variant_name = f"{stem}.variant-{suffix}.{params['container']}"
+    variant_rel = sibling_relative_path(file_row.relative_path, variant_name)
+    access.commit_new_file(temp_path, variant_rel)
 
-    stat = variant_path.stat()
+    stat = access.stat_rel(variant_rel)
     now = _now()
     new_file_id = str(uuid.uuid4())
 
@@ -247,27 +253,27 @@ def _create_variant(engine, source_root: Path, file_row, profile: dict, override
                 "id": new_file_id,
                 "sid": file_row.source_id,
                 "dir_id": file_row.directory_id,
-                "rel": _rel(source_root, variant_path),
-                "file_name": variant_path.name,
+                "rel": variant_rel,
+                "file_name": variant_name,
                 "ext": params["container"],
-                "size": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                "has_preview": _has_preview(directory, stem),
+                "size": stat.size,
+                "modified_at": stat.modified_at,
+                "has_preview": _has_preview(access, file_row.relative_path, stem),
                 "now": now,
             },
         )
 
-    return {"output_ref": _rel(source_root, variant_path), "suffix": suffix}
+    return {"output_ref": variant_rel, "suffix": suffix}
 
 
-def _convert_one_file(engine, source_root: Path, file_row, profile: dict, mode: str, profile_id: str) -> dict:
-    old_path = source_root / file_row.relative_path
-    if not old_path.exists():
-        raise ConversionError("Source file no longer exists on disk.")
+def _convert_one_file(engine, access: SourceAccess, file_row, profile: dict, mode: str, profile_id: str) -> dict:
+    if not access.exists(file_row.relative_path):
+        raise ConversionError("Source file no longer exists on the source.")
 
-    if mode == "test":
-        return _replace_test_mode(engine, source_root, file_row, profile, profile_id)
-    return _replace_production(engine, source_root, file_row, profile, profile_id)
+    with access.local_copy(file_row.relative_path) as old_path:
+        if mode == "test":
+            return _replace_test_mode(engine, access, old_path, file_row, profile, profile_id)
+        return _replace_production(engine, access, old_path, file_row, profile, profile_id)
 
 
 def run_convert_job(engine, job: dict) -> tuple[str, str]:
@@ -282,14 +288,14 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
     if source_row is None:
         raise RuntimeError("No active source is configured.")
-    source_root = Path(source_row.root_path)
+    access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, source_root, params, profile, mode)
-    return _run_directory_scope(engine, job, source_root, params, profile, mode)
+        return _run_file_scope(engine, job, access, params, profile, mode)
+    return _run_directory_scope(engine, job, access, params, profile, mode)
 
 
-def _run_directory_scope(engine, job: dict, source_root: Path, params: dict, profile: dict, mode: str) -> tuple[str, str]:
+def _run_directory_scope(engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str) -> tuple[str, str]:
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
     profile_id = profile["id"]
@@ -337,7 +343,7 @@ def _run_directory_scope(engine, job: dict, source_root: Path, params: dict, pro
 
         service.start_job_item(engine, item_id)
         try:
-            outcome = _convert_one_file(engine, source_root, row, profile, mode, profile_id)
+            outcome = _convert_one_file(engine, access, row, profile, mode, profile_id)
             service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
             service.log_event(
                 engine, job["id"], row.id, "info", "job_item_completed", f"Converted {row.relative_path}"
@@ -362,7 +368,7 @@ def _run_directory_scope(engine, job: dict, source_root: Path, params: dict, pro
     return status, summary
 
 
-def _run_file_scope(engine, job: dict, source_root: Path, params: dict, profile: dict, mode: str) -> tuple[str, str]:
+def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str) -> tuple[str, str]:
     file_id = params.get("file_id")
     variants = params.get("variants")
     profile_id = profile["id"]
@@ -373,7 +379,7 @@ def _run_file_scope(engine, job: dict, source_root: Path, params: dict, profile:
         raise RuntimeError("File not found.")
 
     if variants:
-        return _run_variant_sweep(engine, job, source_root, row, profile, variants)
+        return _run_variant_sweep(engine, job, access, row, profile, variants)
 
     skip_processed = params.get("skip_processed", True)
     item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="convert_file")
@@ -385,7 +391,7 @@ def _run_file_scope(engine, job: dict, source_root: Path, params: dict, profile:
 
     service.start_job_item(engine, item_id)
     try:
-        outcome = _convert_one_file(engine, source_root, row, profile, mode, profile_id)
+        outcome = _convert_one_file(engine, access, row, profile, mode, profile_id)
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job["id"], row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
         return "completed", "File converted."
@@ -397,39 +403,39 @@ def _run_file_scope(engine, job: dict, source_root: Path, params: dict, profile:
         return "failed", str(exc)
 
 
-def _run_variant_sweep(engine, job: dict, source_root: Path, row, profile: dict, variants: list[dict]) -> tuple[str, str]:
-    old_path = source_root / row.relative_path
-    if not old_path.exists():
-        raise RuntimeError("Source file no longer exists on disk.")
+def _run_variant_sweep(engine, job: dict, access: SourceAccess, row, profile: dict, variants: list[dict]) -> tuple[str, str]:
+    if not access.exists(row.relative_path):
+        raise RuntimeError("Source file no longer exists on the source.")
 
     processed = 0
     failed = 0
     total = len(variants)
 
-    for overrides in variants:
-        if service.is_cancel_requested(job["id"]):
-            message = f"Cancelled after {processed} of {total} variant(s)."
-            service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-            return "cancelled", message
+    with access.local_copy(row.relative_path) as old_path:
+        for overrides in variants:
+            if service.is_cancel_requested(job["id"]):
+                message = f"Cancelled after {processed} of {total} variant(s)."
+                service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
+                return "cancelled", message
 
-        suffix = conversion.encode_variant_suffix(profile, overrides)
-        item_id = service.create_job_item(
-            engine, job["id"], file_id=row.id, item_key=suffix, step_name="convert_variant"
-        )
-        service.start_job_item(engine, item_id)
-        try:
-            outcome = _create_variant(engine, source_root, row, profile, overrides)
-            service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Variant produced.")
-            service.log_event(
-                engine, job["id"], row.id, "info", "job_item_completed", f"Variant {suffix} produced."
+            suffix = conversion.encode_variant_suffix(profile, overrides)
+            item_id = service.create_job_item(
+                engine, job["id"], file_id=row.id, item_key=suffix, step_name="convert_variant"
             )
-            processed += 1
-        except Exception as exc:  # noqa: BLE001 - one variant's failure must not abort the sweep
-            failed += 1
-            service.fail_job_item(engine, item_id, message=str(exc))
-            service.log_event(
-                engine, job["id"], row.id, "error", "job_item_failed", f"Variant {suffix} failed: {exc}"
-            )
+            service.start_job_item(engine, item_id)
+            try:
+                outcome = _create_variant(engine, access, old_path, row, profile, overrides)
+                service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Variant produced.")
+                service.log_event(
+                    engine, job["id"], row.id, "info", "job_item_completed", f"Variant {suffix} produced."
+                )
+                processed += 1
+            except Exception as exc:  # noqa: BLE001 - one variant's failure must not abort the sweep
+                failed += 1
+                service.fail_job_item(engine, item_id, message=str(exc))
+                service.log_event(
+                    engine, job["id"], row.id, "error", "job_item_failed", f"Variant {suffix} failed: {exc}"
+                )
 
     summary = f"Produced {processed} of {total} variant(s)"
     if failed:
