@@ -1,13 +1,13 @@
 import { AppLayout } from './components/AppLayout'
-import { BackendStatusPanel } from './components/BackendStatusPanel'
 import { PreviewVisibilityProvider } from './context/PreviewVisibilityContext'
+import { SourceProvider } from './context/SourceContext'
 
 function App() {
   return (
     <PreviewVisibilityProvider>
-      <AppLayout>
-        <BackendStatusPanel />
-      </AppLayout>
+      <SourceProvider>
+        <AppLayout />
+      </SourceProvider>
     </PreviewVisibilityProvider>
   )
 }

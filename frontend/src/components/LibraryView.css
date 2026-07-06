@@ -1,0 +1,126 @@
+.library-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.library-view__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 13px;
+}
+
+.library-view__breadcrumb button {
+  background: transparent;
+  border: none;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-1);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.library-view__breadcrumb button:hover,
+.library-view__breadcrumb button:last-of-type {
+  color: var(--color-text);
+}
+
+.library-view__breadcrumb-sep {
+  color: var(--color-text-muted);
+}
+
+.library-view__message {
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.library-view__message--error {
+  color: var(--color-danger);
+}
+
+.library-view__grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .library-view__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .library-view__grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
+.library-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: left;
+  color: var(--color-text);
+  cursor: default;
+}
+
+.library-card--folder {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.library-card--folder:hover {
+  background: var(--color-surface-raised);
+}
+
+.library-card__thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+}
+
+.library-card__name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-card__meta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.library-card__badges {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+}
+
+.library-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.library-card__dot--conversion {
+  background: var(--color-warning);
+}
+
+.library-card__dot--preview {
+  background: var(--color-accent);
+}

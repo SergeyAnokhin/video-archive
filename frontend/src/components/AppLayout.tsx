@@ -1,17 +1,24 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TopBar } from './TopBar'
 import { SettingsModal } from './SettingsModal'
+import { DirectoryTree } from './DirectoryTree'
+import { LibraryView } from './LibraryView'
+import { BackendStatusPanel } from './BackendStatusPanel'
+import { useSource } from '../context/SourceContext'
 import './AppLayout.css'
 
-interface AppLayoutProps {
-  children: ReactNode
-}
-
-export function AppLayout({ children }: AppLayoutProps) {
+export function AppLayout() {
   const { t } = useTranslation()
+  const { source, loading } = useSource()
   const [navOpen, setNavOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [selectedPath, setSelectedPath] = useState('')
+
+  function handleSelectPath(path: string) {
+    setSelectedPath(path)
+    setNavOpen(false)
+  }
 
   return (
     <div className="app-shell">
@@ -25,7 +32,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           aria-label={t('sidebar.title')}
         >
           <h2 className="app-nav__title">{t('sidebar.title')}</h2>
-          <p className="app-nav__placeholder">{t('sidebar.placeholder')}</p>
+          {source ? (
+            <DirectoryTree selectedPath={selectedPath} onSelect={handleSelectPath} />
+          ) : (
+            <p className="app-nav__placeholder">{t('sidebar.noSource')}</p>
+          )}
         </nav>
 
         {navOpen && (
@@ -37,7 +48,18 @@ export function AppLayout({ children }: AppLayoutProps) {
           />
         )}
 
-        <main className="app-main">{children}</main>
+        <main className="app-main">
+          {!loading && !source && (
+            <div className="app-main__empty-state">
+              <p>{t('library.noSource')}</p>
+              <button type="button" onClick={() => setSettingsOpen(true)}>
+                {t('topBar.settingsToggle')}
+              </button>
+              <BackendStatusPanel />
+            </div>
+          )}
+          {source && <LibraryView path={selectedPath} onNavigate={setSelectedPath} />}
+        </main>
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}

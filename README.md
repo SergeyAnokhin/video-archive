@@ -4,7 +4,13 @@ Video Archive is a local-first, Windows-targeted web application for browsing a 
 
 ## Current Status
 
-**Roadmap Stage 1 ("Skeleton") is implemented.** `frontend/` and `backend/` exist and run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n from day one, talking to a FastAPI backend that reports health, app info (including ffmpeg availability), and initializes a schema-versioned SQLite database. See [docs/roadmap.md](docs/roadmap.md) for what comes next (source browsing, jobs, conversion, previews, tagging, playback).
+**Roadmap Stage 1 ("Skeleton") and Stage 2 ("Local Source, Scan, Browsing") are implemented.** `frontend/` and `backend/` run together from the repository root: a Vite + React + TypeScript shell with a dark Strict theme, a responsive top bar, and EN/RU i18n, talking to a FastAPI backend with a schema-versioned SQLite database. On top of that, Stage 2 adds:
+
+- configuring a `local` source (a folder next to the backend, or any absolute path) from Settings, with test-connection and a destructive-replace warning;
+- a synchronous filesystem scan on connect that discovers folders/files, detects supported video extensions, and recognizes preview assets (`<name>.jpg`, `folder-preview.jpg`) without listing them as separate files;
+- a directory tree and folder/file card grid in the main library screen, with conversion/preview indicators shown only for incomplete folders and files.
+
+See [docs/roadmap.md](docs/roadmap.md) for what comes next (jobs, conversion, previews, tagging, playback).
 
 ## Local Run
 

@@ -16,11 +16,44 @@
     "title": "Settings",
     "close": "Close",
     "interfaceSection": "Interface",
-    "language": "Language"
+    "language": "Language",
+    "sourceSection": "Source",
+    "sourceName": "Source name",
+    "sourcePath": "Local folder path",
+    "sourceProtocolLocal": "Protocol: Local folder (SMB arrives in a later stage)",
+    "testConnection": "Test connection",
+    "saveSource": "Connect",
+    "confirmReplace": "Confirm replace",
+    "cancel": "Cancel",
+    "testOk": "Path is reachable.",
+    "testFail": "Connection test failed: {{message}}",
+    "replaceWarning": "This replaces the current source and deletes all local library metadata (files, directories, job history). This cannot be undone.",
+    "noSourceYet": "No source configured yet. Enter a local folder path and connect.",
+    "currentSource": "Connected: {{name}} ({{path}})",
+    "lastScan": "Last scanned {{date}}.",
+    "neverScanned": "Not scanned yet."
   },
   "sidebar": {
     "title": "Library",
-    "placeholder": "Directory browsing arrives in a later stage."
+    "noSource": "Configure a source in Settings to browse folders.",
+    "loading": "Loading…",
+    "treeError": "Could not load the directory tree: {{message}}",
+    "expand": "Expand",
+    "collapse": "Collapse"
+  },
+  "library": {
+    "noSource": "No source is connected yet. Open Settings to point Video Archive at a local folder.",
+    "root": "Root",
+    "breadcrumb": "Current folder",
+    "loading": "Loading…",
+    "loadError": "Could not load this folder: {{message}}",
+    "empty": "This folder is empty."
+  },
+  "indicators": {
+    "conversionIncomplete": "Not all videos converted yet ({{converted}}/{{total}})",
+    "previewIncomplete": "Not all videos have previews yet ({{generated}}/{{total}})",
+    "fileNotConverted": "Not converted yet",
+    "fileNoPreview": "No preview yet"
   },
   "backendStatus": {
     "title": "Backend status",

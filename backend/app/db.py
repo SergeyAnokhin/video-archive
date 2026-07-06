@@ -28,6 +28,69 @@ schema_meta = Table(
 # exist yet (those are introduced by their owning roadmap stage).
 MIGRATIONS: dict[int, list[str]] = {
     1: [],
+    # Stage 2: source configuration, directory tree, and file records
+    # (Data Model §1-3). Later stages append columns/tables for jobs,
+    # conversion profiles, tags, etc. instead of editing these.
+    2: [
+        """
+        CREATE TABLE sources (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            protocol TEXT NOT NULL,
+            host TEXT,
+            port INTEGER,
+            root_path TEXT NOT NULL,
+            username_ref TEXT,
+            secret_ref TEXT,
+            is_active INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_connected_at TEXT,
+            last_scan_at TEXT
+        )
+        """,
+        """
+        CREATE TABLE directories (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES sources(id),
+            relative_path TEXT NOT NULL,
+            name TEXT NOT NULL,
+            parent_relative_path TEXT,
+            has_folder_preview INTEGER NOT NULL DEFAULT 0,
+            folder_preview_generated_at TEXT,
+            last_scanned_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (source_id, relative_path)
+        )
+        """,
+        "CREATE INDEX idx_directories_source_parent ON directories (source_id, parent_relative_path)",
+        """
+        CREATE TABLE files (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES sources(id),
+            directory_id TEXT NOT NULL REFERENCES directories(id),
+            relative_path TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            extension TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            modified_at TEXT,
+            discovered_at TEXT NOT NULL,
+            last_scanned_at TEXT NOT NULL,
+            is_video_supported INTEGER NOT NULL,
+            converted_at TEXT,
+            last_conversion_profile_id TEXT,
+            has_preview_asset INTEGER NOT NULL DEFAULT 0,
+            preview_generated_at TEXT,
+            tagged_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (source_id, relative_path)
+        )
+        """,
+        "CREATE INDEX idx_files_directory ON files (directory_id)",
+        "CREATE INDEX idx_files_source ON files (source_id)",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
