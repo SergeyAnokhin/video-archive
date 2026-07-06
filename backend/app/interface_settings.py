@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 
 LANGUAGES = ("en", "ru")
-THEME_PRESETS = ("strict", "playful")
+THEME_PRESETS = ("strict", "playful", "casino")
 DEFAULT_LANGUAGE = "en"
 DEFAULT_THEME_PRESET = "strict"
 

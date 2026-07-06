@@ -28,7 +28,28 @@
 
 .top-bar__title {
   font-weight: 600;
+  flex-shrink: 0;
+}
+
+.top-bar__search-slot {
+  display: flex;
+  justify-content: center;
   flex: 1;
+  min-width: 0;
+}
+
+.top-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+/* Mobile: the title gives way to the search box, which needs the room more. */
+@media (max-width: 479px) {
+  .top-bar__title {
+    display: none;
+  }
 }
 
 /* Functional loading state, not decorative motion: spins while a job is
@@ -43,12 +64,5 @@
   }
   to {
     transform: rotate(360deg);
-  }
-}
-
-/* Desktop: the directory tree is persistent, so the menu toggle is not needed. */
-@media (min-width: 1024px) {
-  .top-bar__menu-toggle {
-    display: none;
   }
 }

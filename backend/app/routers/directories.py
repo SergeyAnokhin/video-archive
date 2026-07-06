@@ -74,7 +74,7 @@ def get_directory_children(
                 SELECT id, file_name, extension, size_bytes, modified_at, is_video_supported,
                        has_preview_asset, converted_at, tagged_at
                 FROM files
-                WHERE directory_id = :dir_id
+                WHERE directory_id = :dir_id AND is_video_supported = 1
                 ORDER BY file_name COLLATE NOCASE
                 """
             ),

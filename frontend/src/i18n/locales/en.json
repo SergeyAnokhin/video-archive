@@ -8,8 +8,7 @@
     "hidePreviews": "Hide previews",
     "settingsToggle": "Settings",
     "jobsToggle": "Jobs",
-    "switchToPlayful": "Switch to Playful theme",
-    "switchToStrict": "Switch to Strict theme"
+    "switchTheme": "Switch to {{theme}} theme"
   },
   "language": {
     "en": "English",
@@ -17,7 +16,8 @@
   },
   "theme": {
     "strict": "Strict",
-    "playful": "Playful"
+    "playful": "Playful",
+    "casino": "Casino"
   },
   "settings": {
     "title": "Settings",
@@ -105,6 +105,7 @@
     "tag": "Tag folder",
     "tagFile": "Tag file",
     "moreActions": "More actions",
+    "info": "File info",
     "play": "Play",
     "similar": "Similar videos",
     "similarTitle": "Videos similar to \"{{name}}\"",
@@ -114,7 +115,13 @@
     "searchPlaceholder": "Search tags or file names…",
     "searchClear": "Clear search",
     "searchResultsFor": "Search results for \"{{query}}\"",
-    "searchEmpty": "No files match this search."
+    "searchEmpty": "No files match this search.",
+    "statusConvertedYes": "Converted",
+    "statusConvertedNo": "Not converted yet",
+    "statusPreviewYes": "Preview generated",
+    "statusPreviewNo": "No preview yet",
+    "statusTaggedYes": "Tagged",
+    "statusTaggedNo": "Not tagged yet"
   },
   "playbackModal": {
     "title": "Playback",

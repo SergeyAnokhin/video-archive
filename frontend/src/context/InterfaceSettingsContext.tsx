@@ -6,7 +6,7 @@ const THEME_STORAGE_KEY = 'video-archive:theme'
 
 function detectInitialTheme(): ThemePreset {
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-  return stored === 'playful' ? 'playful' : 'strict'
+  return stored === 'playful' || stored === 'casino' ? stored : 'strict'
 }
 
 function applyTheme(theme: ThemePreset) {

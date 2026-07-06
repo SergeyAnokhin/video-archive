@@ -112,3 +112,103 @@
     box-shadow: 0 0 0 1px var(--color-accent), 0 0 18px 3px color-mix(in srgb, var(--color-accent) 65%, transparent);
   }
 }
+
+/* Casino: a third, deliberately loud preset -- neon on near-black, for users
+ * who want an arcade/entertainment feel rather than a calm tool (user
+ * request, 2026-07). Same structure as strict/playful, louder variables. */
+[data-theme='casino'] {
+  --color-bg: #0b0510;
+  --color-surface: #1c0f24;
+  --color-surface-raised: #2a1533;
+  --color-border: #ff2fb0;
+  --color-text: #fff6e0;
+  --color-text-muted: #c9a6d9;
+  --color-accent: #ffd700;
+  --color-accent-contrast: #1c0f24;
+  --color-success: #00ff9d;
+  --color-danger: #ff3b3b;
+  --color-warning: #ff8a00;
+
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}
+
+[data-theme='casino'] {
+  background: radial-gradient(circle at 50% 0%, #2a1533 0%, var(--color-bg) 60%);
+}
+
+[data-theme='casino'] .library-card,
+[data-theme='casino'] .convert-dialog,
+[data-theme='casino'] .top-bar,
+[data-theme='casino'] .app-nav {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+[data-theme='casino'] button,
+[data-theme='casino'] [role='button'] {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='casino'] button:hover,
+  [data-theme='casino'] [role='button']:hover {
+    transform: translateY(-1px);
+  }
+
+  [data-theme='casino'] button:active,
+  [data-theme='casino'] [role='button']:active {
+    transform: translateY(0);
+  }
+}
+
+[data-theme='casino'] [class$='--primary'] {
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 16px 0 color-mix(in srgb, var(--color-accent) 65%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='casino'] [class$='--primary']:hover {
+    animation: casino-pulse 1.4s ease-in-out infinite;
+  }
+
+  [data-theme='casino'] .library-card:hover {
+    animation: casino-card-glow 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes casino-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--color-accent), 0 0 10px 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--color-accent),
+      0 0 22px 4px color-mix(in srgb, var(--color-accent) 80%, transparent);
+  }
+}
+
+@keyframes casino-card-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, #ff2fb0 60%, transparent), 0 0 8px 0 color-mix(in srgb, #ff2fb0 40%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, #00ff9d 70%, transparent),
+      0 0 16px 2px color-mix(in srgb, #00ff9d 55%, transparent);
+  }
+}

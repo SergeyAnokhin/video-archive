@@ -16,7 +16,7 @@ router = APIRouter()
 
 class InterfaceSettingsRequest(BaseModel):
     language: Literal["en", "ru"] = service.DEFAULT_LANGUAGE
-    theme_preset: Literal["strict", "playful"] = service.DEFAULT_THEME_PRESET
+    theme_preset: Literal["strict", "playful", "casino"] = service.DEFAULT_THEME_PRESET
 
 
 @router.get("/interface-settings")

@@ -8,8 +8,7 @@
     "hidePreviews": "Скрыть превью",
     "settingsToggle": "Настройки",
     "jobsToggle": "Задания",
-    "switchToPlayful": "Переключить на тему «Игривая»",
-    "switchToStrict": "Переключить на тему «Строгая»"
+    "switchTheme": "Переключить на тему «{{theme}}»"
   },
   "language": {
     "en": "Английский",
@@ -17,7 +16,8 @@
   },
   "theme": {
     "strict": "Строгая",
-    "playful": "Игривая"
+    "playful": "Игривая",
+    "casino": "Казино"
   },
   "settings": {
     "title": "Настройки",
@@ -105,6 +105,7 @@
     "tag": "Тегировать папку",
     "tagFile": "Тегировать файл",
     "moreActions": "Другие действия",
+    "info": "Информация о файле",
     "play": "Воспроизвести",
     "similar": "Похожие видео",
     "similarTitle": "Видео, похожие на «{{name}}»",
@@ -114,7 +115,13 @@
     "searchPlaceholder": "Поиск по тегам или именам файлов…",
     "searchClear": "Очистить поиск",
     "searchResultsFor": "Результаты поиска: «{{query}}»",
-    "searchEmpty": "Нет файлов, подходящих под этот поиск."
+    "searchEmpty": "Нет файлов, подходящих под этот поиск.",
+    "statusConvertedYes": "Сконвертировано",
+    "statusConvertedNo": "Ещё не сконвертировано",
+    "statusPreviewYes": "Превью создано",
+    "statusPreviewNo": "Превью ещё нет",
+    "statusTaggedYes": "Тегировано",
+    "statusTaggedNo": "Ещё не тегировано"
   },
   "playbackModal": {
     "title": "Воспроизведение",

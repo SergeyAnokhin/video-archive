@@ -273,7 +273,7 @@ export interface BackupSettings {
   updated_at: string
 }
 
-export type ThemePreset = 'strict' | 'playful'
+export type ThemePreset = 'strict' | 'playful' | 'casino'
 
 export interface InterfaceSettings {
   language: 'en' | 'ru'

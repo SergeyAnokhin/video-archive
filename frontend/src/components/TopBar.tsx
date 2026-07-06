@@ -1,23 +1,35 @@
-import { Eye, EyeOff, ListChecks, Loader2, Menu, Palette, Settings, Sparkles } from 'lucide-react'
+import { Dices, Eye, EyeOff, ListChecks, Loader2, Menu, Palette, Settings, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { useJobs } from '../context/JobsContext'
+import { LibrarySearchBox, type ActiveSearch } from './LibrarySearchBox'
+import type { ThemePreset } from '../types/api'
 import './TopBar.css'
 
 interface TopBarProps {
   onMenuToggle: () => void
   onSettingsToggle: () => void
   onJobsToggle: () => void
+  onSearch: (search: ActiveSearch) => void
+  onClearSearch: () => void
 }
 
-export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle }: TopBarProps) {
+const THEME_CYCLE: ThemePreset[] = ['strict', 'playful', 'casino']
+const THEME_ICON: Record<ThemePreset, typeof Palette> = {
+  strict: Palette,
+  playful: Sparkles,
+  casino: Dices,
+}
+
+export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle, onSearch, onClearSearch }: TopBarProps) {
   const { t } = useTranslation()
   const { previewsVisible, toggle } = usePreviewVisibility()
   const { theme, setTheme } = useInterfaceSettings()
   const { activeJob, activeJobItems } = useJobs()
-  const isPlayful = theme === 'playful'
-  const themeToggleLabel = t(isPlayful ? 'topBar.switchToStrict' : 'topBar.switchToPlayful')
+  const nextTheme = THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length]
+  const ThemeIcon = THEME_ICON[theme]
+  const themeToggleLabel = t('topBar.switchTheme', { theme: t(`theme.${nextTheme}`) })
 
   const previewToggleLabel = t(
     previewsVisible ? 'topBar.hidePreviews' : 'topBar.showPreviews',
@@ -48,59 +60,64 @@ export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle }: TopBarP
 
       <span className="top-bar__title">{t('app.title')}</span>
 
-      {activeJob && (
+      <div className="top-bar__search-slot">
+        <LibrarySearchBox onSearch={onSearch} onClear={onClearSearch} />
+      </div>
+
+      <div className="top-bar__actions">
+        {activeJob && (
+          <button
+            type="button"
+            className="top-bar__icon-btn top-bar__activity"
+            aria-label={activityLabel}
+            title={activityLabel}
+            onClick={onJobsToggle}
+          >
+            <Loader2 size={20} className="top-bar__activity-spinner" />
+          </button>
+        )}
+
         <button
           type="button"
-          className="top-bar__icon-btn top-bar__activity"
-          aria-label={activityLabel}
-          title={activityLabel}
+          className="top-bar__icon-btn"
+          aria-label={t('topBar.jobsToggle')}
+          title={t('topBar.jobsToggle')}
           onClick={onJobsToggle}
         >
-          <Loader2 size={20} className="top-bar__activity-spinner" />
+          <ListChecks size={20} />
         </button>
-      )}
 
-      <button
-        type="button"
-        className="top-bar__icon-btn"
-        aria-label={t('topBar.jobsToggle')}
-        title={t('topBar.jobsToggle')}
-        onClick={onJobsToggle}
-      >
-        <ListChecks size={20} />
-      </button>
+        <button
+          type="button"
+          className="top-bar__icon-btn"
+          aria-pressed={previewsVisible}
+          aria-label={previewToggleLabel}
+          title={previewToggleLabel}
+          onClick={toggle}
+        >
+          {previewsVisible ? <Eye size={20} /> : <EyeOff size={20} />}
+        </button>
 
-      <button
-        type="button"
-        className="top-bar__icon-btn"
-        aria-pressed={previewsVisible}
-        aria-label={previewToggleLabel}
-        title={previewToggleLabel}
-        onClick={toggle}
-      >
-        {previewsVisible ? <Eye size={20} /> : <EyeOff size={20} />}
-      </button>
+        <button
+          type="button"
+          className="top-bar__icon-btn"
+          aria-label={themeToggleLabel}
+          title={themeToggleLabel}
+          onClick={() => setTheme(nextTheme)}
+        >
+          <ThemeIcon size={20} />
+        </button>
 
-      <button
-        type="button"
-        className="top-bar__icon-btn"
-        aria-pressed={isPlayful}
-        aria-label={themeToggleLabel}
-        title={themeToggleLabel}
-        onClick={() => setTheme(isPlayful ? 'strict' : 'playful')}
-      >
-        {isPlayful ? <Sparkles size={20} /> : <Palette size={20} />}
-      </button>
-
-      <button
-        type="button"
-        className="top-bar__icon-btn"
-        aria-label={t('topBar.settingsToggle')}
-        title={t('topBar.settingsToggle')}
-        onClick={onSettingsToggle}
-      >
-        <Settings size={20} />
-      </button>
+        <button
+          type="button"
+          className="top-bar__icon-btn"
+          aria-label={t('topBar.settingsToggle')}
+          title={t('topBar.settingsToggle')}
+          onClick={onSettingsToggle}
+        >
+          <Settings size={20} />
+        </button>
+      </div>
     </header>
   )
 }

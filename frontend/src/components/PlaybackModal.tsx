@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { X } from 'lucide-react'
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
-import './ConvertDialog.css'
 import './PlaybackModal.css'
 
 interface PlaybackModalProps {
@@ -40,6 +40,16 @@ export function PlaybackModal({ file, onClose }: PlaybackModalProps) {
     }
   }, [file.id])
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   async function handleCopyPath() {
     if (!info) {
       return
@@ -50,58 +60,61 @@ export function PlaybackModal({ file, onClose }: PlaybackModalProps) {
   }
 
   return (
-    <div className="convert-dialog-overlay" onClick={onClose}>
-      <div
-        className="convert-dialog playback-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('playbackModal.title')}
-        onClick={(event) => event.stopPropagation()}
+    <div className="playback-overlay" role="dialog" aria-modal="true" aria-label={file.file_name} onClick={onClose}>
+      <button
+        type="button"
+        className="playback-overlay__close"
+        aria-label={t('playbackModal.close')}
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+        }}
       >
-        <h2 className="convert-dialog__title">{file.file_name}</h2>
+        <X size={20} />
+      </button>
 
-        {error && (
-          <p className="convert-dialog__hint convert-dialog__hint--error">
-            {t('playbackModal.loadError', { message: error })}
-          </p>
-        )}
-        {!error && !info && <p className="convert-dialog__hint">{t('playbackModal.loading')}</p>}
+      {info && (
+        <button
+          type="button"
+          className="playback-overlay__mode-toggle"
+          onClick={(event) => {
+            event.stopPropagation()
+            setMode(mode === 'stream' ? 'direct_link' : 'stream')
+          }}
+        >
+          {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
+        </button>
+      )}
 
-        {info && mode === 'stream' && (
-          <video className="playback-modal__video" controls autoPlay>
-            <source src={info.stream_url} />
-            {t('playbackModal.streamNotSupported')}
-          </video>
-        )}
+      {error && (
+        <p className="playback-overlay__message playback-overlay__message--error">
+          {t('playbackModal.loadError', { message: error })}
+        </p>
+      )}
+      {!error && !info && <p className="playback-overlay__message">{t('playbackModal.loading')}</p>}
 
-        {info && mode === 'direct_link' && (
-          <div className="playback-modal__direct-link">
-            <p className="convert-dialog__hint">{t('playbackModal.directLinkHint')}</p>
-            <code className="playback-modal__path">{info.direct_path}</code>
-            <div className="convert-dialog__actions">
-              <button type="button" className="convert-dialog__button" onClick={() => void handleCopyPath()}>
-                {t('playbackModal.copyPath')}
-              </button>
-              {copied && <span className="convert-dialog__hint">{t('playbackModal.copied')}</span>}
-            </div>
-          </div>
-        )}
+      {info && mode === 'stream' && (
+        <video
+          className="playback-overlay__video"
+          controls
+          autoPlay
+          onClick={(event) => event.stopPropagation()}
+        >
+          <source src={info.stream_url} />
+          {t('playbackModal.streamNotSupported')}
+        </video>
+      )}
 
-        {info && (
-          <div className="convert-dialog__actions">
-            <button
-              type="button"
-              className="convert-dialog__button"
-              onClick={() => setMode(mode === 'stream' ? 'direct_link' : 'stream')}
-            >
-              {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
-            </button>
-            <button type="button" className="convert-dialog__button" onClick={onClose}>
-              {t('playbackModal.close')}
-            </button>
-          </div>
-        )}
-      </div>
+      {info && mode === 'direct_link' && (
+        <div className="playback-overlay__direct-link" onClick={(event) => event.stopPropagation()}>
+          <p className="playback-overlay__message">{t('playbackModal.directLinkHint')}</p>
+          <code className="playback-overlay__path">{info.direct_path}</code>
+          <button type="button" className="playback-overlay__copy-btn" onClick={() => void handleCopyPath()}>
+            {t('playbackModal.copyPath')}
+          </button>
+          {copied && <span className="playback-overlay__message">{t('playbackModal.copied')}</span>}
+        </div>
+      )}
     </div>
   )
 }

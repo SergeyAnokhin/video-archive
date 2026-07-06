@@ -80,7 +80,9 @@
   cursor: pointer;
 }
 
-/* Tablet (640px - 1024px): the tree becomes an inline collapsible panel, no overlay. */
+/* Tablet and desktop (>= 640px): the tree is an inline collapsible panel,
+ * closed by default at every width -- it opens only via the menu toggle in
+ * the top bar (user request: keep the hierarchy out of the way by default). */
 @media (min-width: 640px) {
   .app-nav {
     position: static;
@@ -97,7 +99,7 @@
   }
 
   .app-nav--open {
-    width: 220px;
+    width: 260px;
     padding: var(--space-4);
     border-right: 1px solid var(--color-border);
     white-space: normal;
@@ -105,15 +107,5 @@
 
   .app-nav-backdrop {
     display: none;
-  }
-}
-
-/* Desktop (> 1024px): the tree is a persistent pane regardless of toggle state. */
-@media (min-width: 1024px) {
-  .app-nav {
-    width: 260px;
-    padding: var(--space-4);
-    border-right: 1px solid var(--color-border);
-    white-space: normal;
   }
 }

@@ -6,6 +6,7 @@ import { JobsModal } from './JobsModal'
 import { DirectoryTree } from './DirectoryTree'
 import { LibraryView } from './LibraryView'
 import { BackendStatusPanel } from './BackendStatusPanel'
+import type { ActiveSearch } from './LibrarySearchBox'
 import { useSource } from '../context/SourceContext'
 import './AppLayout.css'
 
@@ -16,6 +17,7 @@ export function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [jobsOpen, setJobsOpen] = useState(false)
   const [selectedPath, setSelectedPath] = useState('')
+  const [activeSearch, setActiveSearch] = useState<ActiveSearch | null>(null)
 
   function handleSelectPath(path: string) {
     setSelectedPath(path)
@@ -28,6 +30,8 @@ export function AppLayout() {
         onMenuToggle={() => setNavOpen((open) => !open)}
         onSettingsToggle={() => setSettingsOpen((open) => !open)}
         onJobsToggle={() => setJobsOpen((open) => !open)}
+        onSearch={setActiveSearch}
+        onClearSearch={() => setActiveSearch(null)}
       />
       <div className="app-body">
         <nav
@@ -61,7 +65,14 @@ export function AppLayout() {
               <BackendStatusPanel />
             </div>
           )}
-          {source && <LibraryView path={selectedPath} onNavigate={setSelectedPath} />}
+          {source && (
+            <LibraryView
+              path={selectedPath}
+              onNavigate={setSelectedPath}
+              activeSearch={activeSearch}
+              onClearSearch={() => setActiveSearch(null)}
+            />
+          )}
         </main>
       </div>
 

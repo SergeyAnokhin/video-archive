@@ -1,25 +1,88 @@
-.playback-modal {
-  width: min(90vw, 800px);
-}
-
-.playback-modal__video {
-  width: 100%;
-  max-height: 70vh;
+.playback-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #000;
-  border-radius: var(--radius-md);
+  z-index: 50;
 }
 
-.playback-modal__direct-link {
+.playback-overlay__video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.playback-overlay__close,
+.playback-overlay__mode-toggle {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.playback-overlay__close:hover,
+.playback-overlay__mode-toggle:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.playback-overlay__close {
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.playback-overlay__mode-toggle {
+  bottom: var(--space-3);
+  right: var(--space-3);
+  padding: 0 var(--space-3);
+  font-size: 12px;
+}
+
+.playback-overlay__message {
+  color: #fff;
+  font-size: 14px;
+}
+
+.playback-overlay__message--error {
+  color: var(--color-danger);
+}
+
+.playback-overlay__direct-link {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--space-2);
+  max-width: min(90vw, 600px);
+  padding: var(--space-4);
 }
 
-.playback-modal__path {
+.playback-overlay__path {
   display: block;
   padding: var(--space-2);
-  background: var(--color-surface-raised);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-sm);
+  color: #fff;
   word-break: break-all;
   font-size: 0.85rem;
+}
+
+.playback-overlay__copy-btn {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-accent-contrast);
+  font-weight: 600;
+  cursor: pointer;
 }

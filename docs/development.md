@@ -11,6 +11,8 @@ npm.cmd run dev     # starts frontend (127.0.0.1:5173) and backend (127.0.0.1:80
 
 Frontend and backend also run independently (`npm run dev` inside `frontend/` or `backend/`). The backend health endpoint is `/api/health`; app info is `/api/app/info`.
 
+Running a second frontend dev session against an already-running backend (e.g. a second AI coding session doing UI verification while another one's server is still up on `:5173`): use the `frontend-only` entry in [`.claude/launch.json`](../.claude/launch.json) (`npm run dev --prefix frontend`, `autoPort: true`) — `frontend/vite.config.ts` reads `PORT` from the environment (falling back to `5173`), so a second instance gets its own port and proxies to the same backend on `:8000` instead of failing to bind.
+
 ## Tests
 
 | Suite | Command | Notes |

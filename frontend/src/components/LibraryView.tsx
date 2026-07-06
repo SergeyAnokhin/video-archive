@@ -1,45 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Copy,
   File as FileIcon,
   Film,
   Folder,
   Images,
+  Info,
   MoreVertical,
-  Play,
   RefreshCw,
-  Search,
   Tags,
   Wand2,
   X,
 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
-import { useTags } from '../context/TagsContext'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { FileConvertModal } from './FileConvertModal'
+import { FileInfoPanel } from './FileInfoPanel'
+import type { ActiveSearch } from './LibrarySearchBox'
 import { PlaybackModal } from './PlaybackModal'
 import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
-import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry, Tag } from '../types/api'
+import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry, JobSummary } from '../types/api'
+import { formatSize } from '../utils/format'
 import './LibraryView.css'
 
 interface LibraryViewProps {
   path: string
   onNavigate: (path: string) => void
+  activeSearch: ActiveSearch | null
+  onClearSearch: () => void
 }
 
-interface ActiveSearch {
-  kind: 'tag' | 'name'
-  label: string
-  value: string
-}
-
-export function LibraryView({ path, onNavigate }: LibraryViewProps) {
+export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: LibraryViewProps) {
   const { t } = useTranslation()
-  const { refresh: refreshJobs } = useJobs()
+  const { activeJob, refresh: refreshJobs } = useJobs()
   const { previewsVisible } = usePreviewVisibility()
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -52,11 +48,23 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
   const [taggingFileId, setTaggingFileId] = useState<string | null>(null)
   const [playingFile, setPlayingFile] = useState<FileEntry | null>(null)
   const [similarFile, setSimilarFile] = useState<FileEntry | null>(null)
-  const [activeSearch, setActiveSearch] = useState<ActiveSearch | null>(null)
+  const [infoFile, setInfoFile] = useState<FileEntry | null>(null)
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
+  const [reloadTick, setReloadTick] = useState(0)
   const overflowRef = useRef<HTMLDivElement | null>(null)
+  const prevActiveJobRef = useRef<JobSummary | null>(null)
+
+  // A finished job (preview/tag/convert) may have changed this directory's
+  // files, but nothing else refetches on job completion -- do it here so a
+  // newly generated thumbnail/status shows up without a manual reload.
+  useEffect(() => {
+    if (prevActiveJobRef.current && !activeJob) {
+      setReloadTick((tick) => tick + 1)
+    }
+    prevActiveJobRef.current = activeJob
+  }, [activeJob])
 
   useEffect(() => {
     if (!overflowOpen) {
@@ -135,7 +143,7 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
     return () => {
       cancelled = true
     }
-  }, [path, activeSearch])
+  }, [path, activeSearch, reloadTick])
 
   const segments = path ? path.split('/') : []
 
@@ -207,11 +215,6 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
           })}
         </nav>
 
-        <LibrarySearchBox
-          onSearch={(search) => setActiveSearch(search)}
-          onClear={() => setActiveSearch(null)}
-        />
-
         <button
           type="button"
           className="library-view__icon-btn"
@@ -274,7 +277,7 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
       {activeSearch && (
         <div className="library-view__search-banner">
           <span>{t('library.searchResultsFor', { query: activeSearch.label })}</span>
-          <button type="button" className="library-view__icon-btn" onClick={() => setActiveSearch(null)}>
+          <button type="button" className="library-view__icon-btn" onClick={onClearSearch}>
             <X size={14} />
           </button>
         </div>
@@ -298,13 +301,8 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
                   key={file.id}
                   file={file}
                   previewsVisible={previewsVisible}
-                  previewing={previewingFileId === file.id}
-                  tagging={taggingFileId === file.id}
-                  onConvert={() => setConvertFile(file)}
-                  onPreview={() => void handlePreviewFile(file.id)}
-                  onTag={() => void handleTagFile(file.id)}
                   onPlay={() => setPlayingFile(file)}
-                  onSimilar={() => setSimilarFile(file)}
+                  onInfo={() => setInfoFile(file)}
                 />
               ))}
             </div>
@@ -334,13 +332,8 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
                   key={file.id}
                   file={file}
                   previewsVisible={previewsVisible}
-                  previewing={previewingFileId === file.id}
-                  tagging={taggingFileId === file.id}
-                  onConvert={() => setConvertFile(file)}
-                  onPreview={() => void handlePreviewFile(file.id)}
-                  onTag={() => void handleTagFile(file.id)}
                   onPlay={() => setPlayingFile(file)}
-                  onSimilar={() => setSimilarFile(file)}
+                  onInfo={() => setInfoFile(file)}
                 />
               ))}
             </div>
@@ -382,102 +375,29 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
 
       {playingFile && <PlaybackModal file={playingFile} onClose={() => setPlayingFile(null)} />}
       {similarFile && <SimilarFilesModal file={similarFile} onClose={() => setSimilarFile(null)} />}
-    </div>
-  )
-}
-
-interface LibrarySearchBoxProps {
-  onSearch: (search: ActiveSearch) => void
-  onClear: () => void
-}
-
-function LibrarySearchBox({ onSearch, onClear }: LibrarySearchBoxProps) {
-  const { t } = useTranslation()
-  const { tags } = useTags()
-  const [value, setValue] = useState('')
-  const [open, setOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  const prefix = value.trim().toLowerCase()
-  const suggestions: Tag[] = prefix
-    ? tags.filter((tag) => tag.tag_key.startsWith(prefix)).slice(0, 8)
-    : []
-
-  function selectTag(tag: Tag) {
-    setValue(tag.display_name)
-    setOpen(false)
-    onSearch({ kind: 'tag', label: tag.display_name, value: tag.tag_key })
-  }
-
-  function submitFreeText() {
-    if (!value.trim()) {
-      return
-    }
-    setOpen(false)
-    onSearch({ kind: 'name', label: value.trim(), value: value.trim() })
-  }
-
-  function clear() {
-    setValue('')
-    setOpen(false)
-    onClear()
-  }
-
-  return (
-    <div className="library-view__search" ref={containerRef}>
-      <Search size={14} className="library-view__search-icon" />
-      <input
-        type="text"
-        className="library-view__search-input"
-        placeholder={t('library.searchPlaceholder')}
-        value={value}
-        onChange={(event) => {
-          setValue(event.target.value)
-          setOpen(true)
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            submitFreeText()
-          } else if (event.key === 'Escape') {
-            setOpen(false)
-          }
-        }}
-      />
-      {value && (
-        <button
-          type="button"
-          className="library-view__search-clear"
-          aria-label={t('library.searchClear')}
-          onClick={clear}
-        >
-          <X size={12} />
-        </button>
-      )}
-      {open && suggestions.length > 0 && (
-        <ul className="library-view__search-suggestions">
-          {suggestions.map((tag) => (
-            <li key={tag.id}>
-              <button type="button" onClick={() => selectTag(tag)}>
-                {tag.display_name}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {infoFile && (
+        <FileInfoPanel
+          file={infoFile}
+          previewsVisible={previewsVisible}
+          previewing={previewingFileId === infoFile.id}
+          tagging={taggingFileId === infoFile.id}
+          onClose={() => setInfoFile(null)}
+          onPreview={() => void handlePreviewFile(infoFile.id)}
+          onTag={() => void handleTagFile(infoFile.id)}
+          onConvert={() => {
+            setConvertFile(infoFile)
+            setInfoFile(null)
+          }}
+          onSimilar={() => {
+            setSimilarFile(infoFile)
+            setInfoFile(null)
+          }}
+        />
       )}
     </div>
   )
 }
+
 
 function FolderCard({
   dir,
@@ -537,26 +457,11 @@ function FolderCard({
 interface FileCardProps {
   file: FileEntry
   previewsVisible: boolean
-  previewing: boolean
-  tagging: boolean
-  onConvert: () => void
-  onPreview: () => void
-  onTag: () => void
   onPlay: () => void
-  onSimilar: () => void
+  onInfo: () => void
 }
 
-function FileCard({
-  file,
-  previewsVisible,
-  previewing,
-  tagging,
-  onConvert,
-  onPreview,
-  onTag,
-  onPlay,
-  onSimilar,
-}: FileCardProps) {
+function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProps) {
   const { t } = useTranslation()
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
@@ -564,70 +469,30 @@ function FileCard({
 
   return (
     <div className="library-card">
-      <div className="library-card__thumb">
-        {showThumbnail ? (
-          <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="library-card__thumb-img" />
-        ) : file.is_video_supported ? (
-          <Film size={28} />
-        ) : (
-          <FileIcon size={28} />
-        )}
+      <div className="library-card__thumb-frame">
+        <button type="button" className="library-card__thumb" aria-label={t('library.play')} title={t('library.play')} onClick={onPlay}>
+          {showThumbnail ? (
+            <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="library-card__thumb-img" />
+          ) : file.is_video_supported ? (
+            <Film size={28} />
+          ) : (
+            <FileIcon size={28} />
+          )}
+        </button>
+        <button
+          type="button"
+          className="library-card__info-btn"
+          aria-label={t('library.info')}
+          title={t('library.info')}
+          onClick={onInfo}
+        >
+          <Info size={16} />
+        </button>
       </div>
       <div className="library-card__name" title={file.file_name}>
         {file.file_name}
       </div>
       <div className="library-card__meta">{formatSize(file.size_bytes)}</div>
-      {file.is_video_supported && (
-        <div className="library-card__file-actions">
-          <button
-            type="button"
-            className="library-card__convert-btn"
-            aria-label={t('library.play')}
-            title={t('library.play')}
-            onClick={onPlay}
-          >
-            <Play size={14} />
-          </button>
-          <button
-            type="button"
-            className="library-card__convert-btn"
-            aria-label={t('library.previewFile')}
-            title={t('library.previewFile')}
-            onClick={onPreview}
-            disabled={previewing}
-          >
-            <Images size={14} />
-          </button>
-          <button
-            type="button"
-            className="library-card__convert-btn"
-            aria-label={t('library.tagFile')}
-            title={t('library.tagFile')}
-            onClick={onTag}
-            disabled={tagging}
-          >
-            <Tags size={14} />
-          </button>
-          <button
-            type="button"
-            className="library-card__convert-btn"
-            aria-label={t('library.convertFile')}
-            title={t('library.convertFile')}
-            onClick={onConvert}
-          >
-            <Wand2 size={14} />
-          </button>
-          <button
-            type="button"
-            className="library-card__convert-btn"
-            aria-label={t('library.similar')}
-            title={t('library.similar')}
-            onClick={onSimilar}
-          >
-            <Copy size={14} />
-          </button>
-        </div>
-      )}
       {(showConversionDot || showPreviewDot) && (
         <div className="library-card__badges">
           {showConversionDot && (
@@ -648,16 +513,3 @@ function FileCard({
   )
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`
-  }
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let value = bytes / 1024
-  let unitIndex = 0
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-  return `${value.toFixed(1)} ${units[unitIndex]}`
-}
