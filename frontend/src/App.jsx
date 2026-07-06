@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelJob,
   createConversionProfile,
@@ -39,7 +39,6 @@ import {
   updatePreviewLayout
 } from "./api";
 import AppHeader from "./components/layout/AppHeader";
-import DirectoryTreePanel from "./components/layout/DirectoryTreePanel";
 import FileBrowserPanel from "./components/layout/FileBrowserPanel";
 import FileDetailsModal from "./components/modals/FileDetailsModal";
 import JobsModal from "./components/modals/JobsModal";
@@ -63,7 +62,6 @@ import {
   emptySourceForm,
   flattenTree,
   formatDirectoryLabel,
-  formatSourceSummary,
   isLocalProtocol,
   toSourceForm,
   toSourcePayload,
@@ -129,15 +127,18 @@ function App() {
   const [isWorking, setIsWorking] = useState(false);
   const [locale, setLocale] = useState(() => window.localStorage.getItem("video-archive.locale") || "ru");
   const [visualMode, setVisualMode] = useState(() => window.localStorage.getItem("video-archive.visual-mode") || "strict");
+  const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const logConsoleRef = useRef(null);
   const t = useMemo(() => createTranslator(locale), [locale]);
 
   const treeItems = useMemo(() => flattenTree(tree), [tree]);
-  const selectedFile = files.find((file) => file.id === selectedFileId) ?? files[0] ?? null;
+  const visibleFiles = useMemo(() => files.filter((file) => file.is_video_supported), [files]);
+  const deferredLibrarySearchQuery = useDeferredValue(librarySearchQuery);
+  const selectedFile = visibleFiles.find((file) => file.id === selectedFileId) ?? visibleFiles[0] ?? null;
   const settingsSections = useMemo(() => getSettingsSections(t), [t]);
   const liveSourceLabel = source?.name ?? info.active_source?.name ?? t("app.noActiveSource");
-  const liveSourceMeta = formatSourceSummary(source, t);
-  const queueSummary = t("app.queueSummary", { running: info.queue.running_jobs, queued: info.queue.queued_jobs });
+  const pendingJobsCount = (info.queue.running_jobs ?? 0) + (info.queue.queued_jobs ?? 0);
+  const hasActiveQueue = pendingJobsCount > 0;
   const backendLabel =
     health.state === "ready"
       ? t("app.backendReady", { status: health.status })
@@ -181,17 +182,17 @@ function App() {
   }, [sourceForm.protocol]);
 
   useEffect(() => {
-    if (!files.length) {
+    if (!visibleFiles.length) {
       if (selectedFileId !== null) {
         setSelectedFileId(null);
       }
       return;
     }
 
-    if (!selectedFileId || !files.some((file) => file.id === selectedFileId)) {
-      setSelectedFileId(files[0].id);
+    if (!selectedFileId || !visibleFiles.some((file) => file.id === selectedFileId)) {
+      setSelectedFileId(visibleFiles[0].id);
     }
-  }, [files, selectedFileId]);
+  }, [visibleFiles, selectedFileId]);
 
   useEffect(() => {
     if (activeOverlay !== "jobs") {
@@ -922,6 +923,7 @@ function App() {
       return;
     }
     setActionError(null);
+    setSelectedFileId(file.id);
     try {
       const payload = await fetchPlaybackTarget(file.id);
       if (payload.playback.mode === "external") {
@@ -944,6 +946,7 @@ function App() {
       return;
     }
     setActionError(null);
+    setSelectedFileId(fileId);
     setSelectedFileDetails(null);
     setSelectedFilePreview(null);
     setSelectedFileLogs([]);
@@ -1091,13 +1094,13 @@ function App() {
         actionError={actionError}
         actionMessage={actionMessage}
         liveSourceLabel={liveSourceLabel}
-        liveSourceMeta={liveSourceMeta}
-        queueSummary={queueSummary}
-        queueStatus={info.queue.status}
+        pendingJobsCount={pendingJobsCount}
+        hasActiveQueue={hasActiveQueue}
         source={source}
         isWorking={isWorking}
         locale={locale}
         visualMode={visualMode}
+        librarySearchQuery={librarySearchQuery}
         t={t}
         onScanSource={handleScanSource}
         onOpenLogs={() => openLogViewer()}
@@ -1106,35 +1109,41 @@ function App() {
           setSelectedSettingsSection("preview");
           setActiveOverlay("settings");
         }}
+        onLibrarySearchChange={setLibrarySearchQuery}
         onToggleLocale={() => setLocale((current) => (current === "ru" ? "en" : "ru"))}
         onCycleVisualMode={() => setVisualMode((current) => getNextVisualMode(current))}
       />
 
       <section className="workspace">
-        <DirectoryTreePanel
-          treeItems={treeItems}
-          selectedDirectory={selectedDirectory}
-          source={source}
-          isWorking={isWorking}
-          onScanSource={handleScanSource}
-          onSelectDirectory={handleSelectDirectory}
-          renderIndicatorBadges={(indicators) => renderIndicatorBadges(indicators, t)}
-          t={t}
-        />
-
         <FileBrowserPanel
+          treeItems={treeItems}
           selectedDirectory={selectedDirectory}
           source={source}
           selectedFile={selectedFile}
           isWorking={isWorking}
-          files={files}
+          files={visibleFiles}
+          searchQuery={deferredLibrarySearchQuery}
+          onScanSource={handleScanSource}
           onOpenPlayback={handleOpenPlayback}
-          onOpenConvertDirectory={() => openConvertDialog("directory")}
-          onPreviewDirectory={() => handleDirectoryJob(createPreviewDirectoryJob)}
-          onTagDirectory={() => handleDirectoryJob(createTagDirectoryJob)}
-          onRescanDirectory={handleRescanDirectory}
+          onRunDirectoryAction={(action) => {
+            if (action === "convert") {
+              openConvertDialog("directory");
+              return;
+            }
+            if (action === "preview") {
+              handleDirectoryJob(createPreviewDirectoryJob);
+              return;
+            }
+            if (action === "tag") {
+              handleDirectoryJob(createTagDirectoryJob);
+              return;
+            }
+            handleRescanDirectory();
+          }}
+          onSelectDirectory={handleSelectDirectory}
           onSelectFile={setSelectedFileId}
           onOpenFileDetails={openDetailsModal}
+          renderIndicatorBadges={(indicators) => renderIndicatorBadges(indicators, t)}
           getFilePreviewImageUrl={getFilePreviewImageUrl}
           formatDirectoryLabel={(path) => formatDirectoryLabel(path, t)}
           formatStatusLabel={(value) => formatStatusLabel(value, t)}
@@ -1164,7 +1173,13 @@ function App() {
         t={t}
       />
 
-      <PlaybackModal isOpen={activeOverlay === "playback"} playbackTarget={playbackTarget} onClose={() => setActiveOverlay(null)} t={t} />
+      <PlaybackModal
+        isOpen={activeOverlay === "playback"}
+        playbackTarget={playbackTarget}
+        onClose={() => setActiveOverlay(null)}
+        onOpenInfo={() => openDetailsModal(playbackTarget?.file_id)}
+        t={t}
+      />
 
       <LogViewerModal
         isOpen={activeOverlay === "logs"}

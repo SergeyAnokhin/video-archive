@@ -58,12 +58,14 @@ const messages = {
       intro: "Primary toolbar stays focused on subtree work and lightweight file entry points.",
       details: "Details",
       playback: "Playback",
+      backToParent: "Up one level",
+      folderCard: "Folder",
       convertSubtree: "Convert subtree",
       previewSubtree: "Preview subtree",
       tagSubtree: "Tag subtree",
       rescanSubtree: "Rescan subtree",
-      emptyTitle: "No files in this folder",
-      emptyBody: "This folder either has no files yet or has not been discovered by a completed scan.",
+      emptyTitle: "This folder is empty",
+      emptyBody: "No folders or files are visible here yet, or the scan has not discovered them yet.",
       name: "Name",
       type: "Type",
       size: "Size",
@@ -224,7 +226,9 @@ const messages = {
       titleFallback: "Selected file",
       noPreview: "No file preview stored yet.",
       actions: "File actions",
+      summary: "Quick facts",
       playback: "Playback",
+      openPlayback: "Open and play",
       convert: "Convert file",
       preview: "Preview file",
       tag: "Tag file",
@@ -302,7 +306,8 @@ const messages = {
     },
     playbackModal: {
       kicker: "Playback",
-      target: "Playback target"
+      target: "Playback target",
+      openInfo: "Show file info"
     },
     conversionModal: {
       kicker: "Conversion",
@@ -417,12 +422,14 @@ const messages = {
       intro: "Основная панель остаётся сфокусированной на действиях по поддереву и лёгких входах в файлы.",
       details: "Детали",
       playback: "Плеер",
+      backToParent: "На уровень выше",
+      folderCard: "Папка",
       convertSubtree: "Конверт. поддерево",
       previewSubtree: "Превью поддерева",
       tagSubtree: "Теги поддерева",
       rescanSubtree: "Перескан. поддерево",
-      emptyTitle: "В этой папке нет файлов",
-      emptyBody: "Либо здесь пока нет файлов, либо они ещё не обнаружены завершённым сканированием.",
+      emptyTitle: "В этой папке пока пусто",
+      emptyBody: "Здесь пока не видно ни папок, ни файлов, либо сканирование их ещё не обнаружило.",
       name: "Имя",
       type: "Тип",
       size: "Размер",
@@ -583,7 +590,9 @@ const messages = {
       titleFallback: "Выбранный файл",
       noPreview: "Превью файла ещё не сохранено.",
       actions: "Действия с файлом",
+      summary: "Краткая сводка",
       playback: "Плеер",
+      openPlayback: "Открыть и воспроизвести",
       convert: "Конвертировать файл",
       preview: "Сделать превью",
       tag: "Проставить теги",
@@ -661,7 +670,8 @@ const messages = {
     },
     playbackModal: {
       kicker: "Воспроизведение",
-      target: "Цель воспроизведения"
+      target: "Цель воспроизведения",
+      openInfo: "Показать сведения о файле"
     },
     conversionModal: {
       kicker: "Конвертация",
@@ -718,6 +728,40 @@ const messages = {
     }
   }
 }
+
+Object.assign(messages.en.header, {
+  search: "Search library",
+  searchPlaceholder: "Search folders and videos"
+})
+
+Object.assign(messages.ru.header, {
+  search: "\u041f\u043e\u0438\u0441\u043a",
+  searchPlaceholder: "\u041f\u043e\u0438\u0441\u043a \u043f\u0430\u043f\u043e\u043a \u0438 \u0432\u0438\u0434\u0435\u043e"
+})
+
+Object.assign(messages.en.files, {
+  runTask: "Run selected task",
+  searchEmptyTitle: "Nothing matched the search",
+  searchEmptyBody: "Try a shorter name or clear the search field in the top bar."
+})
+
+Object.assign(messages.ru.files, {
+  runTask: "\u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0437\u0430\u0434\u0430\u0447\u0443",
+  searchEmptyTitle: "\u041d\u0438\u0447\u0435\u0433\u043e \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e",
+  searchEmptyBody: "\u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0441\u043e\u043a\u0440\u0430\u0442\u0438\u0442\u044c \u0437\u0430\u043f\u0440\u043e\u0441 \u0438\u043b\u0438 \u043e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043f\u043e\u0438\u0441\u043a \u0432 \u0432\u0435\u0440\u0445\u043d\u0435\u0439 \u043f\u043e\u043b\u043e\u0441\u0435."
+})
+
+Object.assign(messages.en.details, {
+  previewAsset: "Stored preview asset",
+  previewFileName: "Preview file",
+  previewFilePath: "Preview path"
+})
+
+Object.assign(messages.ru.details, {
+  previewAsset: "\u0421\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u043e\u0435 \u043f\u0440\u0435\u0432\u044c\u044e",
+  previewFileName: "\u0424\u0430\u0439\u043b \u043f\u0440\u0435\u0432\u044c\u044e",
+  previewFilePath: "\u041f\u0443\u0442\u044c \u043a \u043f\u0440\u0435\u0432\u044c\u044e"
+})
 
 function resolveMessage(locale, key) {
   return key.split(".").reduce((current, part) => current?.[part], messages[locale]) ?? key

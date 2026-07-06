@@ -1,4 +1,4 @@
-import { Globe, ListTodo, ScanSearch, Settings2, Sparkles, SunMoon, TextSearch } from "lucide-react";
+import { Globe, HardDrive, ListTodo, LoaderCircle, ScanSearch, Search, Server, Settings2, Sparkles, SunMoon, TextSearch } from "lucide-react";
 
 export default function AppHeader({
   healthState,
@@ -6,49 +6,58 @@ export default function AppHeader({
   actionError,
   actionMessage,
   liveSourceLabel,
-  liveSourceMeta,
-  queueSummary,
-  queueStatus,
+  pendingJobsCount,
+  hasActiveQueue,
   source,
   isWorking,
   locale,
   visualMode,
+  librarySearchQuery,
   t,
   onScanSource,
   onOpenLogs,
   onOpenJobs,
   onOpenSettings,
+  onLibrarySearchChange,
   onToggleLocale,
   onCycleVisualMode
 }) {
   return (
-    <header className="topbar panel">
-      <div className="brand-block compact-brand-block">
-        <div className="brand-row">
-          <p className="eyebrow">{t("app.brand")}</p>
-          <h1>{t("app.title")}</h1>
-          <span className={`status-pill status-pill-${healthState}`}>{backendLabel}</span>
-        </div>
-        {actionError ? <p className="feedback error">{actionError}</p> : null}
-        {actionMessage ? <p className="feedback">{actionMessage}</p> : null}
-      </div>
-
-      <div className="toolbar">
-        <div className="toolbar-strip">
-          <div className="toolbar-inline-card">
-            <span className="toolbar-label">{t("header.source")}</span>
-            <strong>{liveSourceLabel}</strong>
-            <span className="toolbar-meta">{liveSourceMeta}</span>
-          </div>
-
-          <div className="toolbar-inline-card">
-            <span className="toolbar-label">{t("header.queue")}</span>
-            <strong>{queueSummary}</strong>
-            <span className="toolbar-meta">{t("app.queueRuntime", { status: queueStatus })}</span>
+    <>
+      <header className="topbar panel">
+        <div className="topbar-side topbar-side-left">
+          <div className="topbar-status-cluster">
+            <span className="topbar-chip" title={t("header.source")}>
+              <HardDrive size={14} />
+              <span className="topbar-chip-text">{liveSourceLabel}</span>
+            </span>
+            <span className={`topbar-chip status-chip status-chip-${healthState}`} title={backendLabel}>
+              <Server size={14} />
+              <span className="topbar-chip-text">{backendLabel}</span>
+            </span>
           </div>
         </div>
 
-        <div className="toolbar-actions">
+        <div className="topbar-center">
+          <div className="topbar-brand">
+            <span className="topbar-brand-mark" aria-hidden="true" />
+            <strong>{t("app.brand")}</strong>
+          </div>
+        </div>
+
+        <div className="topbar-side topbar-side-right">
+          <label className="topbar-search-shell" aria-label={t("header.search")}>
+            <Search size={15} className="topbar-search-icon" />
+            <input
+              type="search"
+              className="topbar-search-input"
+              value={librarySearchQuery}
+              placeholder={t("header.searchPlaceholder")}
+              onChange={(event) => onLibrarySearchChange(event.target.value)}
+            />
+          </label>
+
+          <div className="toolbar-actions">
           <button
             type="button"
             className="ghost-button icon-only-button"
@@ -70,12 +79,17 @@ export default function AppHeader({
           </button>
           <button
             type="button"
-            className="ghost-button icon-only-button"
+            className={`ghost-button icon-only-button ${hasActiveQueue ? "activity-button" : ""}`}
             aria-label={t("header.jobs")}
             title={t("header.jobs")}
             onClick={onOpenJobs}
           >
-            <ListTodo size={16} />
+            {hasActiveQueue ? <LoaderCircle size={16} className="spinning-icon" /> : <ListTodo size={16} />}
+            {hasActiveQueue ? (
+              <span className="icon-badge" aria-label={t("header.queue")}>
+                {pendingJobsCount}
+              </span>
+            ) : null}
           </button>
           <button
             type="button"
@@ -105,8 +119,12 @@ export default function AppHeader({
           >
             <Settings2 size={16} />
           </button>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {actionError ? <p className="topbar-notice topbar-notice-error">{actionError}</p> : null}
+      {!actionError && actionMessage ? <p className="topbar-notice">{actionMessage}</p> : null}
+    </>
   );
 }

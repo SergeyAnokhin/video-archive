@@ -16,8 +16,10 @@
   --warning: #f0c173;
   --danger: #f39a9a;
   --surface-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
-  --radius-panel: 18px;
-  --radius-control: 12px;
+  --glow-accent: rgba(88, 149, 240, 0.18);
+  --glow-warm: rgba(122, 184, 255, 0.12);
+  --radius-panel: 12px;
+  --radius-control: 8px;
   --radius-chip: 999px;
   --app-width: 1440px;
   background:
@@ -41,23 +43,26 @@
 }
 
 :root[data-visual-mode="casino"] {
-  --bg-base: #140d10;
-  --bg-panel: rgba(26, 17, 22, 0.94);
-  --bg-panel-strong: rgba(31, 20, 26, 0.98);
-  --bg-muted: rgba(255, 183, 77, 0.09);
-  --border-soft: rgba(255, 210, 124, 0.18);
-  --border-strong: rgba(255, 221, 158, 0.28);
+  --bg-base: #170b12;
+  --bg-panel: rgba(34, 16, 28, 0.9);
+  --bg-panel-strong: rgba(41, 18, 30, 0.96);
+  --bg-muted: rgba(255, 183, 77, 0.12);
+  --border-soft: rgba(255, 210, 124, 0.22);
+  --border-strong: rgba(255, 221, 158, 0.4);
   --text-main: #fff3df;
-  --text-muted: #d6b995;
-  --text-soft: #f2debf;
-  --accent: #ffb34d;
-  --accent-strong: #ff8751;
+  --text-muted: #f2bc92;
+  --text-soft: #ffe7c9;
+  --accent: #ffd04d;
+  --accent-strong: #ff5a5f;
   --success: #9cf0be;
   --warning: #ffd26a;
   --danger: #ff8d8d;
-  --surface-shadow: 0 22px 46px rgba(0, 0, 0, 0.34);
+  --surface-shadow: 0 26px 54px rgba(0, 0, 0, 0.4);
+  --glow-accent: rgba(255, 90, 95, 0.28);
+  --glow-warm: rgba(255, 208, 77, 0.22);
   background:
-    radial-gradient(circle at 18% 8%, rgba(255, 145, 77, 0.16), transparent 30%),
-    radial-gradient(circle at 82% 14%, rgba(255, 225, 102, 0.1), transparent 28%),
-    linear-gradient(180deg, #241318 0%, #090709 100%);
+    radial-gradient(circle at 14% 8%, rgba(255, 90, 95, 0.28), transparent 26%),
+    radial-gradient(circle at 86% 10%, rgba(255, 208, 77, 0.2), transparent 24%),
+    radial-gradient(circle at 50% 0%, rgba(255, 121, 63, 0.12), transparent 34%),
+    linear-gradient(180deg, #2a0f19 0%, #09060a 100%);
 }

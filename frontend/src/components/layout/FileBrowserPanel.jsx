@@ -1,23 +1,43 @@
-import { Clapperboard, FolderCog, ImageIcon, ImagePlus, ScanSearch, Tags } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowUpLeft, Folder, ImageIcon, Info, Play, RefreshCcw } from "lucide-react";
 
 export default function FileBrowserPanel({
+  treeItems,
   selectedDirectory,
   source,
   selectedFile,
   isWorking,
   files,
+  searchQuery,
+  onScanSource,
   onOpenPlayback,
-  onOpenConvertDirectory,
-  onPreviewDirectory,
-  onTagDirectory,
-  onRescanDirectory,
+  onRunDirectoryAction,
+  onSelectDirectory,
   onSelectFile,
   onOpenFileDetails,
+  renderIndicatorBadges,
   getFilePreviewImageUrl,
   formatDirectoryLabel,
   formatStatusLabel,
   t
 }) {
+  const [directoryAction, setDirectoryAction] = useState("preview");
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const childDirectories = useMemo(
+    () =>
+      treeItems
+        .filter((node) => node.path !== "" && node.parent_path === selectedDirectory)
+        .filter((directory) => !normalizedSearch || directory.name.toLowerCase().includes(normalizedSearch)),
+    [normalizedSearch, selectedDirectory, treeItems]
+  );
+  const visibleFiles = useMemo(
+    () => files.filter((file) => !normalizedSearch || file.file_name.toLowerCase().includes(normalizedSearch)),
+    [files, normalizedSearch]
+  );
+  const parentDirectory = selectedDirectory.includes("/") ? selectedDirectory.slice(0, selectedDirectory.lastIndexOf("/")) : "";
+  const hasEntries = childDirectories.length || visibleFiles.length;
+  const isFiltered = normalizedSearch.length > 0;
+
   function renderStateLamp(kind, state) {
     return (
       <span
@@ -28,64 +48,96 @@ export default function FileBrowserPanel({
   }
 
   return (
-    <section className="panel file-panel">
-      <div className="panel-header compact-file-header">
-        <div>
+    <section className="file-panel floating-library">
+      <div className="panel browser-toolbar">
+        <div className="panel-header compact-file-header">
+        <div className="file-header-main">
           <p className="section-kicker">{t("files.kicker")}</p>
-          <h2>{formatDirectoryLabel(selectedDirectory)}</h2>
+          <div className="file-header-title-row">
+            <h2>{formatDirectoryLabel(selectedDirectory)}</h2>
+            {selectedDirectory ? (
+              <div className="inline-actions file-nav-actions">
+              <button type="button" className="ghost-button nav-chip" onClick={() => onSelectDirectory(parentDirectory)}>
+                <ArrowUpLeft size={15} />
+              </button>
+              <button type="button" className="ghost-button nav-chip" onClick={() => onSelectDirectory("")}>
+                <Folder size={15} />
+              </button>
+              </div>
+            ) : null}
+          </div>
         </div>
-        <div className="inline-actions">
+        <div className="inline-actions toolbar-inline-cluster">
           <button
             type="button"
             className="ghost-button icon-only-button"
             disabled={!source || isWorking}
-            aria-label={t("files.convertSubtree")}
-            title={t("files.convertSubtree")}
-            onClick={onOpenConvertDirectory}
+            aria-label={t("directory.rescanSource")}
+            title={t("directory.rescanSource")}
+            onClick={onScanSource}
           >
-            <FolderCog size={16} />
+            <RefreshCcw size={16} />
           </button>
-          <button
-            type="button"
-            className="ghost-button icon-only-button"
-            disabled={!source || isWorking}
-            aria-label={t("files.previewSubtree")}
-            title={t("files.previewSubtree")}
-            onClick={onPreviewDirectory}
-          >
-            <ImagePlus size={16} />
-          </button>
-          <button
-            type="button"
-            className="ghost-button icon-only-button"
-            disabled={!source || isWorking}
-            aria-label={t("files.tagSubtree")}
-            title={t("files.tagSubtree")}
-            onClick={onTagDirectory}
-          >
-            <Tags size={16} />
-          </button>
-          <button
-            type="button"
-            className="ghost-button icon-only-button"
-            disabled={!source || isWorking}
-            aria-label={t("files.rescanSubtree")}
-            title={t("files.rescanSubtree")}
-            onClick={onRescanDirectory}
-          >
-            <ScanSearch size={16} />
-          </button>
+          <div className="directory-task-picker">
+            <select value={directoryAction} onChange={(event) => setDirectoryAction(event.target.value)} disabled={!source || isWorking}>
+              <option value="preview">{t("files.previewSubtree")}</option>
+              <option value="convert">{t("files.convertSubtree")}</option>
+              <option value="tag">{t("files.tagSubtree")}</option>
+              <option value="rescan">{t("files.rescanSubtree")}</option>
+            </select>
+            <button
+              type="button"
+              className="primary-button icon-only-button"
+              disabled={!source || isWorking}
+              aria-label={t("files.runTask")}
+              title={t("files.runTask")}
+              onClick={() => onRunDirectoryAction(directoryAction)}
+            >
+              <Play size={15} />
+            </button>
+          </div>
         </div>
+      </div>
       </div>
 
       <div className="file-list">
-        {files.length ? (
-          files.map((file) => (
+        {childDirectories.map((directory) => {
+          const badges = renderIndicatorBadges(directory.indicators);
+          return (
+            <button
+              key={directory.id}
+              type="button"
+              className="file-card directory-card"
+              onClick={() => onSelectDirectory(directory.path)}
+            >
+              <div className="directory-card-main">
+                <span className="directory-card-icon">
+                  <Folder size={20} />
+                </span>
+                <div className="directory-card-copy">
+                  <strong title={directory.name}>{directory.name}</strong>
+                  <span>{t("files.folderCard")}</span>
+                </div>
+              </div>
+              <div className="tree-badges directory-card-badges">
+                {badges.map((badge) => (
+                  <span key={badge.key} className={`tree-badge tree-badge-${badge.state}`} title={badge.title}>
+                    {badge.label}
+                  </span>
+                ))}
+              </div>
+            </button>
+          );
+        })}
+
+        {visibleFiles.map((file) => (
             <article
               key={file.id}
               className={`file-card ${selectedFile?.id === file.id ? "active" : ""}`}
-              onClick={() => onSelectFile(file.id)}
-              onDoubleClick={() => onOpenPlayback(file)}
+              onClick={() => {
+                onSelectFile(file.id);
+                onOpenPlayback(file);
+              }}
             >
               <div className="file-card-media">
                 {getFilePreviewImageUrl(file) ? (
@@ -105,27 +157,15 @@ export default function FileBrowserPanel({
                       type="button"
                       className="ghost-button icon-only-button file-card-action"
                       disabled={isWorking}
-                      aria-label={t("files.playback")}
-                      title={t("files.playback")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onOpenPlayback(file);
-                      }}
-                    >
-                      <Clapperboard size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button icon-only-button file-card-action"
-                      disabled={isWorking}
                       aria-label={t("files.details")}
                       title={t("files.details")}
                       onClick={(event) => {
                         event.stopPropagation();
+                        onSelectFile(file.id);
                         onOpenFileDetails(file.id);
                       }}
                     >
-                      <FolderCog size={15} />
+                      <Info size={15} />
                     </button>
                   </div>
                 </div>
@@ -135,12 +175,14 @@ export default function FileBrowserPanel({
                 <strong title={file.file_name}>{file.file_name}</strong>
               </div>
             </article>
-          ))
-        ) : (
+          ))}
+        {!hasEntries ? (
           <div className="empty-state">
-            <h3>{t("files.emptyTitle")}</h3>
-            <p>{t("files.emptyBody")}</p>
+            <h3>{isFiltered ? t("files.searchEmptyTitle") : t("files.emptyTitle")}</h3>
+            <p>{isFiltered ? t("files.searchEmptyBody") : t("files.emptyBody")}</p>
           </div>
+        ) : (
+          null
         )}
       </div>
     </section>

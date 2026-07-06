@@ -16,7 +16,7 @@ This document defines the main screens, modals, and interaction surfaces for Vid
 - For obvious actions, prefer icon-only buttons with accessible labels rather than repeating short text everywhere
 - Keep the main library visually compact and low-clutter, with stronger or more playful visual modes as a skin rather than a layout fork
 - Keep panel radii and spacing restrained; avoid oversized rounded capsules that make the browse view feel older or less dense
-- Keep the top bar as a compact strip rather than a hero block; status, source, queue, locale, theme, and settings should fit into a shallow header row
+- Keep the top bar as a compact strip rather than a hero block; status, source, locale, theme, and settings should fit into one shallow header row, and active jobs should read primarily as a small spinner/badge on the jobs icon instead of a verbose queue block
 - Prefer thumbnail-first file cards over dense metadata tables on the main library screen
 - In file cards, show only the file preview, the short file name, and compact state indicators; move size, modified time, full path, and deeper metadata into details flows
 - File state on the main screen should read as compact lamps or icon indicators, not repeated text pills
@@ -33,10 +33,11 @@ Purpose:
 
 Main regions:
 
-- directory tree
-- current folder contents as wrapped thumbnail cards
-- toolbar
-- compact icon-first action strips for tree and folder scopes
+- one combined browser grid that shows direct child folders first and files after them
+- compact top bar with centered `Video Archive` brand and inline search
+- compact icon-first action strip for the current folder/source scope
+- current-folder block with a task picker for subtree actions
+- compact current-folder title row with inline `Up one level` and `Library root` navigation when the user is below root
 - locale switch
 - visual-mode switch
 
@@ -49,8 +50,8 @@ Directory actions:
 
 File actions:
 
-- open details from the card
-- open playback from the card
+- open playback from a single click on the card itself
+- open details from the compact info button on the card
 - convert
 - preview
 - tag
@@ -86,10 +87,15 @@ Actions:
 
 Possible content:
 
-- metadata summary
+- metadata summary without promoting full absolute paths into the main layout
 - preview collage
 - assigned tags with confidence
 - recent job history
+
+Playback handoff:
+
+- clicking the preview collage should reopen playback immediately
+- embedded playback should prioritize the video canvas and keep auxiliary controls reduced to close and compact info entrypoints
 
 ## 3. Jobs Modal
 

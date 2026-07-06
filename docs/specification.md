@@ -15,7 +15,7 @@ These workflows must remain separate job types and must not be implicitly couple
 ## 2. Product Goals
 
 - Connect to a remote directory using protocol-specific credentials.
-- Show the directory tree and navigate nested folders.
+- Show the current folder in a single browser view and navigate nested folders from there.
 - Convert videos in bulk using saved conversion profiles.
 - Replace original files after successful conversion.
 - Support a safe test mode that preserves the original source file.
@@ -36,7 +36,7 @@ These workflows must remain separate job types and must not be implicitly couple
 ### 4.1 Frontend
 
 - React web application
-- Directory tree and file browser
+- Unified folder-and-file browser
 - Job management screens
 - Settings screens
 - Preview settings page with live preview
