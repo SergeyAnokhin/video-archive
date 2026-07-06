@@ -73,6 +73,14 @@ Rules:
 - Do not add tests for trivial code.
 - A task is not complete while required tests are failing.
 
+### Manual / Visual Verification
+
+When a change needs to be checked by eye (running the app, browsing the library, checking previews, conversion, layout, etc.), use the local sample archive at `test-data/VideoArchive/` (see [README.md](README.md#local-test-data)) as the source instead of asking the user for one or inventing fixtures.
+
+- Point a `local` source at `test-data/VideoArchive` (or a subfolder) to get real, already-scanned-looking video files for free.
+- Never leave the sample files modified, renamed, or deleted after a verification pass — this directory is reused across sessions.
+- For anything destructive or in-place (conversion, replace-on-success workflows), use test mode / a copy so the original sample files are left untouched; do not run production-mode conversion against `test-data/VideoArchive`.
+
 ## 5. Project-Specific Guidance
 
 Prefer generic, reusable project structure and documentation unless the user asks for repository-specific conventions.

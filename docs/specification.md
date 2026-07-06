@@ -430,6 +430,7 @@ For any selected video, the UI should allow:
 ### 11.10 Visual Style and Theming
 
 - The visual language should stay compact and uncluttered: a slim top bar, small icon-only buttons for secondary/global actions (jobs, settings, theme, language), pill-shaped filters, and a card grid for browsing.
+- Every button must carry an icon from the shared icon set, except rare cases where no icon fits; and wherever an icon alone makes the action self-evident (delete, save, run, etc.), the label should be dropped in favor of an icon-only button — this should be the common case, not the exception. See [Design System §4.2](./design-system.md#42-icon-only-buttons-for-self-evident-actions) for the full rule.
 - This direction is inspired by reference screenshots of another application shared for this project; the reference is a density and restraint style guide, not a template to copy pixel-for-pixel. See [Design System](./design-system.md) for the detailed breakdown.
 - The application must support at least two theme presets:
   - **Strict** (default): the minimal, low-key dark style described above and in Section 11.1.
