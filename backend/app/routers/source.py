@@ -133,12 +133,14 @@ def put_source(body: SourceRequest):
         # Replacing the active source is destructive: the frontend warns
         # first, then the backend wipes all previous library metadata
         # (Specification §5.2, Data Model §1) -- files, directories, assigned
-        # tags, and job history. Global settings (conversion profiles, the
-        # tag vocabulary itself, preview/tagging/provider/playback/backup
-        # settings) are not source-specific and survive the switch; a backup
-        # taken beforehand can restore the wiped rows once reconnected to the
-        # same source (see `detected_backups` below).
+        # tags, cached similarity signatures, and job history. Global settings
+        # (conversion profiles, the tag vocabulary itself,
+        # preview/tagging/provider/playback/backup settings) are not
+        # source-specific and survive the switch; a backup taken beforehand
+        # can restore the wiped rows once reconnected to the same source
+        # (see `detected_backups` below).
         conn.execute(text("DELETE FROM file_tags"))
+        conn.execute(text("DELETE FROM file_similarity_signatures"))
         conn.execute(text("DELETE FROM app_events"))
         conn.execute(text("DELETE FROM job_items"))
         conn.execute(text("DELETE FROM jobs"))

@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from app import preview, preview_layouts, preview_settings
+from app import preview, preview_layouts, preview_settings, similarity
 from app.jobs import service
 from app.media import is_test_artifact, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -64,7 +64,20 @@ def _mark_folder_previewed(engine, directory_id: str) -> None:
         )
 
 
-def _generate_one_file(access: SourceAccess, file_row, layout: dict, aspect_ratio: float) -> str:
+def _try_store_similarity_signature(engine, job_id: str, file_id: str, video_path) -> None:
+    """Similarity detection is optional and secondary (Specification §13): a
+    failure here must never fail the preview job item it piggybacks on."""
+    try:
+        signature = similarity.compute_signature(video_path)
+        if signature is not None:
+            similarity.store_signature(engine, file_id, signature, job_id=job_id)
+    except Exception:  # noqa: BLE001 - best-effort only, see docstring
+        pass
+
+
+def _generate_one_file(
+    engine, job_id: str, access: SourceAccess, file_row, layout: dict, aspect_ratio: float
+) -> str:
     if not access.exists(file_row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
     with access.local_copy(file_row.relative_path) as video_path:
@@ -72,6 +85,7 @@ def _generate_one_file(access: SourceAccess, file_row, layout: dict, aspect_rati
         preview.generate_file_preview(video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio)
         dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
         access.commit_new_file(local_dest, dest_rel)
+        _try_store_similarity_signature(engine, job_id, file_row.id, video_path)
     return dest_rel
 
 
@@ -102,7 +116,7 @@ def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, layou
     item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
     service.start_job_item(engine, item_id)
     try:
-        output_ref = _generate_one_file(access, row, layout, aspect_ratio)
+        output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio)
         _mark_file_previewed(engine, row.id)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
@@ -165,7 +179,7 @@ def _run_directory_scope(
 
         service.start_job_item(engine, item_id)
         try:
-            output_ref = _generate_one_file(access, row, layout, aspect_ratio)
+            output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio)
             _mark_file_previewed(engine, row.id)
             service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
             service.log_event(

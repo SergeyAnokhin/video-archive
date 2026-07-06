@@ -1,6 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { File as FileIcon, Film, Folder, Images, Play, RefreshCw, Search, Tags, Wand2, X } from 'lucide-react'
+import {
+  Copy,
+  File as FileIcon,
+  Film,
+  Folder,
+  Images,
+  MoreVertical,
+  Play,
+  RefreshCw,
+  Search,
+  Tags,
+  Wand2,
+  X,
+} from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { useTags } from '../context/TagsContext'
@@ -8,6 +21,7 @@ import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { FileConvertModal } from './FileConvertModal'
 import { PlaybackModal } from './PlaybackModal'
 import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
+import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
 import type { DirectoryChildrenResponse, DirectoryEntry, FileEntry, Tag } from '../types/api'
 import './LibraryView.css'
@@ -37,9 +51,25 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
   const [tagDirOpen, setTagDirOpen] = useState(false)
   const [taggingFileId, setTaggingFileId] = useState<string | null>(null)
   const [playingFile, setPlayingFile] = useState<FileEntry | null>(null)
+  const [similarFile, setSimilarFile] = useState<FileEntry | null>(null)
   const [activeSearch, setActiveSearch] = useState<ActiveSearch | null>(null)
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
+  const [overflowOpen, setOverflowOpen] = useState(false)
+  const overflowRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!overflowOpen) {
+      return
+    }
+    function handleClickOutside(event: MouseEvent) {
+      if (overflowRef.current && !overflowRef.current.contains(event.target as Node)) {
+        setOverflowOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [overflowOpen])
 
   useEffect(() => {
     if (!activeSearch) {
@@ -108,6 +138,12 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
   }, [path, activeSearch])
 
   const segments = path ? path.split('/') : []
+
+  const directoryActions = [
+    { key: 'convert', label: t('library.convert'), icon: <Wand2 size={16} />, onClick: () => setConvertDirOpen(true) },
+    { key: 'preview', label: t('library.preview'), icon: <Images size={16} />, onClick: () => setPreviewDirOpen(true) },
+    { key: 'tag', label: t('library.tag'), icon: <Tags size={16} />, onClick: () => setTagDirOpen(true) },
+  ]
 
   async function handleRescan() {
     setRescanning(true)
@@ -187,35 +223,52 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
           <RefreshCw size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
         </button>
 
-        <button
-          type="button"
-          className="library-view__icon-btn"
-          aria-label={t('library.convert')}
-          title={t('library.convert')}
-          onClick={() => setConvertDirOpen(true)}
-        >
-          <Wand2 size={16} />
-        </button>
+        {/* Design System §5 (< 640px): secondary icon buttons collapse into an
+            overflow menu; the same actions render inline on tablet/desktop. */}
+        {directoryActions.map((action) => (
+          <button
+            key={action.key}
+            type="button"
+            className="library-view__icon-btn library-view__actions-inline"
+            aria-label={action.label}
+            title={action.label}
+            onClick={action.onClick}
+          >
+            {action.icon}
+          </button>
+        ))}
 
-        <button
-          type="button"
-          className="library-view__icon-btn"
-          aria-label={t('library.preview')}
-          title={t('library.preview')}
-          onClick={() => setPreviewDirOpen(true)}
-        >
-          <Images size={16} />
-        </button>
-
-        <button
-          type="button"
-          className="library-view__icon-btn"
-          aria-label={t('library.tag')}
-          title={t('library.tag')}
-          onClick={() => setTagDirOpen(true)}
-        >
-          <Tags size={16} />
-        </button>
+        <div className="library-view__overflow" ref={overflowRef}>
+          <button
+            type="button"
+            className="library-view__icon-btn library-view__overflow-trigger"
+            aria-label={t('library.moreActions')}
+            aria-haspopup="menu"
+            aria-expanded={overflowOpen}
+            onClick={() => setOverflowOpen((open) => !open)}
+          >
+            <MoreVertical size={16} />
+          </button>
+          {overflowOpen && (
+            <div className="library-view__overflow-menu" role="menu">
+              {directoryActions.map((action) => (
+                <button
+                  key={action.key}
+                  type="button"
+                  role="menuitem"
+                  className="library-view__overflow-item"
+                  onClick={() => {
+                    action.onClick()
+                    setOverflowOpen(false)
+                  }}
+                >
+                  {action.icon}
+                  <span>{action.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {activeSearch && (
@@ -251,6 +304,7 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
                   onPreview={() => void handlePreviewFile(file.id)}
                   onTag={() => void handleTagFile(file.id)}
                   onPlay={() => setPlayingFile(file)}
+                  onSimilar={() => setSimilarFile(file)}
                 />
               ))}
             </div>
@@ -286,6 +340,7 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
                   onPreview={() => void handlePreviewFile(file.id)}
                   onTag={() => void handleTagFile(file.id)}
                   onPlay={() => setPlayingFile(file)}
+                  onSimilar={() => setSimilarFile(file)}
                 />
               ))}
             </div>
@@ -326,6 +381,7 @@ export function LibraryView({ path, onNavigate }: LibraryViewProps) {
       )}
 
       {playingFile && <PlaybackModal file={playingFile} onClose={() => setPlayingFile(null)} />}
+      {similarFile && <SimilarFilesModal file={similarFile} onClose={() => setSimilarFile(null)} />}
     </div>
   )
 }
@@ -487,9 +543,20 @@ interface FileCardProps {
   onPreview: () => void
   onTag: () => void
   onPlay: () => void
+  onSimilar: () => void
 }
 
-function FileCard({ file, previewsVisible, previewing, tagging, onConvert, onPreview, onTag, onPlay }: FileCardProps) {
+function FileCard({
+  file,
+  previewsVisible,
+  previewing,
+  tagging,
+  onConvert,
+  onPreview,
+  onTag,
+  onPlay,
+  onSimilar,
+}: FileCardProps) {
   const { t } = useTranslation()
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
@@ -549,6 +616,15 @@ function FileCard({ file, previewsVisible, previewing, tagging, onConvert, onPre
             onClick={onConvert}
           >
             <Wand2 size={14} />
+          </button>
+          <button
+            type="button"
+            className="library-card__convert-btn"
+            aria-label={t('library.similar')}
+            title={t('library.similar')}
+            onClick={onSimilar}
+          >
+            <Copy size={14} />
           </button>
         </div>
       )}

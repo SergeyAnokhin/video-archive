@@ -287,6 +287,40 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Stage 9: the interface settings singleton (Settings §9, Design System
+    # §2) -- backend persistence for language + theme preset, closing the
+    # pre-Stage-9 known gap where language lived only in the browser's
+    # localStorage. Same singleton convention as preview/tagging/playback/
+    # backup_settings.
+    9: [
+        """
+        CREATE TABLE IF NOT EXISTS interface_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            language TEXT NOT NULL DEFAULT 'en',
+            theme_preset TEXT NOT NULL DEFAULT 'strict',
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
+    # Stage 9: cached near-duplicate signatures (Data Model §10, Specification
+    # §13) -- optional and secondary; a missing/failed signature never blocks
+    # preview or conversion. Populated best-effort by the `preview` job
+    # (Specification §13 "preferred first integration point").
+    10: [
+        """
+        CREATE TABLE IF NOT EXISTS file_similarity_signatures (
+            id TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL UNIQUE REFERENCES files(id),
+            sample_count INTEGER NOT NULL,
+            signature_type TEXT NOT NULL,
+            signature_payload TEXT NOT NULL,
+            generated_from_job_id TEXT REFERENCES jobs(id),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_file_similarity_file ON file_similarity_signatures (file_id)",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -369,6 +403,11 @@ def init_db() -> int:
             from app.backup_settings import seed_default_settings as seed_default_backup_settings
 
             seed_default_backup_settings(conn)
+
+        if current_version < 9 <= SCHEMA_VERSION:
+            from app.interface_settings import seed_default_settings as seed_default_interface_settings
+
+            seed_default_interface_settings(conn)
 
     return SCHEMA_VERSION
 

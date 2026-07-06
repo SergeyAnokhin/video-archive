@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import text
 
+from app import similarity
 from app.db import get_engine
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
@@ -206,6 +207,20 @@ def get_file_preview_image(file_id: str):
     # this endpoint simple instead of needing a streamed-download-then-serve
     # dance for an asset that's typically a few hundred KB.
     return Response(content=access.read_bytes(preview_rel), media_type="image/jpeg")
+
+
+@router.get("/files/{file_id}/similar")
+def get_similar_files(file_id: str):
+    """Approximate near-duplicate lookup (Specification §13): optional and
+    secondary, so an empty list (no signature yet, or nothing within the
+    distance threshold) is a normal, non-error response."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT source_id FROM files WHERE id = :id"), {"id": file_id}).fetchone()
+        if row is None:
+            raise _file_not_found_error(file_id)
+        results = similarity.find_similar(engine, row.source_id, file_id)
+    return {"similar": results}
 
 
 @router.get("/files/{file_id}/tags")

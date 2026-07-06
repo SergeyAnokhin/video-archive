@@ -7,17 +7,24 @@
     "showPreviews": "Show previews",
     "hidePreviews": "Hide previews",
     "settingsToggle": "Settings",
-    "jobsToggle": "Jobs"
+    "jobsToggle": "Jobs",
+    "switchToPlayful": "Switch to Playful theme",
+    "switchToStrict": "Switch to Strict theme"
   },
   "language": {
     "en": "English",
     "ru": "Russian"
+  },
+  "theme": {
+    "strict": "Strict",
+    "playful": "Playful"
   },
   "settings": {
     "title": "Settings",
     "close": "Close",
     "interfaceSection": "Interface",
     "language": "Language",
+    "theme": "Theme",
     "sourceSection": "Source",
     "sourceName": "Source name",
     "sourcePath": "Local folder path",
@@ -97,7 +104,13 @@
     "previewFile": "Generate preview",
     "tag": "Tag folder",
     "tagFile": "Tag file",
+    "moreActions": "More actions",
     "play": "Play",
+    "similar": "Similar videos",
+    "similarTitle": "Videos similar to \"{{name}}\"",
+    "similarEmpty": "No similar videos found yet.",
+    "similarClose": "Close",
+    "similarDistance": "{{distance}} bit difference",
     "searchPlaceholder": "Search tags or file names…",
     "searchClear": "Clear search",
     "searchResultsFor": "Search results for \"{{query}}\"",

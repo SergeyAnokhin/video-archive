@@ -1,6 +1,7 @@
-import { Eye, EyeOff, ListChecks, Loader2, Menu, Settings } from 'lucide-react'
+import { Eye, EyeOff, ListChecks, Loader2, Menu, Palette, Settings, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
+import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { useJobs } from '../context/JobsContext'
 import './TopBar.css'
 
@@ -13,7 +14,10 @@ interface TopBarProps {
 export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle }: TopBarProps) {
   const { t } = useTranslation()
   const { previewsVisible, toggle } = usePreviewVisibility()
+  const { theme, setTheme } = useInterfaceSettings()
   const { activeJob, activeJobItems } = useJobs()
+  const isPlayful = theme === 'playful'
+  const themeToggleLabel = t(isPlayful ? 'topBar.switchToStrict' : 'topBar.switchToPlayful')
 
   const previewToggleLabel = t(
     previewsVisible ? 'topBar.hidePreviews' : 'topBar.showPreviews',
@@ -75,6 +79,17 @@ export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle }: TopBarP
         onClick={toggle}
       >
         {previewsVisible ? <Eye size={20} /> : <EyeOff size={20} />}
+      </button>
+
+      <button
+        type="button"
+        className="top-bar__icon-btn"
+        aria-pressed={isPlayful}
+        aria-label={themeToggleLabel}
+        title={themeToggleLabel}
+        onClick={() => setTheme(isPlayful ? 'strict' : 'playful')}
+      >
+        {isPlayful ? <Sparkles size={20} /> : <Palette size={20} />}
       </button>
 
       <button

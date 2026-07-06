@@ -1,15 +1,13 @@
 import { useTranslation } from 'react-i18next'
-import type { SupportedLanguage } from '../i18n'
-import { persistLanguage, SUPPORTED_LANGUAGES } from '../i18n'
+import { SUPPORTED_LANGUAGES } from '../i18n'
+import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
+import type { ThemePreset } from '../types/api'
+
+const THEME_PRESETS: ThemePreset[] = ['strict', 'playful']
 
 export function InterfaceSection() {
-  const { t, i18n } = useTranslation()
-  const currentLanguage = (i18n.resolvedLanguage ?? 'en') as SupportedLanguage
-
-  function handleLanguageSelect(language: SupportedLanguage) {
-    void i18n.changeLanguage(language)
-    persistLanguage(language)
-  }
+  const { t } = useTranslation()
+  const { language, setLanguage, theme, setTheme } = useInterfaceSettings()
 
   return (
     <section className="settings-modal__section">
@@ -25,15 +23,37 @@ export function InterfaceSection() {
           role="group"
           aria-label={t('settings.language')}
         >
-          {SUPPORTED_LANGUAGES.map((language) => (
+          {SUPPORTED_LANGUAGES.map((option) => (
             <button
-              key={language}
+              key={option}
               type="button"
               className="settings-modal__option"
-              aria-pressed={currentLanguage === language}
-              onClick={() => handleLanguageSelect(language)}
+              aria-pressed={language === option}
+              onClick={() => setLanguage(option)}
             >
-              {t(`language.${language}`)}
+              {t(`language.${option}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="settings-modal__field">
+        <span className="settings-modal__field-label">
+          {t('settings.theme')}
+        </span>
+        <div
+          className="settings-modal__options"
+          role="group"
+          aria-label={t('settings.theme')}
+        >
+          {THEME_PRESETS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className="settings-modal__option"
+              aria-pressed={theme === option}
+              onClick={() => setTheme(option)}
+            >
+              {t(`theme.${option}`)}
             </button>
           ))}
         </div>

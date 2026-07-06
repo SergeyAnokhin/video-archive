@@ -128,6 +128,10 @@ Query parameters:
 
 Returns full file metadata and cached processing details.
 
+### `GET /api/files/{file_id}/similar`
+
+Returns approximate near-duplicate matches for one file (Specification §13, optional/secondary feature), ranked by perceptual-hash distance. Empty when the file has no stored signature yet (signatures are generated best-effort as a side effect of the `preview` job) or nothing else in the source is close enough.
+
 ## 4. Conversion Profiles
 
 ### `GET /api/conversion-profiles`
@@ -434,6 +438,14 @@ Exports settings package including provider configuration and API keys when expl
 ### `POST /api/settings/import`
 
 Imports a settings package.
+
+### `GET /api/interface-settings`
+
+Returns the interface settings singleton: `language` (`en | ru`) and `theme_preset` (`strict | playful`).
+
+### `PUT /api/interface-settings`
+
+Updates the interface settings singleton. Applied immediately on the frontend, without a page reload (Settings Specification §9).
 
 ## 14. Backups
 

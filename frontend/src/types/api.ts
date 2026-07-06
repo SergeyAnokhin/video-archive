@@ -272,3 +272,18 @@ export interface BackupSettings {
   retention_count: number
   updated_at: string
 }
+
+export type ThemePreset = 'strict' | 'playful'
+
+export interface InterfaceSettings {
+  language: 'en' | 'ru'
+  theme_preset: ThemePreset
+  updated_at: string
+}
+
+export interface SimilarFile {
+  file_id: string
+  relative_path: string
+  file_name: string
+  distance: number
+}

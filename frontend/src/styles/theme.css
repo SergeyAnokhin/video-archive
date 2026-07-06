@@ -1,6 +1,8 @@
 /*
- * Strict theme (default, dark). Playful is a later stage; when it lands it
- * will define its own variable set selected by `[data-theme="playful"]`.
+ * Strict theme (default, dark) and Playful (Stage 9, Design System §2.2):
+ * same layout/structure, only the variable set and a handful of
+ * playful-only decorative rules below differ. Switching `data-theme` is
+ * instantaneous -- no reload, no layout change (Design System §2.3).
  */
 :root,
 [data-theme='strict'] {
@@ -32,4 +34,81 @@
 
   --breakpoint-tablet: 640px;
   --breakpoint-desktop: 1024px;
+}
+
+/* Playful (Design System §2.2): warmer, more saturated accent on the same
+ * dark neutral structure -- a casino/entertainment-inspired variant
+ * (Specification §11.10), not a different layout. */
+[data-theme='playful'] {
+  --color-bg: #1a1220;
+  --color-surface: #251a2c;
+  --color-surface-raised: #2f2137;
+  --color-border: #45324f;
+  --color-text: #f3e9f7;
+  --color-text-muted: #b39cc0;
+  --color-accent: #ff8a3d;
+  --color-accent-contrast: #1a1220;
+  --color-success: #3ddc97;
+  --color-danger: #ff5470;
+  --color-warning: #ffc93d;
+
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}
+
+/* Playful decorative animations (Design System §3): short (100-250ms),
+ * transform/opacity only, never gating input, off by default in Strict.
+ * `prefers-reduced-motion` disables the motion but keeps the static glow. */
+[data-theme='playful'] button,
+[data-theme='playful'] [role='button'] {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='playful'] button:hover,
+  [data-theme='playful'] [role='button']:hover {
+    transform: translateY(-1px);
+  }
+
+  [data-theme='playful'] button:active,
+  [data-theme='playful'] [role='button']:active {
+    transform: translateY(0);
+  }
+}
+
+/* Primary-action buttons across the app share the `*--primary` BEM suffix
+ * (e.g. `convert-dialog__button--primary`); a suffix selector applies the
+ * glow/pulse everywhere without touching each component's own CSS. */
+[data-theme='playful'] [class$='--primary'] {
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 12px 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='playful'] [class$='--primary']:hover {
+    animation: playful-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes playful-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--color-accent), 0 0 10px 0 color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 1px var(--color-accent), 0 0 18px 3px color-mix(in srgb, var(--color-accent) 65%, transparent);
+  }
 }

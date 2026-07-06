@@ -7,17 +7,24 @@
     "showPreviews": "Показать превью",
     "hidePreviews": "Скрыть превью",
     "settingsToggle": "Настройки",
-    "jobsToggle": "Задания"
+    "jobsToggle": "Задания",
+    "switchToPlayful": "Переключить на тему «Игривая»",
+    "switchToStrict": "Переключить на тему «Строгая»"
   },
   "language": {
     "en": "Английский",
     "ru": "Русский"
+  },
+  "theme": {
+    "strict": "Строгая",
+    "playful": "Игривая"
   },
   "settings": {
     "title": "Настройки",
     "close": "Закрыть",
     "interfaceSection": "Интерфейс",
     "language": "Язык",
+    "theme": "Тема",
     "sourceSection": "Источник",
     "sourceName": "Название источника",
     "sourcePath": "Путь к локальной папке",
@@ -97,7 +104,13 @@
     "previewFile": "Создать превью",
     "tag": "Тегировать папку",
     "tagFile": "Тегировать файл",
+    "moreActions": "Другие действия",
     "play": "Воспроизвести",
+    "similar": "Похожие видео",
+    "similarTitle": "Видео, похожие на «{{name}}»",
+    "similarEmpty": "Похожие видео пока не найдены.",
+    "similarClose": "Закрыть",
+    "similarDistance": "различие {{distance}} бит",
     "searchPlaceholder": "Поиск по тегам или именам файлов…",
     "searchClear": "Очистить поиск",
     "searchResultsFor": "Результаты поиска: «{{query}}»",

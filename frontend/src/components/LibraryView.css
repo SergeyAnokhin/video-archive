@@ -66,6 +66,69 @@
   cursor: pointer;
 }
 
+/* Design System §5: touch targets must be at least 40x40 logical pixels on
+ * mobile widths -- the compact breadcrumb buttons above are fine for a
+ * mouse pointer but too small to reliably tap. */
+@media (max-width: 639px) {
+  .library-view__breadcrumb button {
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-2);
+  }
+}
+
+.library-view__overflow {
+  position: relative;
+  display: none;
+}
+
+.library-view__overflow-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: var(--space-1) 0;
+}
+
+.library-view__overflow-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: none;
+  color: var(--color-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.library-view__overflow-item:hover {
+  background: var(--color-surface);
+}
+
+/* Design System §5 (< 640px): secondary icon buttons (convert/preview/tag
+ * folder actions) collapse into this overflow menu instead of the inline
+ * row, which would otherwise crowd the toolbar next to the search box. */
+@media (max-width: 639px) {
+  .library-view__actions-inline {
+    display: none;
+  }
+
+  .library-view__overflow {
+    display: block;
+  }
+}
+
 .library-view__breadcrumb button:hover,
 .library-view__breadcrumb button:last-of-type {
   color: var(--color-text);
@@ -244,10 +307,9 @@
 }
 
 .library-card__file-actions {
-  position: absolute;
-  bottom: var(--space-2);
-  right: var(--space-2);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-1);
 }
 

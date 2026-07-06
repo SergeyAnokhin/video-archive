@@ -75,3 +75,18 @@
   display: flex;
   flex-direction: column;
 }
+
+/* Design System §5: touch targets must be at least 40x40 logical pixels on
+ * mobile widths -- the 20px toggle and 32px-tall row below are fine for a
+ * mouse pointer but too small to reliably tap. */
+@media (max-width: 639px) {
+  .directory-tree__toggle,
+  .directory-tree__toggle-spacer {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+  }
+
+  .directory-tree__label {
+    min-height: var(--touch-target-min);
+  }
+}

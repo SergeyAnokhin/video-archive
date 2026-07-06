@@ -96,7 +96,10 @@ def run_tag_job(engine, job: dict) -> tuple[str, str]:
 
     if job["scope_type"] == "file":
         return _run_file_scope(engine, job, access, params, vocabulary, settings, provider_name, model_name)
-    return _run_directory_scope(engine, job, access, params, vocabulary, settings, provider_name, model_name)
+    batch_enabled = bool(provider_config and provider_config.get("batch_enabled"))
+    return _run_directory_scope(
+        engine, job, access, params, vocabulary, settings, provider_name, model_name, batch_enabled
+    )
 
 
 def _run_file_scope(
@@ -124,9 +127,32 @@ def _run_file_scope(
         return "failed", str(exc)
 
 
+def _process_pending_file(
+    engine, job: dict, access: SourceAccess, row, item_id: str, vocabulary: list[dict], settings: dict,
+    provider_name: str, model_name: str | None,
+) -> bool:
+    """Runs the synchronous per-file tagging path for one already-created job
+    item. Returns whether it succeeded, so callers can update their own
+    processed/failed counters."""
+    service.start_job_item(engine, item_id)
+    try:
+        message = _tag_one_file(engine, access, row, vocabulary, settings, provider_name, model_name)
+        service.complete_job_item(engine, item_id, output_ref=None, message=message)
+        service.log_event(
+            engine, job["id"], row.id, "info", "job_item_completed", f"Tagged {row.relative_path}: {message}"
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
+        service.fail_job_item(engine, item_id, message=str(exc))
+        service.log_event(
+            engine, job["id"], row.id, "error", "job_item_failed", f"Failed to tag {row.relative_path}: {exc}"
+        )
+        return False
+
+
 def _run_directory_scope(
     engine, job: dict, access: SourceAccess, params: dict, vocabulary: list[dict], settings: dict,
-    provider_name: str, model_name: str | None,
+    provider_name: str, model_name: str | None, batch_enabled: bool = False,
 ) -> tuple[str, str]:
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
@@ -154,33 +180,78 @@ def _run_directory_scope(
     total = len(candidates)
     cancelled = False
 
-    for row in candidates:
-        if service.is_cancel_requested(job["id"]):
-            cancelled = True
-            break
+    # Batch tagging (Specification §12.3, Stage 9) needs the whole pending
+    # set up front (one provider request for many files), unlike the
+    # lazy create-then-process loop below. To keep that ordinary path
+    # byte-for-byte unchanged when batch isn't in play (the common case --
+    # batch_enabled defaults off, and only two of four providers support
+    # it), the eager pass only runs when batch is actually applicable;
+    # `remaining` stays `None` otherwise and the original loop handles
+    # everything, including item creation.
+    remaining: list[tuple] | None = None
+    if batch_enabled and registry.provider_supports_batch(provider_name):
+        pending: list[tuple] = []
+        for row in candidates:
+            if service.is_cancel_requested(job["id"]):
+                cancelled = True
+                break
 
-        item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="tag_file")
+            item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="tag_file")
 
-        if skip_processed and row.tagged_at:
-            service.skip_job_item(engine, item_id, "Already tagged; skipped.")
-            service.log_event(
-                engine, job["id"], row.id, "debug", "job_item_skipped", f"Skipped {row.relative_path} (already tagged)."
+            if skip_processed and row.tagged_at:
+                service.skip_job_item(engine, item_id, "Already tagged; skipped.")
+                service.log_event(
+                    engine, job["id"], row.id, "debug", "job_item_skipped",
+                    f"Skipped {row.relative_path} (already tagged).",
+                )
+                skipped += 1
+                continue
+
+            pending.append((row, item_id))
+
+        if not cancelled and pending:
+            # Any file the batch pass couldn't resolve (submission failure, a
+            # cancel request mid-prep, or a missing/unparseable per-file
+            # result) falls through to the ordinary per-file loop below, so a
+            # wrong assumption about the batch API never loses a file's tags
+            # -- it just costs what a non-batch run would have cost anyway.
+            batch_processed, pending = _run_batch(
+                engine, job, access, pending, vocabulary, settings, provider_name, model_name
             )
-            skipped += 1
-            continue
+            processed += batch_processed
 
-        service.start_job_item(engine, item_id)
-        try:
-            message = _tag_one_file(engine, access, row, vocabulary, settings, provider_name, model_name)
-            service.complete_job_item(engine, item_id, output_ref=None, message=message)
-            service.log_event(engine, job["id"], row.id, "info", "job_item_completed", f"Tagged {row.relative_path}: {message}")
-            processed += 1
-        except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
-            failed += 1
-            service.fail_job_item(engine, item_id, message=str(exc))
-            service.log_event(
-                engine, job["id"], row.id, "error", "job_item_failed", f"Failed to tag {row.relative_path}: {exc}"
-            )
+        remaining = pending
+
+    if remaining is not None:
+        for row, item_id in remaining:
+            if service.is_cancel_requested(job["id"]):
+                cancelled = True
+                break
+            if _process_pending_file(engine, job, access, row, item_id, vocabulary, settings, provider_name, model_name):
+                processed += 1
+            else:
+                failed += 1
+    else:
+        for row in candidates:
+            if service.is_cancel_requested(job["id"]):
+                cancelled = True
+                break
+
+            item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="tag_file")
+
+            if skip_processed and row.tagged_at:
+                service.skip_job_item(engine, item_id, "Already tagged; skipped.")
+                service.log_event(
+                    engine, job["id"], row.id, "debug", "job_item_skipped",
+                    f"Skipped {row.relative_path} (already tagged).",
+                )
+                skipped += 1
+                continue
+
+            if _process_pending_file(engine, job, access, row, item_id, vocabulary, settings, provider_name, model_name):
+                processed += 1
+            else:
+                failed += 1
 
     if cancelled:
         message = f"Cancelled after {processed} of {total} file(s)."
@@ -195,3 +266,83 @@ def _run_directory_scope(
 
     status = "failed" if failed and processed == 0 and total > 0 else "completed"
     return status, summary
+
+
+def _run_batch(
+    engine, job: dict, access: SourceAccess, pending: list[tuple], vocabulary: list[dict], settings: dict,
+    provider_name: str, model_name: str | None,
+) -> tuple[int, list[tuple]]:
+    """Attempts to score every `(row, item_id)` in `pending` via one provider
+    batch request. Returns `(processed_count, fallback_pending)`: files the
+    batch pass didn't resolve are returned untouched (item still `queued`) so
+    the caller's ordinary per-file loop picks them up next."""
+    display_names = [tag["display_name"] for tag in vocabulary]
+    items: list[tuple[str, list[bytes]]] = []
+    keyed_rows: dict[str, tuple] = {}
+    # Rows not (yet) turned into a batch `items` entry -- unprepped because of
+    # a cancel request or a per-file prep failure -- always end up back here,
+    # so the caller's per-file loop (which itself checks cancellation first)
+    # is the single place that ever "loses track" of a pending row.
+    unresolved: list[tuple] = []
+
+    for row, item_id in pending:
+        if service.is_cancel_requested(job["id"]):
+            unresolved.append((row, item_id))
+            continue
+
+        service.start_job_item(engine, item_id)
+        try:
+            if not access.exists(row.relative_path):
+                raise RuntimeError("Source file no longer exists on the source.")
+            with access.local_copy(row.relative_path) as video_path:
+                images = tagging.build_tagging_images(
+                    video_path, settings["sample_frame_count"], settings["combine_into_collage"]
+                )
+            items.append((row.id, images))
+            keyed_rows[row.id] = (row, item_id)
+        except Exception as exc:  # noqa: BLE001 - this file just falls back to the per-file loop
+            service.log_event(
+                engine, job["id"], row.id, "warning", "job_item_batch_prep_failed",
+                f"Could not prepare {row.relative_path} for batch tagging, will retry per-file: {exc}",
+            )
+            unresolved.append((row, item_id))
+
+    if not items:
+        return 0, unresolved
+
+    try:
+        service.log_event(
+            engine, job["id"], None, "info", "batch_submitted",
+            f"Submitting {len(items)} file(s) to {provider_name} for batch tagging.",
+        )
+        results = registry.score_tags_batch_with_provider(engine, provider_name, items, display_names)
+    except Exception as exc:  # noqa: BLE001 - batch failure falls back to the per-file loop for every file
+        service.log_event(
+            engine, job["id"], None, "warning", "batch_failed",
+            f"Batch submission to {provider_name} failed, falling back to per-file tagging: {exc}",
+        )
+        return 0, unresolved + [keyed_rows[key] for key, _images in items]
+
+    processed = 0
+    fallback_pending: list[tuple] = list(unresolved)
+    for key, _images in items:
+        row, item_id = keyed_rows[key]
+        scores = results.get(key)
+        if scores is None:
+            fallback_pending.append((row, item_id))
+            continue
+        try:
+            ranked = sorted(zip(vocabulary, scores), key=lambda pair: pair[1], reverse=True)
+            top = ranked[: settings["top_tag_count"]]
+            scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
+            _assign_tags(engine, row.id, scored_tags, provider_name, model_name)
+            message = f"{len(scored_tags)} tag(s) assigned (batch)"
+            service.complete_job_item(engine, item_id, output_ref=None, message=message)
+            service.log_event(
+                engine, job["id"], row.id, "info", "job_item_completed", f"Tagged {row.relative_path}: {message}"
+            )
+            processed += 1
+        except Exception:  # noqa: BLE001 - fall back to a per-file attempt for this one file
+            fallback_pending.append((row, item_id))
+
+    return processed, fallback_pending

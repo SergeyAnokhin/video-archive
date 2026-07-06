@@ -49,6 +49,7 @@ def run_cleanup_job(engine, job: dict) -> tuple[str, str]:
             continue
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM file_tags WHERE file_id = :id"), {"id": row.id})
+            conn.execute(text("DELETE FROM file_similarity_signatures WHERE file_id = :id"), {"id": row.id})
             conn.execute(text("DELETE FROM files WHERE id = :id"), {"id": row.id})
         service.log_event(
             engine, job["id"], None, "info", "job_item_completed",

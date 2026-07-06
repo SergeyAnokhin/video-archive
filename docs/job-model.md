@@ -59,6 +59,10 @@ Deliberately simple for V1:
 
 The UI reflects activity through the top-bar indicator: visible whenever a job is queued or running, tooltip shows the current job and item, click opens the jobs modal.
 
+### Job Items Are Not a Separate State Machine
+
+Unlike jobs, `job_items` rows (`app/jobs/service.py`) have no enforced transition graph — `start_job_item()`/`complete_job_item()`/`fail_job_item()`/`skip_job_item()` are plain status writes, safe to call more than once for the same item (e.g. `start_job_item()` again after a first attempt is superseded). Handlers that need a multi-phase per-item flow (create item up front, attempt one strategy, fall back to another) can rely on this — see the `tag` job's batch-tagging path (`app/jobs/tag.py`) for an example: an item may be marked `running` once during batch preparation and again during the per-file fallback for the same item id.
+
 ## Skip-Processed Rule
 
 Bulk jobs skip already-processed files by default; the toggle is per job:
