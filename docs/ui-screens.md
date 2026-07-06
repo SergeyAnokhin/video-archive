@@ -10,6 +10,11 @@ This document defines the main screens, modals, and interaction surfaces for Vid
 - Prioritize browsing and quick actions over advanced tuning controls
 - Move rare or advanced controls into settings, modals, or secondary panels
 - Show warning or incomplete indicators, but hide success-only indicators
+- Design mobile-first from the start, with vertical screens treated as a first-class layout target
+- Keep one responsive UI that can later carry into a mobile app shell
+- Use `lucide-react` icons in buttons by default; text-only buttons should be exceptions, not the rule
+- For obvious actions, prefer icon-only buttons with accessible labels rather than repeating short text everywhere
+- Keep the main library visually compact and low-clutter, with stronger or more playful visual modes as a skin rather than a layout fork
 
 ## 1. Main Library Screen
 
@@ -26,6 +31,8 @@ Main regions:
 - current folder contents
 - toolbar
 - optional preview visibility toggle
+- locale switch
+- visual-mode switch
 
 Directory actions:
 
@@ -120,6 +127,7 @@ Controls:
 - large tile count
 - layout preset picker
 - timeline flow mode
+- aspect ratio preset picker
 - identity diversity toggle
 - fill / clear layout actions
 - save preset
@@ -192,12 +200,14 @@ Fields:
 - root path
 - username
 - password
+- backend-local favorite folders for quick test setup
 
 Actions:
 
 - test connection
 - save source
 - reconnect
+- jump to repo-local test archive when available
 
 ## 10. Provider Settings Screen
 

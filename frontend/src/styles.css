@@ -1,6 +1,6 @@
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", "Inter", sans-serif;
+  font-family: "Segoe UI Variable", "Bahnschrift", "Segoe UI", sans-serif;
   --bg-base: #07111f;
   --bg-panel: rgba(11, 20, 35, 0.88);
   --bg-panel-strong: rgba(14, 25, 44, 0.96);
@@ -15,11 +15,48 @@
   --success: #7ce0b0;
   --warning: #f2c879;
   --danger: #ff8f8f;
+  --surface-shadow: 0 24px 48px rgba(0, 0, 0, 0.26);
+  --app-width: 1440px;
   background:
     radial-gradient(circle at top left, rgba(42, 95, 182, 0.28), transparent 34%),
     radial-gradient(circle at right 20%, rgba(34, 176, 163, 0.14), transparent 28%),
     linear-gradient(180deg, #0d1628 0%, #04070f 100%);
   color: var(--text-main);
+}
+
+:root[data-visual-mode="playful"] {
+  --bg-base: #0f1523;
+  --bg-panel: rgba(19, 24, 37, 0.9);
+  --bg-panel-strong: rgba(25, 31, 48, 0.96);
+  --accent: #69d3bf;
+  --accent-strong: #3db69f;
+  --surface-shadow: 0 26px 56px rgba(7, 14, 27, 0.34);
+  background:
+    radial-gradient(circle at top left, rgba(57, 192, 160, 0.18), transparent 34%),
+    radial-gradient(circle at right 12%, rgba(244, 208, 117, 0.12), transparent 30%),
+    linear-gradient(180deg, #121826 0%, #06080f 100%);
+}
+
+:root[data-visual-mode="casino"] {
+  --bg-base: #140d10;
+  --bg-panel: rgba(26, 17, 22, 0.92);
+  --bg-panel-strong: rgba(31, 20, 26, 0.97);
+  --bg-muted: rgba(255, 183, 77, 0.09);
+  --border-soft: rgba(255, 210, 124, 0.18);
+  --border-strong: rgba(255, 221, 158, 0.28);
+  --text-main: #fff3df;
+  --text-muted: #d6b995;
+  --text-soft: #f2debf;
+  --accent: #ffb34d;
+  --accent-strong: #ff8751;
+  --success: #9cf0be;
+  --warning: #ffd26a;
+  --danger: #ff8d8d;
+  --surface-shadow: 0 28px 60px rgba(0, 0, 0, 0.4);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 145, 77, 0.2), transparent 30%),
+    radial-gradient(circle at 82% 14%, rgba(255, 225, 102, 0.12), transparent 28%),
+    linear-gradient(180deg, #241318 0%, #090709 100%);
 }
 
 * {
@@ -57,7 +94,7 @@ textarea:disabled {
 }
 
 .app-shell {
-  width: min(1440px, calc(100% - 40px));
+  width: min(var(--app-width), calc(100% - 40px));
   margin: 0 auto;
   padding: 28px 0 32px;
 }
@@ -66,7 +103,7 @@ textarea:disabled {
   border: 1px solid var(--border-soft);
   border-radius: 24px;
   background: var(--bg-panel);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.26);
+  box-shadow: var(--surface-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -187,6 +224,7 @@ textarea:disabled {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+  align-items: center;
 }
 
 .primary-button,
@@ -220,6 +258,11 @@ textarea:disabled {
   padding: 11px 16px;
 }
 
+:root[data-visual-mode="casino"] .primary-button {
+  background: linear-gradient(180deg, rgba(255, 181, 78, 0.98), rgba(255, 116, 86, 0.94));
+  border-color: rgba(255, 217, 140, 0.44);
+}
+
 .ghost-button {
   padding: 11px 16px;
   background: rgba(255, 255, 255, 0.02);
@@ -229,6 +272,26 @@ textarea:disabled {
   padding: 9px 12px;
   background: rgba(255, 255, 255, 0.02);
   font-size: 0.92rem;
+}
+
+.icon-button,
+.icon-only-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.icon-only-button {
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.icon-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 .workspace {
@@ -768,6 +831,13 @@ textarea:disabled {
   gap: 12px;
 }
 
+.favorite-directory-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .local-directory-browser,
 .local-directory-list {
   display: grid;
@@ -876,12 +946,28 @@ textarea:disabled {
     padding-top: 20px;
   }
 
+  .panel {
+    border-radius: 20px;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
   }
 
   .form-grid .full-width {
     grid-column: auto;
+  }
+
+  .modal-shell {
+    padding: 18px;
+  }
+
+  .icon-button span {
+    display: none;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -931,5 +1017,16 @@ textarea:disabled {
 
   .meta-list dd {
     text-align: left;
+  }
+
+  .overlay-backdrop {
+    padding: 10px;
+    align-items: stretch;
+  }
+
+  .overlay {
+    width: 100%;
+    max-height: 100%;
+    overflow: auto;
   }
 }

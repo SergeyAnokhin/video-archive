@@ -1,3 +1,5 @@
+import { Play, Save, X } from "lucide-react";
+
 export default function TuneModal({
   isOpen,
   selectedFile,
@@ -11,7 +13,8 @@ export default function TuneModal({
   onUpdateTuneCodec,
   onRunTune,
   onPromoteVariant,
-  formatDate
+  formatDate,
+  t
 }) {
   if (!isOpen) {
     return null;
@@ -22,31 +25,29 @@ export default function TuneModal({
       <section className="overlay panel modal-shell tuning-shell" onClick={(event) => event.stopPropagation()}>
         <div className="panel-header">
           <div>
-            <p className="section-kicker">Tuning workflow</p>
-            <h2>{selectedFile?.file_name ?? "Selected file"}</h2>
+            <p className="section-kicker">{t("tune.kicker")}</p>
+            <h2>{selectedFile?.file_name ?? t("details.titleFallback")}</h2>
           </div>
-          <button type="button" className="ghost-button" onClick={onClose}>
-            Back to details
+          <button type="button" className="ghost-button icon-button" onClick={onClose}>
+            <X size={16} />
+            <span>{t("tune.back")}</span>
           </button>
         </div>
 
         <div className="tuning-grid">
           <div className="tuning-config">
-            <p>
-              Tuning always creates separate outputs. It never replaces the source file and is
-              limited to one video at a time.
-            </p>
+            <p>{t("tune.intro")}</p>
             <div className="form-grid">
               <label className="full-width">
-                <span>Dimension sweep</span>
+                <span>{t("tune.dimensions")}</span>
                 <input value={tuneDraft.dimensionsText} onChange={(event) => onUpdateTuneDraft("dimensionsText", event.target.value)} placeholder="1000, 900, 800" />
               </label>
               <label className="full-width">
-                <span>Quality sweep</span>
+                <span>{t("tune.qualities")}</span>
                 <input value={tuneDraft.qualitiesText} onChange={(event) => onUpdateTuneDraft("qualitiesText", event.target.value)} placeholder="20, 24, 28" />
               </label>
               <label className="full-width">
-                <span>Codec sweep</span>
+                <span>{t("tune.codecs")}</span>
                 <div className="checkbox-grid">
                   <label className="toggle-chip">
                     <input type="checkbox" checked={tuneDraft.codecs.h264} onChange={(event) => onUpdateTuneCodec("h264", event.target.checked)} />
@@ -63,13 +64,14 @@ export default function TuneModal({
                 </div>
               </label>
               <label className="toggle-row">
-                <span>Drop audio</span>
+                <span>{t("tune.dropAudio")}</span>
                 <input type="checkbox" checked={tuneDraft.dropAudio} onChange={(event) => onUpdateTuneDraft("dropAudio", event.target.checked)} />
               </label>
             </div>
             <div className="inline-actions">
-              <button type="button" className="primary-button" disabled={isWorking} onClick={onRunTune}>
-                Start tuning run
+              <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={onRunTune}>
+                <Play size={16} />
+                <span>{t("tune.run")}</span>
               </button>
             </div>
           </div>
@@ -77,8 +79,8 @@ export default function TuneModal({
           <div className="tuning-results">
             <div className="panel-header compact-header">
               <div>
-                <strong>Generated outputs</strong>
-                <p className="muted">{tuningJob?.summary_message ?? "No tuning run started yet."}</p>
+                <strong>{t("tune.outputs")}</strong>
+                <p className="muted">{tuningJob?.summary_message ?? t("tune.noRun")}</p>
               </div>
             </div>
             {tuningVariants.length ? (
@@ -93,11 +95,12 @@ export default function TuneModal({
                       <span className={`state-pill state-${item.status}`}>{item.status}</span>
                       <button
                         type="button"
-                        className="mini-button"
+                        className="mini-button icon-button"
                         disabled={item.status !== "completed" || !variant}
                         onClick={() => onPromoteVariant(variant)}
                       >
-                        Save as profile
+                        <Save size={16} />
+                        <span>{t("tune.saveProfile")}</span>
                       </button>
                     </div>
                   </article>
@@ -105,17 +108,17 @@ export default function TuneModal({
               </div>
             ) : (
               <div className="empty-state compact">
-                <h3>No tuning outputs yet</h3>
-                <p>Run a sweep to compare separate dimension, quality, and codec outputs.</p>
+                <h3>{t("tune.noOutputsTitle")}</h3>
+                <p>{t("tune.noOutputsBody")}</p>
               </div>
             )}
 
             <div className="job-events-block">
-              <h4>Run events</h4>
+              <h4>{t("tune.events")}</h4>
               <pre className="log-console details-log-console">
                 {tuningEvents.length
                   ? tuningEvents.map((event) => `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.message}`).join("\n")
-                  : "No tuning events yet."}
+                  : t("tune.noEvents")}
               </pre>
             </div>
           </div>

@@ -1,3 +1,5 @@
+import { Settings2 } from "lucide-react";
+
 export default function LibraryPreviewPanel({
   libraryPreview,
   selectedDirectory,
@@ -8,17 +10,19 @@ export default function LibraryPreviewPanel({
   onOpenPreviewSettings,
   formatDirectoryLabel,
   formatConfidence,
-  formatDate
+  formatDate,
+  t
 }) {
   return (
     <aside className="panel preview-panel">
       <div className="panel-header">
         <div>
-          <p className="section-kicker">Preview</p>
-          <h2>{libraryPreview?.scope === "directory" ? "Directory collage" : "Selected asset"}</h2>
+          <p className="section-kicker">{t("previewPanel.kicker")}</p>
+          <h2>{libraryPreview?.scope === "directory" ? t("previewPanel.directoryTitle") : t("previewPanel.fileTitle")}</h2>
         </div>
-        <button type="button" className="mini-button" onClick={onOpenPreviewSettings}>
-          Preview settings
+        <button type="button" className="mini-button icon-button" onClick={onOpenPreviewSettings}>
+          <Settings2 size={16} />
+          <span>{t("previewPanel.settings")}</span>
         </button>
       </div>
 
@@ -27,7 +31,7 @@ export default function LibraryPreviewPanel({
           {libraryPreview?.image_data_url ? (
             <img className="preview-image" src={libraryPreview.image_data_url} alt="Generated preview collage" />
           ) : (
-            <span>No preview asset yet. Run a file or subtree preview job.</span>
+            <span>{t("previewPanel.empty")}</span>
           )}
         </div>
         <div className="preview-meta">
@@ -38,41 +42,49 @@ export default function LibraryPreviewPanel({
           </strong>
           <p>
             {libraryPreview?.metadata
-              ? `${libraryPreview.metadata.sample_count} sampled frames with ${libraryPreview.metadata.large_tile_count} large tiles in ${libraryPreview.metadata.timeline_flow} flow.`
-              : "Preview generation is on-demand and remains separate from conversion and tagging."}
+              ? t("previewPanel.summary", {
+                  sampleCount: libraryPreview.metadata.sample_count,
+                  largeTileCount: libraryPreview.metadata.large_tile_count,
+                  timelineFlow: libraryPreview.metadata.timeline_flow
+                })
+              : t("previewPanel.fallbackSummary")}
           </p>
         </div>
       </div>
 
       <dl className="meta-list">
         <div>
-          <dt>Selected folder</dt>
+          <dt>{t("previewPanel.selectedFolder")}</dt>
           <dd>{formatDirectoryLabel(selectedDirectory)}</dd>
         </div>
         <div>
-          <dt>Visible files</dt>
+          <dt>{t("previewPanel.visibleFiles")}</dt>
           <dd>{files.length}</dd>
         </div>
         <div>
-          <dt>Selected file</dt>
+          <dt>{t("previewPanel.selectedFile")}</dt>
           <dd>{selectedFile?.file_name ?? "-"}</dd>
         </div>
         <div>
-          <dt>Assigned tags</dt>
+          <dt>{t("previewPanel.assignedTags")}</dt>
           <dd>{selectedFileTags?.tags?.length ?? 0}</dd>
         </div>
         <div>
-          <dt>Sample count</dt>
+          <dt>{t("previewPanel.sampleCount")}</dt>
           <dd>{libraryPreview?.metadata?.sample_count ?? "-"}</dd>
         </div>
         <div>
-          <dt>Playback mode</dt>
+          <dt>{t("previewPanel.playbackMode")}</dt>
           <dd>{playbackSettings.mode}</dd>
+        </div>
+        <div>
+          <dt>{t("previewPanel.aspectRatio")}</dt>
+          <dd>{libraryPreview?.metadata?.aspect_ratio_preset ?? "-"}</dd>
         </div>
       </dl>
 
       <div className="note-card">
-        <strong>Closed-vocabulary tags</strong>
+        <strong>{t("previewPanel.closedVocabulary")}</strong>
         {selectedFileTags?.tags?.length ? (
           <>
             <div className="tag-pill-list">
@@ -88,7 +100,7 @@ export default function LibraryPreviewPanel({
             </p>
           </>
         ) : (
-          <p>No tags stored for the selected video yet. Run a file or subtree tagging job.</p>
+          <p>{t("previewPanel.noTags")}</p>
         )}
       </div>
     </aside>

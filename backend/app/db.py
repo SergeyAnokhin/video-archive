@@ -318,7 +318,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
                 created_at, updated_at
             ) VALUES (
                 'default-preview-grid', 'Balanced Grid', 'row', 9, 2,
-                1, '{"kind":"auto-grid","version":1}', 1,
+                1, '{"kind":"auto-grid","version":1,"aspect_ratio_preset":"video"}', 1,
                 datetime('now'), datetime('now')
             )
             """,
@@ -326,7 +326,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             INSERT OR IGNORE INTO app_settings (section, payload, created_at, updated_at)
             VALUES (
                 'preview',
-                '{"sample_count":9,"large_tile_count":2,"timeline_flow":"row","identity_diversity_enabled":true,"layout_preset_id":"default-preview-grid"}',
+                '{"sample_count":9,"large_tile_count":2,"timeline_flow":"row","identity_diversity_enabled":true,"aspect_ratio_preset":"video","layout_preset_id":"default-preview-grid"}',
                 datetime('now'),
                 datetime('now')
             )

@@ -26,11 +26,13 @@ Fields:
 - remote path
 - username
 - password or secret reference
+- backend-local test-folder favorites for local mode
 
 Rules:
 
 - Only one active source at a time.
 - Secrets should be stored outside the main metadata database when possible.
+- Local mode should support repo-local test archives that sit beside the backend checkout when they exist, such as `test-data/VideoArchive`.
 
 ## 2. Conversion Profile Settings
 
@@ -61,6 +63,7 @@ Preview settings should include:
 - large tile count
 - layout preset
 - timeline flow mode
+- aspect ratio preset
 - identity diversity toggle
 - live preview
 
@@ -75,6 +78,14 @@ Preview settings should also support:
 - load preset
 - fill layout
 - clear layout
+
+Recommended built-in aspect presets:
+
+- square `1:1`
+- classic video `16:9`
+- portrait `4:5`
+- Samsung S24 portrait `9:19.5`
+- ultrawide `21:9`
 
 ## 4. Playback Settings
 

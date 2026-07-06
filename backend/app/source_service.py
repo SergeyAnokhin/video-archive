@@ -190,6 +190,7 @@ class SourceService:
                 "path": "",
                 "parent_path": None,
                 "directories": [{"name": drive, "path": drive} for drive in _list_windows_drives()],
+                "favorites": self._build_local_directory_favorites(),
             }
 
         candidate = Path(normalized).expanduser()
@@ -207,7 +208,45 @@ class SourceService:
             "path": str(resolved),
             "parent_path": _parent_directory_path(resolved),
             "directories": [{"name": entry.name, "path": str(entry.resolve())} for entry in directories],
+            "favorites": self._build_local_directory_favorites(),
         }
+
+    def _build_local_directory_favorites(self) -> list[dict]:
+        candidates: list[tuple[str, str, Path]] = []
+        backend_dir = self._database_path.parent.parent
+        repo_dir = backend_dir.parent
+        test_archive_dir = repo_dir / "test-data" / "VideoArchive"
+        local_data_dir = self._database_path.parent
+
+        candidates.extend(
+            [
+                ("repo-test-archive", "repo_test_archive", test_archive_dir),
+                ("backend-folder", "backend_folder", backend_dir),
+                ("backend-local-data", "backend_local_data", local_data_dir),
+            ]
+        )
+
+        favorites: list[dict] = []
+        seen_paths: set[str] = set()
+        for favorite_id, label_key, candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            if not resolved.exists() or not resolved.is_dir():
+                continue
+            resolved_str = str(resolved)
+            if resolved_str in seen_paths:
+                continue
+            seen_paths.add(resolved_str)
+            favorites.append(
+                {
+                    "id": favorite_id,
+                    "label_key": label_key,
+                    "path": resolved_str,
+                }
+            )
+        return favorites
 
 
 def parse_source_payload(raw: dict) -> SourcePayload:

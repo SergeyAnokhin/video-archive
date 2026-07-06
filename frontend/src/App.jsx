@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Play, Save, X } from "lucide-react";
 import {
   cancelJob,
   createConversionProfile,
@@ -68,10 +69,10 @@ import {
   toSourcePayload,
   toTaggingForm
 } from "./features/source/sourceHelpers";
-import { settingsSections } from "./mockData";
+import { createTranslator, getSettingsSections, visualModes } from "./i18n";
 
-function formatStatusLabel(value) {
-  return value.replaceAll("_", " ");
+function formatStatusLabel(value, t) {
+  return t(`status.${value}`).replaceAll("_", " ");
 }
 
 function formatBytes(value) {
@@ -89,41 +90,41 @@ function formatBytes(value) {
   return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
 }
 
-function formatDate(value) {
+function formatDate(value, locale) {
   if (!value) {
     return "-";
   }
 
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString(locale === "ru" ? "ru-RU" : "en-US");
 }
 
-function formatProfileLabel(profile) {
+function formatProfileLabel(profile, t) {
   const parts = [`${profile.video_codec.toUpperCase()} -> ${profile.container.toUpperCase()}`];
   if (profile.max_dimension) {
-    parts.push(`max ${profile.max_dimension}px`);
+    parts.push(`${t("profiles.maxDimension")} ${profile.max_dimension}px`);
   }
   if (profile.quality_value) {
     parts.push(`${(profile.quality_mode || "quality").toUpperCase()} ${profile.quality_value}`);
   }
-  parts.push(profile.drop_audio ? "no audio" : "audio kept");
+  parts.push(profile.drop_audio ? t("profiles.dropAudio") : "audio");
   return `${profile.name} (${parts.join(", ")})`;
 }
 
-function formatJobScope(job) {
+function formatJobScope(job, t) {
   if (!job) {
     return "-";
   }
   if (job.scope_type === "source") {
-    return "Active source";
+    return t("app.activeSource");
   }
   if (job.scope_type === "directory") {
-    return job.scope_ref || "Library root";
+    return job.scope_ref || t("app.libraryRoot");
   }
   return job.scope_ref || "-";
 }
 
-function formatJobTypeLabel(value) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
+function formatJobTypeLabel(value, t) {
+  return t(`jobTypes.${value}`);
 }
 
 function formatConfidence(value) {
@@ -133,13 +134,13 @@ function formatConfidence(value) {
   return `${Math.round(value * 100)}%`;
 }
 
-function renderIndicatorBadges(indicators) {
+function renderIndicatorBadges(indicators, t) {
   return [
     indicators?.conversion
-      ? { key: "conversion", label: "convert", state: indicators.conversion.state, title: indicators.conversion.message }
+      ? { key: "conversion", label: t("directory.convertBadge"), state: indicators.conversion.state, title: indicators.conversion.message }
       : null,
     indicators?.preview
-      ? { key: "preview", label: "preview", state: indicators.preview.state, title: indicators.preview.message }
+      ? { key: "preview", label: t("directory.previewBadge"), state: indicators.preview.state, title: indicators.preview.message }
       : null
   ].filter(Boolean);
 }
@@ -191,20 +192,25 @@ function App() {
   const [localDirectoryBrowser, setLocalDirectoryBrowser] = useState(emptyLocalDirectoryBrowser);
   const [isLocalDirectoryBrowserOpen, setIsLocalDirectoryBrowserOpen] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
+  const [locale, setLocale] = useState(() => window.localStorage.getItem("video-archive.locale") || "ru");
+  const [visualMode, setVisualMode] = useState(() => window.localStorage.getItem("video-archive.visual-mode") || "strict");
   const logConsoleRef = useRef(null);
+  const t = useMemo(() => createTranslator(locale), [locale]);
 
   const treeItems = useMemo(() => flattenTree(tree), [tree]);
   const selectedFile = files.find((file) => file.id === selectedFileId) ?? files[0] ?? null;
-  const liveSourceLabel = source?.name ?? info.active_source?.name ?? "No active source";
-  const liveSourceMeta = formatSourceSummary(source);
-  const queueSummary = `${info.queue.running_jobs} running - ${info.queue.queued_jobs} queued`;
+  const settingsSections = useMemo(() => getSettingsSections(t), [t]);
+  const liveSourceLabel = source?.name ?? info.active_source?.name ?? t("app.noActiveSource");
+  const liveSourceMeta = formatSourceSummary(source, t);
+  const queueSummary = t("app.queueSummary", { running: info.queue.running_jobs, queued: info.queue.queued_jobs });
   const backendLabel =
     health.state === "ready"
-      ? `Backend ${health.status}`
+      ? t("app.backendReady", { status: health.status })
       : health.state === "loading"
-        ? "Connecting backend"
-        : "Backend offline";
+        ? t("app.backendLoading")
+        : t("app.backendOffline");
   const sourceFormIsLocal = isLocalProtocol(sourceForm.protocol);
+  const formatDateValue = (value) => formatDate(value, locale);
   const tuningVariants = useMemo(() => {
     const variantsById = new Map((tuningJob?.parameters?.variants ?? []).map((variant) => [variant.id, variant]));
     return tuningItems.map((item) => ({
@@ -216,6 +222,17 @@ function App() {
   useEffect(() => {
     loadBootstrap();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("video-archive.locale", locale);
+    document.documentElement.lang = locale;
+  }, [locale]);
+
+  useEffect(() => {
+    const currentMode = visualModes.includes(visualMode) ? visualMode : "strict";
+    document.documentElement.dataset.visualMode = currentMode;
+    window.localStorage.setItem("video-archive.visual-mode", currentMode);
+  }, [visualMode]);
 
   useEffect(() => {
     if (!sourceFormIsLocal) {
@@ -456,7 +473,7 @@ function App() {
     try {
       if (section === "preview") {
         const [settingsPayload, presetsPayload] = await Promise.all([fetchSettings(), fetchPreviewLayouts()]);
-        const nextSettings = settingsPayload.settings?.preview ?? defaultPreviewSettings;
+        const nextSettings = { ...defaultPreviewSettings, ...(settingsPayload.settings?.preview ?? {}) };
         setPreviewSettings(nextSettings);
         setPreviewPresets(presetsPayload.presets);
         const selectedPreset = presetsPayload.presets.find((preset) => preset.id === nextSettings.layout_preset_id);
@@ -579,7 +596,8 @@ function App() {
       setLocalDirectoryBrowser({
         path: payload.path ?? "",
         parent_path: payload.parent_path ?? null,
-        directories: payload.directories ?? []
+        directories: payload.directories ?? [],
+        favorites: payload.favorites ?? []
       });
       setIsLocalDirectoryBrowserOpen(true);
     } catch (error) {
@@ -652,7 +670,7 @@ function App() {
       const payload = await saveSource(toSourcePayload(sourceForm));
       setSource(payload.source);
       setSourceForm(toSourceForm(payload.source));
-      setActionMessage("Source settings saved.");
+      setActionMessage(t("messages.sourceSaved"));
       await refreshLibrary("");
     } catch (error) {
       setActionError(error.message);
@@ -784,7 +802,7 @@ function App() {
     try {
       const payload = await saveSettings({ preview: previewSettings });
       setPreviewSettings(payload.settings.preview);
-      setActionMessage("Preview settings saved.");
+      setActionMessage(t("messages.previewSaved"));
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -799,7 +817,7 @@ function App() {
     try {
       const payload = await saveSettings({ playback: playbackSettings });
       setPlaybackSettings(payload.settings.playback);
-      setActionMessage("Playback settings saved.");
+      setActionMessage(t("messages.playbackSaved"));
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -822,7 +840,7 @@ function App() {
         }
       });
       setTaggingSettings(toTaggingForm(payload.settings.tagging));
-      setActionMessage("Tagging settings saved.");
+      setActionMessage(t("messages.taggingSaved"));
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -851,7 +869,7 @@ function App() {
           return current ? { ...base, ...current, api_key: "" } : base;
         })
       );
-      setActionMessage("Provider settings saved.");
+      setActionMessage(t("messages.providersSaved"));
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -869,6 +887,7 @@ function App() {
       large_tile_count: preset.large_tile_count,
       timeline_flow: preset.timeline_flow,
       identity_diversity_enabled: preset.identity_diversity_enabled,
+      aspect_ratio_preset: preset.layout_definition?.aspect_ratio_preset ?? previewSettings.aspect_ratio_preset ?? defaultPreviewSettings.aspect_ratio_preset,
       layout_preset_id: preset.id
     });
     setPreviewPresetName(preset.name);
@@ -885,7 +904,8 @@ function App() {
         large_tile_count: previewSettings.large_tile_count,
         timeline_flow: previewSettings.timeline_flow,
         identity_diversity_enabled: previewSettings.identity_diversity_enabled,
-        layout_definition: { kind: "auto-grid", version: 1 }
+        aspect_ratio_preset: previewSettings.aspect_ratio_preset,
+        layout_definition: { kind: "auto-grid", version: 1, aspect_ratio_preset: previewSettings.aspect_ratio_preset }
       };
       const response =
         mode === "update" && previewSettings.layout_preset_id && previewSettings.layout_preset_id !== "default-preview-grid"
@@ -896,7 +916,7 @@ function App() {
       setPreviewPresetName(savedPreset.name);
       const presetsPayload = await fetchPreviewLayouts();
       setPreviewPresets(presetsPayload.presets);
-      setActionMessage(mode === "update" ? "Preview preset updated." : "Preview preset saved.");
+      setActionMessage(mode === "update" ? t("messages.presetUpdated") : t("messages.presetSaved"));
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -919,7 +939,7 @@ function App() {
       const profiles = await ensureConversionProfiles();
       const defaultProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
       if (!defaultProfile) {
-        throw new Error("No saved conversion profiles are available.");
+        throw new Error(t("messages.noProfiles"));
       }
 
       setConversionDraft({
@@ -985,7 +1005,7 @@ function App() {
           throw new Error("External playback is not available for this file path.");
         }
         window.open(payload.playback.external_url, "_blank", "noopener,noreferrer");
-        setActionMessage(`Requested external playback for ${file.file_name}.`);
+        setActionMessage(t("messages.externalPlayback", { name: file.file_name }));
         return;
       }
       setPlaybackTarget(payload.playback);
@@ -1081,7 +1101,7 @@ function App() {
       });
       setProfileDraft(emptyProfileDraft);
       await ensureConversionProfiles(true);
-      setActionMessage(`Saved conversion profile ${payload.profile.name}.`);
+      setActionMessage(t("messages.profileSaved", { name: payload.profile.name }));
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -1124,7 +1144,7 @@ function App() {
       );
       await ensureConversionProfiles(true);
       setPromotionDraft(null);
-      setActionMessage(`Saved profile ${payload.profile.name} from tuning result.`);
+      setActionMessage(t("messages.tuningProfileSaved", { name: payload.profile.name }));
     } catch (error) {
       setActionError(error.message);
     } finally {
@@ -1135,7 +1155,7 @@ function App() {
   return (
     <main className="app-shell">
       <AppHeader
-        health={health}
+        healthState={health.state}
         backendLabel={backendLabel}
         actionError={actionError}
         actionMessage={actionMessage}
@@ -1146,6 +1166,9 @@ function App() {
         previewVisible={previewVisible}
         source={source}
         isWorking={isWorking}
+        locale={locale}
+        visualMode={visualMode}
+        t={t}
         onTogglePreview={() => setPreviewVisible((value) => !value)}
         onScanSource={handleScanSource}
         onOpenLogs={() => openLogViewer()}
@@ -1154,6 +1177,10 @@ function App() {
           setSelectedSettingsSection("preview");
           setActiveOverlay("settings");
         }}
+        onToggleLocale={() => setLocale((current) => (current === "ru" ? "en" : "ru"))}
+        onCycleVisualMode={() =>
+          setVisualMode((current) => visualModes[(visualModes.indexOf(current) + 1) % visualModes.length] ?? "strict")
+        }
       />
 
       <section className={`workspace ${previewVisible ? "with-preview" : "without-preview"}`}>
@@ -1164,7 +1191,8 @@ function App() {
           isWorking={isWorking}
           onScanSource={handleScanSource}
           onSelectDirectory={handleSelectDirectory}
-          renderIndicatorBadges={renderIndicatorBadges}
+          renderIndicatorBadges={(indicators) => renderIndicatorBadges(indicators, t)}
+          t={t}
         />
 
         <FileBrowserPanel
@@ -1180,10 +1208,11 @@ function App() {
           onTagDirectory={() => handleDirectoryJob(createTagDirectoryJob)}
           onRescanDirectory={handleRescanDirectory}
           onSelectFile={setSelectedFileId}
-          formatDirectoryLabel={formatDirectoryLabel}
+          formatDirectoryLabel={(path) => formatDirectoryLabel(path, t)}
           formatBytes={formatBytes}
-          formatDate={formatDate}
-          formatStatusLabel={formatStatusLabel}
+          formatDate={formatDateValue}
+          formatStatusLabel={(value) => formatStatusLabel(value, t)}
+          t={t}
         />
 
         {previewVisible ? (
@@ -1198,9 +1227,10 @@ function App() {
               setSelectedSettingsSection("preview");
               setActiveOverlay("settings");
             }}
-            formatDirectoryLabel={formatDirectoryLabel}
+            formatDirectoryLabel={(path) => formatDirectoryLabel(path, t)}
             formatConfidence={formatConfidence}
-            formatDate={formatDate}
+            formatDate={formatDateValue}
+            t={t}
           />
         ) : null}
       </section>
@@ -1222,8 +1252,9 @@ function App() {
         onOpenLogViewer={openLogViewer}
         formatBytes={formatBytes}
         formatConfidence={formatConfidence}
-        formatDate={formatDate}
-        formatStatusLabel={formatStatusLabel}
+        formatDate={formatDateValue}
+        formatStatusLabel={(value) => formatStatusLabel(value, t)}
+        t={t}
       />
 
       {activeOverlay === "playback" && playbackTarget ? (
@@ -1231,18 +1262,18 @@ function App() {
           <section className="overlay panel modal-shell playback-shell" onClick={(event) => event.stopPropagation()}>
             <div className="panel-header">
               <div>
-                <p className="section-kicker">Playback</p>
+                <p className="section-kicker">{t("playbackModal.kicker")}</p>
                 <h2>{playbackTarget.file_name}</h2>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
-                Close
+              <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={() => setActiveOverlay(null)}>
+                <X size={16} />
               </button>
             </div>
             <div className="video-player-shell">
               <video controls className="video-player" src={playbackTarget.embedded_url} />
             </div>
             <div className="note-card">
-              <strong>Playback target</strong>
+              <strong>{t("playbackModal.target")}</strong>
               <p className="break-value">{playbackTarget.path}</p>
             </div>
           </section>
@@ -1257,7 +1288,8 @@ function App() {
         onClearFilters={() => setLogFilters(emptyLogFilters)}
         logEvents={logEvents}
         logConsoleRef={logConsoleRef}
-        formatDate={formatDate}
+        formatDate={formatDateValue}
+        t={t}
       />
 
       <JobsModal
@@ -1273,9 +1305,10 @@ function App() {
         onCancelJob={handleCancelJob}
         onRestartJob={handleRestartJob}
         onOpenLogViewer={openLogViewer}
-        formatDate={formatDate}
-        formatJobScope={formatJobScope}
-        formatJobTypeLabel={formatJobTypeLabel}
+        formatDate={formatDateValue}
+        formatJobScope={(job) => formatJobScope(job, t)}
+        formatJobTypeLabel={(value) => formatJobTypeLabel(value, t)}
+        t={t}
       />
 
       {activeOverlay === "convert" && conversionDraft ? (
@@ -1283,11 +1316,11 @@ function App() {
           <section className="overlay panel modal-shell convert-shell" onClick={(event) => event.stopPropagation()}>
             <div className="panel-header">
               <div>
-                <p className="section-kicker">Conversion</p>
-                <h2>{conversionDraft.scope === "file" ? "Selected file" : "Selected folder"}</h2>
+                <p className="section-kicker">{t("conversionModal.kicker")}</p>
+                <h2>{conversionDraft.scope === "file" ? t("conversionModal.fileTitle") : t("conversionModal.directoryTitle")}</h2>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
-                Close
+              <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={() => setActiveOverlay(null)}>
+                <X size={16} />
               </button>
             </div>
 
@@ -1295,42 +1328,41 @@ function App() {
               <div className="note-card">
                 <strong>
                   {conversionDraft.scope === "file"
-                    ? conversionDraft.fileName || "Selected file"
-                    : formatDirectoryLabel(conversionDraft.relativePath)}
+                    ? conversionDraft.fileName || t("conversionModal.fileTitle")
+                    : formatDirectoryLabel(conversionDraft.relativePath, t)}
                 </strong>
-                <p>
-                  Production mode writes a temp file, validates it quickly, and replaces the source
-                  only on success. Test mode writes a separate output and preserves the source file.
-                </p>
+                <p>{t("conversionModal.description")}</p>
               </div>
 
               <div className="form-grid">
                 <label className="full-width">
-                  <span>Saved profile</span>
+                  <span>{t("conversionModal.savedProfile")}</span>
                   <select value={conversionDraft.profileId} onChange={(event) => updateConversionDraft("profileId", event.target.value)}>
                     {conversionProfiles.map((profile) => (
                       <option key={profile.id} value={profile.id}>
-                        {formatProfileLabel(profile)}
+                        {formatProfileLabel(profile, t)}
                       </option>
                     ))}
                   </select>
                 </label>
 
                 <label>
-                  <span>Mode</span>
+                  <span>{t("conversionModal.mode")}</span>
                   <select value={conversionDraft.mode} onChange={(event) => updateConversionDraft("mode", event.target.value)}>
-                    <option value="production">Production replace source</option>
-                    <option value="test">Test keep source</option>
+                    <option value="production">{t("conversionModal.production")}</option>
+                    <option value="test">{t("conversionModal.test")}</option>
                   </select>
                 </label>
               </div>
 
               <div className="inline-actions">
-                <button type="button" className="ghost-button" onClick={() => setActiveOverlay(null)}>
-                  Cancel
+                <button type="button" className="ghost-button icon-button" onClick={() => setActiveOverlay(null)}>
+                  <X size={16} />
+                  <span>{t("common.cancel")}</span>
                 </button>
-                <button type="button" className="primary-button" disabled={isWorking} onClick={submitConversionJob}>
-                  Start conversion
+                <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={submitConversionJob}>
+                  <Play size={16} />
+                  <span>{t("conversionModal.start")}</span>
                 </button>
               </div>
             </div>
@@ -1357,7 +1389,8 @@ function App() {
             isDefault: false
           })
         }
-        formatDate={formatDate}
+        formatDate={formatDateValue}
+        t={t}
       />
 
       {promotionDraft ? (
@@ -1365,33 +1398,34 @@ function App() {
           <section className="overlay panel modal-shell promote-shell" onClick={(event) => event.stopPropagation()}>
             <div className="panel-header">
               <div>
-                <p className="section-kicker">Promote result</p>
-                <h2>Save tuning output as profile</h2>
+                <p className="section-kicker">{t("promotion.kicker")}</p>
+                <h2>{t("promotion.title")}</h2>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setPromotionDraft(null)}>
-                Close
+              <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={() => setPromotionDraft(null)}>
+                <X size={16} />
               </button>
             </div>
             <div className="form-grid">
               <label className="full-width">
-                <span>Profile name</span>
+                <span>{t("promotion.name")}</span>
                 <input value={promotionDraft.name} onChange={(event) => setPromotionDraft((current) => ({ ...current, name: event.target.value }))} />
               </label>
               <label className="toggle-row">
-                <span>Mark default</span>
+                <span>{t("promotion.markDefault")}</span>
                 <input type="checkbox" checked={promotionDraft.isDefault} onChange={(event) => setPromotionDraft((current) => ({ ...current, isDefault: event.target.checked }))} />
               </label>
             </div>
             <div className="note-card">
               <strong>{promotionDraft.variant.label}</strong>
               <p>
-                Codec {promotionDraft.variant.video_codec.toUpperCase()} - Max dimension {promotionDraft.variant.max_dimension ?? "source"} -{" "}
-                {promotionDraft.variant.quality_value ? `CRF ${promotionDraft.variant.quality_value}` : "default quality"}
+                Codec {promotionDraft.variant.video_codec.toUpperCase()} - Max dimension {promotionDraft.variant.max_dimension ?? t("promotion.sourceDimension")} -{" "}
+                {promotionDraft.variant.quality_value ? `CRF ${promotionDraft.variant.quality_value}` : t("promotion.defaultQuality")}
               </p>
             </div>
             <div className="inline-actions">
-              <button type="button" className="primary-button" disabled={isWorking || !promotionDraft.name.trim()} onClick={handlePromoteVariant}>
-                Save profile
+              <button type="button" className="primary-button icon-button" disabled={isWorking || !promotionDraft.name.trim()} onClick={handlePromoteVariant}>
+                <Save size={16} />
+                <span>{t("promotion.save")}</span>
               </button>
             </div>
           </section>
@@ -1411,6 +1445,7 @@ function App() {
         localDirectoryBrowser={localDirectoryBrowser}
         isLocalDirectoryBrowserOpen={isLocalDirectoryBrowserOpen}
         testResult={testResult}
+        t={t}
         onUpdateSourceField={updateSourceField}
         onLoadLocalDirectoryBrowser={loadLocalDirectoryBrowser}
         onSelectLocalDirectory={handleSelectLocalDirectory}
@@ -1422,7 +1457,7 @@ function App() {
         onUpdateProfileDraft={updateProfileDraft}
         onCreateProfile={handleCreateProfile}
         conversionProfiles={conversionProfiles}
-        formatProfileLabel={formatProfileLabel}
+        formatProfileLabel={(profile) => formatProfileLabel(profile, t)}
         previewSettings={previewSettings}
         onUpdatePreviewSetting={updatePreviewSetting}
         previewPresets={previewPresets}

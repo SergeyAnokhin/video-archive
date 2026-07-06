@@ -11,7 +11,8 @@ export const emptySourceForm = {
 export const emptyLocalDirectoryBrowser = {
   path: "",
   parent_path: null,
-  directories: []
+  directories: [],
+  favorites: []
 };
 
 export const defaultPreviewSettings = {
@@ -19,6 +20,7 @@ export const defaultPreviewSettings = {
   large_tile_count: 2,
   timeline_flow: "row",
   identity_diversity_enabled: true,
+  aspect_ratio_preset: "video",
   layout_preset_id: "default-preview-grid"
 };
 
@@ -121,9 +123,9 @@ export function isLocalProtocol(protocol) {
   return protocol === "local";
 }
 
-export function formatSourceSummary(source) {
+export function formatSourceSummary(source, t = null) {
   if (!source) {
-    return "Configure one active source to enable scan and browsing";
+    return t ? t("app.noActiveSource") : "Configure one active source to enable scan and browsing";
   }
   if (isLocalProtocol(source.protocol)) {
     return `LOCAL - ${source.root_path}`;
@@ -131,8 +133,8 @@ export function formatSourceSummary(source) {
   return `${source.protocol.toUpperCase()} - ${source.host} - ${source.root_path}`;
 }
 
-export function formatDirectoryLabel(path) {
-  return path ? path : "Library root";
+export function formatDirectoryLabel(path, t = null) {
+  return path ? path : t ? t("app.libraryRoot") : "Library root";
 }
 
 function parseCommaNumberList(value) {

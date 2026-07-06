@@ -1,3 +1,5 @@
+import { FilterX, X } from "lucide-react";
+
 export default function LogViewerModal({
   isOpen,
   onClose,
@@ -6,7 +8,8 @@ export default function LogViewerModal({
   onClearFilters,
   logEvents,
   logConsoleRef,
-  formatDate
+  formatDate,
+  t
 }) {
   if (!isOpen) {
     return null;
@@ -17,42 +20,43 @@ export default function LogViewerModal({
       <section className="overlay panel modal-shell logs-shell" onClick={(event) => event.stopPropagation()}>
         <div className="panel-header">
           <div>
-            <p className="section-kicker">Log viewer</p>
-            <h2>Near-real-time backend activity</h2>
+            <p className="section-kicker">{t("logs.kicker")}</p>
+            <h2>{t("logs.title")}</h2>
           </div>
-          <button type="button" className="ghost-button" onClick={onClose}>
-            Close
+          <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={onClose}>
+            <X size={16} />
           </button>
         </div>
         <div className="log-filter-grid">
           <label>
-            <span>Job id</span>
+            <span>{t("logs.jobId")}</span>
             <input value={logFilters.jobId} onChange={(event) => onChangeLogFilter("jobId", event.target.value)} />
           </label>
           <label>
-            <span>File id</span>
+            <span>{t("logs.fileId")}</span>
             <input value={logFilters.fileId} onChange={(event) => onChangeLogFilter("fileId", event.target.value)} />
           </label>
           <label>
-            <span>Level</span>
+            <span>{t("logs.level")}</span>
             <select value={logFilters.level} onChange={(event) => onChangeLogFilter("level", event.target.value)}>
-              <option value="">All levels</option>
-              <option value="debug">Debug</option>
-              <option value="info">Info</option>
-              <option value="warning">Warning</option>
-              <option value="error">Error</option>
+              <option value="">{t("common.allLevels")}</option>
+              <option value="debug">{t("logs.debug")}</option>
+              <option value="info">{t("logs.info")}</option>
+              <option value="warning">{t("logs.warning")}</option>
+              <option value="error">{t("logs.error")}</option>
             </select>
           </label>
           <div className="inline-actions align-end">
-            <button type="button" className="ghost-button" onClick={onClearFilters}>
-              Clear filters
+            <button type="button" className="ghost-button icon-button" onClick={onClearFilters}>
+              <FilterX size={16} />
+              <span>{t("logs.clear")}</span>
             </button>
           </div>
         </div>
         <pre ref={logConsoleRef} className="log-console tall-console">
           {logEvents.length
             ? logEvents.map((event) => `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.message}`).join("\n")
-            : "No events match the current filters."}
+            : t("logs.empty")}
         </pre>
       </section>
     </div>

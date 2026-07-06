@@ -1,4 +1,5 @@
 import SourceSettingsSection from "../../features/source/SourceSettingsSection";
+import { Download, Languages, Play, Save, Settings2, ShieldCheck, SlidersHorizontal, Upload, X } from "lucide-react";
 
 function ProfilesSettingsSection({
   profileDraft,
@@ -6,21 +7,22 @@ function ProfilesSettingsSection({
   onCreateProfile,
   conversionProfiles,
   formatProfileLabel,
-  isWorking
+  isWorking,
+  t
 }) {
   return (
     <div className="source-settings">
-      <p>Profiles stay reusable and separate from tuning runs. Tuning can promote a winning output here later.</p>
+      <p>{t("profiles.intro")}</p>
       <div className="profiles-grid">
         <div className="note-card">
-          <strong>Create profile</strong>
+          <strong>{t("profiles.create")}</strong>
           <div className="form-grid">
             <label>
-              <span>Name</span>
+              <span>{t("profiles.name")}</span>
               <input value={profileDraft.name} onChange={(event) => onUpdateProfileDraft("name", event.target.value)} />
             </label>
             <label>
-              <span>Codec</span>
+              <span>{t("profiles.codec")}</span>
               <select value={profileDraft.video_codec} onChange={(event) => onUpdateProfileDraft("video_codec", event.target.value)}>
                 <option value="h264">H.264</option>
                 <option value="h265">H.265</option>
@@ -28,35 +30,36 @@ function ProfilesSettingsSection({
               </select>
             </label>
             <label>
-              <span>Max dimension</span>
-              <input value={profileDraft.max_dimension} onChange={(event) => onUpdateProfileDraft("max_dimension", event.target.value)} placeholder="Optional" />
+              <span>{t("profiles.maxDimension")}</span>
+              <input value={profileDraft.max_dimension} onChange={(event) => onUpdateProfileDraft("max_dimension", event.target.value)} placeholder={t("profiles.optional")} />
             </label>
             <label>
-              <span>Quality value</span>
+              <span>{t("profiles.qualityValue")}</span>
               <input value={profileDraft.quality_value} onChange={(event) => onUpdateProfileDraft("quality_value", event.target.value)} placeholder="20" />
             </label>
             <label className="toggle-row">
-              <span>Drop audio</span>
+              <span>{t("profiles.dropAudio")}</span>
               <input type="checkbox" checked={profileDraft.drop_audio} onChange={(event) => onUpdateProfileDraft("drop_audio", event.target.checked)} />
             </label>
             <label className="toggle-row">
-              <span>Default profile</span>
+              <span>{t("profiles.defaultProfile")}</span>
               <input type="checkbox" checked={profileDraft.is_default} onChange={(event) => onUpdateProfileDraft("is_default", event.target.checked)} />
             </label>
             <label className="full-width">
-              <span>Advanced encoder args</span>
-              <input value={profileDraft.extra_encoder_args} onChange={(event) => onUpdateProfileDraft("extra_encoder_args", event.target.value)} placeholder="Optional ffmpeg encoder args" />
+              <span>{t("profiles.advancedArgs")}</span>
+              <input value={profileDraft.extra_encoder_args} onChange={(event) => onUpdateProfileDraft("extra_encoder_args", event.target.value)} placeholder={t("profiles.advancedPlaceholder")} />
             </label>
           </div>
           <div className="inline-actions">
-            <button type="button" className="primary-button" disabled={isWorking || !profileDraft.name.trim()} onClick={onCreateProfile}>
-              Save profile
+            <button type="button" className="primary-button icon-button" disabled={isWorking || !profileDraft.name.trim()} onClick={onCreateProfile}>
+              <Save size={16} />
+              <span>{t("profiles.saveProfile")}</span>
             </button>
           </div>
         </div>
 
         <div className="note-card">
-          <strong>Saved profiles</strong>
+          <strong>{t("profiles.saved")}</strong>
           <div className="profile-list">
             {conversionProfiles.map((profile) => (
               <article key={profile.id} className="profile-row">
@@ -84,34 +87,45 @@ function PreviewSettingsSection({
   onSavePreset,
   onSavePreviewSettings,
   livePreview,
-  isWorking
+  isWorking,
+  t
 }) {
   return (
     <div className="source-settings">
-      <p>Preview generation stays independent from conversion. Save the sampling and large-tile rules here, then use the live preview to inspect the layout before launching jobs.</p>
+      <p>{t("previewSettings.intro")}</p>
       <div className="form-grid">
         <label>
-          <span>Sample count</span>
+          <span>{t("previewSettings.sampleCount")}</span>
           <input type="number" min="3" max="24" value={previewSettings.sample_count} onChange={(event) => onUpdatePreviewSetting("sample_count", Number(event.target.value))} />
         </label>
         <label>
-          <span>Large tile count</span>
+          <span>{t("previewSettings.largeTileCount")}</span>
           <input type="number" min="0" max="6" value={previewSettings.large_tile_count} onChange={(event) => onUpdatePreviewSetting("large_tile_count", Number(event.target.value))} />
         </label>
         <label>
-          <span>Timeline flow</span>
+          <span>{t("previewSettings.timelineFlow")}</span>
           <select value={previewSettings.timeline_flow} onChange={(event) => onUpdatePreviewSetting("timeline_flow", event.target.value)}>
-            <option value="row">Row by row</option>
-            <option value="column">Column by column</option>
-            <option value="shuffle">Shuffled time order</option>
+            <option value="row">{t("previewSettings.row")}</option>
+            <option value="column">{t("previewSettings.column")}</option>
+            <option value="shuffle">{t("previewSettings.shuffle")}</option>
           </select>
         </label>
         <label className="toggle-row">
-          <span>Identity diversity</span>
+          <span>{t("previewSettings.identityDiversity")}</span>
           <input type="checkbox" checked={previewSettings.identity_diversity_enabled} onChange={(event) => onUpdatePreviewSetting("identity_diversity_enabled", event.target.checked)} />
         </label>
+        <label>
+          <span>{t("previewSettings.aspectRatio")}</span>
+          <select value={previewSettings.aspect_ratio_preset} onChange={(event) => onUpdatePreviewSetting("aspect_ratio_preset", event.target.value)}>
+            <option value="square">{t("previewSettings.square")}</option>
+            <option value="video">{t("previewSettings.video")}</option>
+            <option value="portrait">{t("previewSettings.portrait")}</option>
+            <option value="s24">{t("previewSettings.s24")}</option>
+            <option value="ultrawide">{t("previewSettings.ultrawide")}</option>
+          </select>
+        </label>
         <label className="full-width">
-          <span>Saved preset</span>
+          <span>{t("previewSettings.savedPreset")}</span>
           <select value={previewSettings.layout_preset_id} onChange={(event) => onUpdatePreviewSetting("layout_preset_id", event.target.value)}>
             {previewPresets.map((preset) => (
               <option key={preset.id} value={preset.id}>
@@ -121,41 +135,45 @@ function PreviewSettingsSection({
           </select>
         </label>
         <label className="full-width">
-          <span>Preset name</span>
+          <span>{t("previewSettings.presetName")}</span>
           <input value={previewPresetName} onChange={(event) => onPreviewPresetNameChange(event.target.value)} placeholder="Balanced Grid" />
         </label>
       </div>
       <div className="inline-actions">
-        <button type="button" className="ghost-button" disabled={isWorking} onClick={onLoadPreset}>
-          Load preset
+        <button type="button" className="ghost-button icon-button" disabled={isWorking} onClick={onLoadPreset}>
+          <Download size={16} />
+          <span>{t("previewSettings.loadPreset")}</span>
         </button>
-        <button type="button" className="ghost-button" disabled={isWorking} onClick={() => onSavePreset("create")}>
-          Save as new preset
+        <button type="button" className="ghost-button icon-button" disabled={isWorking} onClick={() => onSavePreset("create")}>
+          <Save size={16} />
+          <span>{t("previewSettings.savePreset")}</span>
         </button>
         <button
           type="button"
-          className="ghost-button"
+          className="ghost-button icon-button"
           disabled={isWorking || previewSettings.layout_preset_id === "default-preview-grid"}
           onClick={() => onSavePreset("update")}
         >
-          Update preset
+          <Upload size={16} />
+          <span>{t("previewSettings.updatePreset")}</span>
         </button>
-        <button type="button" className="primary-button" disabled={isWorking} onClick={onSavePreviewSettings}>
-          Save preview settings
+        <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={onSavePreviewSettings}>
+          <Save size={16} />
+          <span>{t("previewSettings.saveSettings")}</span>
         </button>
       </div>
       <div className="preview-settings-grid">
         <div className="note-card">
-          <strong>Selection rules</strong>
-          <p>First two large tiles prefer faces. Remaining large tiles prefer figures. When identity diversity is enabled, the backend falls back to separate timeline regions if a full identity pass is too expensive.</p>
+          <strong>{t("previewSettings.rulesTitle")}</strong>
+          <p>{t("previewSettings.rulesBody")}</p>
         </div>
         <div className="note-card preview-layout-card">
-          <strong>Live preview</strong>
+          <strong>{t("previewSettings.livePreview")}</strong>
           {livePreview?.image_data_url ? (
             <img className="preview-image" src={livePreview.image_data_url} alt="Live preview layout" />
           ) : (
             <div className="settings-placeholder compact-placeholder">
-              <span>Generating layout preview...</span>
+              <span>{t("previewSettings.generating")}</span>
             </div>
           )}
         </div>
@@ -164,46 +182,47 @@ function PreviewSettingsSection({
   );
 }
 
-function PlaybackSettingsSection({ playbackSettings, onUpdatePlaybackSetting, onSavePlaybackSettings, isWorking }) {
+function PlaybackSettingsSection({ playbackSettings, onUpdatePlaybackSetting, onSavePlaybackSettings, isWorking, t }) {
   return (
     <div className="source-settings">
-      <p>Playback mode is configurable because embedded viewing and external opening behave differently across machines and browser environments.</p>
+      <p>{t("playbackSettings.intro")}</p>
       <div className="form-grid">
         <label>
-          <span>Playback mode</span>
+          <span>{t("playbackSettings.mode")}</span>
           <select value={playbackSettings.mode} onChange={(event) => onUpdatePlaybackSetting("mode", event.target.value)}>
-            <option value="embedded">Embedded modal playback</option>
-            <option value="external">External open</option>
+            <option value="embedded">{t("playbackSettings.embedded")}</option>
+            <option value="external">{t("playbackSettings.external")}</option>
           </select>
         </label>
         <label>
-          <span>External strategy</span>
+          <span>{t("playbackSettings.strategy")}</span>
           <select value={playbackSettings.external_strategy} onChange={(event) => onUpdatePlaybackSetting("external_strategy", event.target.value)}>
-            <option value="file_uri">File URI / link</option>
-            <option value="path">Path-first</option>
+            <option value="file_uri">{t("playbackSettings.fileUri")}</option>
+            <option value="path">{t("playbackSettings.path")}</option>
           </select>
         </label>
       </div>
       <div className="inline-actions">
-        <button type="button" className="primary-button" disabled={isWorking} onClick={onSavePlaybackSettings}>
-          Save playback settings
+        <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={onSavePlaybackSettings}>
+          <Play size={16} />
+          <span>{t("playbackSettings.save")}</span>
         </button>
       </div>
       <div className="note-card">
-        <strong>Current behavior</strong>
-        <p>Embedded playback streams through the backend. External playback opens the resolved file URI when the local environment supports it.</p>
+        <strong>{t("playbackSettings.current")}</strong>
+        <p>{t("playbackSettings.currentBody")}</p>
       </div>
     </div>
   );
 }
 
-function TaggingSettingsSection({ taggingSettings, onUpdateTaggingSetting, onSaveTaggingSettings, isWorking }) {
+function TaggingSettingsSection({ taggingSettings, onUpdateTaggingSetting, onSaveTaggingSettings, isWorking, t }) {
   return (
     <div className="source-settings">
-      <p>Tagging stays separate from conversion and preview. The backend only stores tags selected from this allowed vocabulary plus confidence scores.</p>
+      <p>{t("taggingSettings.intro")}</p>
       <div className="form-grid">
         <label>
-          <span>Provider</span>
+          <span>{t("taggingSettings.provider")}</span>
           <select value={taggingSettings.provider} onChange={(event) => onUpdateTaggingSetting("provider", event.target.value)}>
             <option value="openrouter">OpenRouter</option>
             <option value="gemini">Google Gemini</option>
@@ -212,19 +231,19 @@ function TaggingSettingsSection({ taggingSettings, onUpdateTaggingSetting, onSav
           </select>
         </label>
         <label>
-          <span>Sample count</span>
+          <span>{t("taggingSettings.sampleCount")}</span>
           <input type="number" min="3" max="24" value={taggingSettings.sample_count} onChange={(event) => onUpdateTaggingSetting("sample_count", Number(event.target.value))} />
         </label>
         <label className="toggle-row">
-          <span>Combine frames</span>
+          <span>{t("taggingSettings.combine")}</span>
           <input type="checkbox" checked={taggingSettings.combine_frames} onChange={(event) => onUpdateTaggingSetting("combine_frames", event.target.checked)} />
         </label>
         <label className="toggle-row">
-          <span>Prefer batch</span>
+          <span>{t("taggingSettings.preferBatch")}</span>
           <input type="checkbox" checked={taggingSettings.prefer_batch} onChange={(event) => onUpdateTaggingSetting("prefer_batch", event.target.checked)} />
         </label>
         <label className="full-width">
-          <span>Allowed vocabulary</span>
+          <span>{t("taggingSettings.vocabulary")}</span>
           <textarea
             rows="10"
             value={(taggingSettings.vocabulary ?? []).join("\n")}
@@ -237,51 +256,52 @@ function TaggingSettingsSection({ taggingSettings, onUpdateTaggingSetting, onSav
                   .filter(Boolean)
               )
             }
-            placeholder="One tag per line"
+            placeholder={t("taggingSettings.vocabularyPlaceholder")}
           />
         </label>
       </div>
       <div className="inline-actions">
-        <button type="button" className="primary-button" disabled={isWorking} onClick={onSaveTaggingSettings}>
-          Save tagging settings
+        <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={onSaveTaggingSettings}>
+          <Save size={16} />
+          <span>{t("taggingSettings.save")}</span>
         </button>
       </div>
       <div className="note-card">
-        <strong>Closed vocabulary only</strong>
-        <p>The model can only return tags from this list. Any out-of-vocabulary labels are discarded before storage.</p>
+        <strong>{t("taggingSettings.closedTitle")}</strong>
+        <p>{t("taggingSettings.closedBody")}</p>
       </div>
     </div>
   );
 }
 
-function ProviderSettingsSection({ providerSettings, onUpdateProviderSetting, onSaveProviderSettings, isWorking }) {
+function ProviderSettingsSection({ providerSettings, onUpdateProviderSetting, onSaveProviderSettings, isWorking, t }) {
   return (
     <div className="source-settings">
-      <p>Configure backend-only provider access here. API keys stay out of the main metadata database and are stored separately.</p>
+      <p>{t("providerSettings.intro")}</p>
       <div className="provider-settings-list">
         {providerSettings.map((provider) => (
           <div key={provider.provider} className="note-card">
             <div className="panel-header compact-header">
               <div>
                 <strong>{provider.provider === "gemini" ? "Google Gemini" : provider.provider.toUpperCase()}</strong>
-                <p className="muted">{provider.api_key_configured ? "API key stored" : "API key not stored"}</p>
+                <p className="muted">{provider.api_key_configured ? t("providerSettings.keyStored") : t("providerSettings.keyMissing")}</p>
               </div>
               <label className="toggle-row">
-                <span>Enabled</span>
+                <span>{t("providerSettings.enabled")}</span>
                 <input type="checkbox" checked={provider.enabled} onChange={(event) => onUpdateProviderSetting(provider.provider, "enabled", event.target.checked)} />
               </label>
             </div>
             <div className="form-grid">
               <label>
-                <span>Vision model</span>
+                <span>{t("providerSettings.visionModel")}</span>
                 <input value={provider.vision_model} onChange={(event) => onUpdateProviderSetting(provider.provider, "vision_model", event.target.value)} />
               </label>
               <label>
-                <span>Text model</span>
-                <input value={provider.text_model} onChange={(event) => onUpdateProviderSetting(provider.provider, "text_model", event.target.value)} placeholder="Optional" />
+                <span>{t("providerSettings.textModel")}</span>
+                <input value={provider.text_model} onChange={(event) => onUpdateProviderSetting(provider.provider, "text_model", event.target.value)} placeholder={t("providerSettings.textPlaceholder")} />
               </label>
               <label>
-                <span>API key</span>
+                <span>{t("providerSettings.apiKey")}</span>
                 <input
                   type="password"
                   value={provider.api_key}
@@ -290,7 +310,7 @@ function ProviderSettingsSection({ providerSettings, onUpdateProviderSetting, on
                 />
               </label>
               <label className="toggle-row">
-                <span>Prefer batch</span>
+                <span>{t("providerSettings.preferBatch")}</span>
                 <input type="checkbox" checked={provider.prefer_batch} onChange={(event) => onUpdateProviderSetting(provider.provider, "prefer_batch", event.target.checked)} />
               </label>
             </div>
@@ -298,8 +318,9 @@ function ProviderSettingsSection({ providerSettings, onUpdateProviderSetting, on
         ))}
       </div>
       <div className="inline-actions">
-        <button type="button" className="primary-button" disabled={isWorking} onClick={onSaveProviderSettings}>
-          Save provider settings
+        <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={onSaveProviderSettings}>
+          <ShieldCheck size={16} />
+          <span>{t("providerSettings.save")}</span>
         </button>
       </div>
     </div>
@@ -326,6 +347,7 @@ function renderSettingsDetail(props) {
         onReconnect={props.onReconnect}
         onScanSource={props.onScanSource}
         onSourceSave={props.onSourceSave}
+        t={props.t}
       />
     );
   }
@@ -339,6 +361,7 @@ function renderSettingsDetail(props) {
         conversionProfiles={props.conversionProfiles}
         formatProfileLabel={props.formatProfileLabel}
         isWorking={props.isWorking}
+        t={props.t}
       />
     );
   }
@@ -356,6 +379,7 @@ function renderSettingsDetail(props) {
         onSavePreviewSettings={props.onSavePreviewSettings}
         livePreview={props.livePreview}
         isWorking={props.isWorking}
+        t={props.t}
       />
     );
   }
@@ -367,6 +391,7 @@ function renderSettingsDetail(props) {
         onUpdatePlaybackSetting={props.onUpdatePlaybackSetting}
         onSavePlaybackSettings={props.onSavePlaybackSettings}
         isWorking={props.isWorking}
+        t={props.t}
       />
     );
   }
@@ -378,6 +403,7 @@ function renderSettingsDetail(props) {
         onUpdateTaggingSetting={props.onUpdateTaggingSetting}
         onSaveTaggingSettings={props.onSaveTaggingSettings}
         isWorking={props.isWorking}
+        t={props.t}
       />
     );
   }
@@ -389,13 +415,14 @@ function renderSettingsDetail(props) {
         onUpdateProviderSetting={props.onUpdateProviderSetting}
         onSaveProviderSettings={props.onSaveProviderSettings}
         isWorking={props.isWorking}
+        t={props.t}
       />
     );
   }
 
   return (
     <div className="settings-placeholder">
-      <span>This section remains a secondary maintenance flow and stays out of the main library view.</span>
+      <span>{props.t("settings.secondaryFlow")}</span>
     </div>
   );
 }
@@ -408,18 +435,18 @@ export default function SettingsModal(props) {
   }
 
   const selectedSectionLabel =
-    settingsSections.find((section) => section.id === selectedSettingsSection)?.label ?? "Settings";
+    settingsSections.find((section) => section.id === selectedSettingsSection)?.label ?? props.t("settings.title");
 
   return (
     <div className="overlay-backdrop" onClick={onClose}>
       <section className="overlay panel modal-shell settings-shell" onClick={(event) => event.stopPropagation()}>
         <div className="panel-header">
           <div>
-            <p className="section-kicker">Settings</p>
+            <p className="section-kicker">{props.t("settings.title")}</p>
             <h2>{selectedSectionLabel}</h2>
           </div>
-          <button type="button" className="ghost-button" onClick={onClose}>
-            Close
+          <button type="button" className="ghost-button icon-only-button" aria-label={props.t("common.close")} title={props.t("common.close")} onClick={onClose}>
+            <X size={16} />
           </button>
         </div>
         <div className="settings-layout">

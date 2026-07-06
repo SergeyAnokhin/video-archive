@@ -27,12 +27,21 @@ DEFAULT_PREVIEW_SETTINGS = {
     "large_tile_count": 2,
     "timeline_flow": "row",
     "identity_diversity_enabled": True,
+    "aspect_ratio_preset": "video",
     "layout_preset_id": DEFAULT_PRESET_ID,
 }
 
 DEFAULT_LAYOUT_DEFINITION = {
     "kind": "auto-grid",
     "version": LAYOUT_VERSION,
+}
+
+ASPECT_RATIO_PRESETS = {
+    "square": (1.0, 1.0),
+    "video": (16.0, 9.0),
+    "portrait": (4.0, 5.0),
+    "s24": (9.0, 19.5),
+    "ultrawide": (21.0, 9.0),
 }
 
 
@@ -217,6 +226,7 @@ class PreviewService:
             sample_count=merged["sample_count"],
             large_tile_count=merged["large_tile_count"],
             timeline_flow=merged["timeline_flow"],
+            aspect_ratio_preset=merged["aspect_ratio_preset"],
         )
         image = self._render_placeholder_layout(layout)
         return {
@@ -239,6 +249,7 @@ class PreviewService:
             sample_count=len(analyses),
             large_tile_count=min(settings["large_tile_count"], len(analyses)),
             timeline_flow=settings["timeline_flow"],
+            aspect_ratio_preset=settings["aspect_ratio_preset"],
         )
         ordered_frames, large_tile_timestamps = self._select_frames_for_layout(
             analyses=analyses,
@@ -270,6 +281,7 @@ class PreviewService:
             "large_tile_count": layout["large_tile_count"],
             "timeline_flow": settings["timeline_flow"],
             "identity_diversity_enabled": settings["identity_diversity_enabled"],
+            "aspect_ratio_preset": settings["aspect_ratio_preset"],
             "layout": layout,
             "keyframe_timestamps": [round(frame.timestamp_seconds, 3) for frame in analyses],
             "large_tile_timestamps": [round(value, 3) for value in large_tile_timestamps],
@@ -326,6 +338,7 @@ class PreviewService:
             sample_count=sample_count,
             large_tile_count=min(settings["large_tile_count"], sample_count),
             timeline_flow=settings["timeline_flow"],
+            aspect_ratio_preset=settings["aspect_ratio_preset"],
         )
         ordered_frames, large_tile_timestamps = self._select_frames_for_layout(
             analyses=candidates,
@@ -346,6 +359,7 @@ class PreviewService:
             "large_tile_count": layout["large_tile_count"],
             "timeline_flow": settings["timeline_flow"],
             "identity_diversity_enabled": settings["identity_diversity_enabled"],
+            "aspect_ratio_preset": settings["aspect_ratio_preset"],
             "layout": layout,
             "keyframe_timestamps": [round(frame.timestamp_seconds, 3) for frame in candidates],
             "large_tile_timestamps": [round(value, 3) for value in large_tile_timestamps],
@@ -711,11 +725,19 @@ class PreviewService:
         identity_diversity_enabled = payload.get("identity_diversity_enabled", DEFAULT_PREVIEW_SETTINGS["identity_diversity_enabled"])
         if not isinstance(identity_diversity_enabled, bool):
             raise ApiError("invalid_request", "Field 'identity_diversity_enabled' must be a boolean.", status=400)
+        aspect_ratio_preset = payload.get("aspect_ratio_preset", DEFAULT_PREVIEW_SETTINGS["aspect_ratio_preset"])
+        if aspect_ratio_preset not in ASPECT_RATIO_PRESETS:
+            raise ApiError(
+                "invalid_request",
+                "Field 'aspect_ratio_preset' must be one of: square, video, portrait, s24, ultrawide.",
+                status=400,
+            )
         return {
             "sample_count": sample_count,
             "large_tile_count": large_tile_count,
             "timeline_flow": timeline_flow,
             "identity_diversity_enabled": identity_diversity_enabled,
+            "aspect_ratio_preset": aspect_ratio_preset,
             "layout_preset_id": (preset_id or DEFAULT_PRESET_ID).strip() or DEFAULT_PRESET_ID,
         }
 
@@ -729,6 +751,10 @@ class PreviewService:
         layout_definition = payload.get("layout_definition", DEFAULT_LAYOUT_DEFINITION)
         if not isinstance(layout_definition, dict):
             raise ApiError("invalid_request", "Field 'layout_definition' must be a JSON object.", status=400)
+        layout_definition = {
+            **layout_definition,
+            "aspect_ratio_preset": settings["aspect_ratio_preset"],
+        }
         is_default = payload.get("is_default", False)
         if not isinstance(is_default, bool):
             raise ApiError("invalid_request", "Field 'is_default' must be a boolean when provided.", status=400)
@@ -740,6 +766,7 @@ class PreviewService:
         }
 
     def _serialize_preset_row(self, row) -> dict:
+        layout_definition = json.loads(row["layout_definition"])
         return {
             "id": row["id"],
             "name": row["name"],
@@ -747,7 +774,8 @@ class PreviewService:
             "sample_count": row["sample_count"],
             "large_tile_count": row["large_tile_count"],
             "identity_diversity_enabled": bool(row["identity_diversity_enabled"]),
-            "layout_definition": json.loads(row["layout_definition"]),
+            "aspect_ratio_preset": layout_definition.get("aspect_ratio_preset", DEFAULT_PREVIEW_SETTINGS["aspect_ratio_preset"]),
+            "layout_definition": layout_definition,
             "is_default": bool(row["is_default"]),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -788,9 +816,13 @@ class PreviewService:
         encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
         return f"data:image/jpeg;base64,{encoded}"
 
-    def _build_layout(self, *, sample_count: int, large_tile_count: int, timeline_flow: str) -> dict:
+    def _build_layout(self, *, sample_count: int, large_tile_count: int, timeline_flow: str, aspect_ratio_preset: str) -> dict:
         columns = 4 if sample_count >= 8 else 3 if sample_count >= 4 else 2
-        cell = 140
+        aspect_width, aspect_height = ASPECT_RATIO_PRESETS[aspect_ratio_preset]
+        aspect_ratio = aspect_width / aspect_height
+        base_area = 140 * 140
+        cell_width = max(72, int(round(math.sqrt(base_area * aspect_ratio))))
+        cell_height = max(72, int(round(math.sqrt(base_area / aspect_ratio))))
         gap = 12
         large_tile_count = min(large_tile_count, sample_count)
         occupancy: list[list[bool]] = []
@@ -826,10 +858,10 @@ class PreviewService:
                         {
                             "slot_index": slot_index,
                             "is_large": is_large,
-                            "x": col_index * (cell + gap),
-                            "y": row_index * (cell + gap),
-                            "width": (cell * col_span) + (gap * (col_span - 1)),
-                            "height": (cell * row_span) + (gap * (row_span - 1)),
+                            "x": col_index * (cell_width + gap),
+                            "y": row_index * (cell_height + gap),
+                            "width": (cell_width * col_span) + (gap * (col_span - 1)),
+                            "height": (cell_height * row_span) + (gap * (row_span - 1)),
                             "row": row_index,
                             "column": col_index,
                         }
@@ -858,11 +890,13 @@ class PreviewService:
             "sample_count": sample_count,
             "large_tile_count": large_tile_count,
             "timeline_flow": timeline_flow,
+            "aspect_ratio_preset": aspect_ratio_preset,
             "columns": columns,
-            "cell_size": cell,
+            "cell_width": cell_width,
+            "cell_height": cell_height,
             "gap": gap,
-            "canvas_width": columns * cell + (columns - 1) * gap,
-            "canvas_height": total_rows * cell + (total_rows - 1) * gap,
+            "canvas_width": columns * cell_width + (columns - 1) * gap,
+            "canvas_height": total_rows * cell_height + (total_rows - 1) * gap,
             "tiles": tiles,
         }
 

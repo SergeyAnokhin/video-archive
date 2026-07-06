@@ -1,3 +1,5 @@
+import { Clapperboard, Eye, FolderCog, ImagePlus, ScanSearch, Tags } from "lucide-react";
+
 export default function FileBrowserPanel({
   selectedDirectory,
   source,
@@ -14,44 +16,51 @@ export default function FileBrowserPanel({
   formatDirectoryLabel,
   formatBytes,
   formatDate,
-  formatStatusLabel
+  formatStatusLabel,
+  t
 }) {
   return (
     <section className="panel file-panel">
       <div className="panel-header">
         <div>
-          <p className="section-kicker">Current folder</p>
+          <p className="section-kicker">{t("files.kicker")}</p>
           <h2>{formatDirectoryLabel(selectedDirectory)}</h2>
-          <p className="muted">Primary toolbar stays focused on subtree work and lightweight file entry points.</p>
+          <p className="muted">{t("files.intro")}</p>
         </div>
         <div className="inline-actions">
-          <button type="button" className="mini-button" disabled={!source || !selectedFile || isWorking} onClick={onOpenDetails}>
-            Details
+          <button type="button" className="mini-button icon-button" disabled={!source || !selectedFile || isWorking} onClick={onOpenDetails}>
+            <FolderCog size={16} />
+            <span>{t("files.details")}</span>
           </button>
-          <button type="button" className="mini-button" disabled={!source || !selectedFile || isWorking} onClick={onOpenPlayback}>
-            Open playback
+          <button type="button" className="mini-button icon-button" disabled={!source || !selectedFile || isWorking} onClick={onOpenPlayback}>
+            <Clapperboard size={16} />
+            <span>{t("files.playback")}</span>
           </button>
-          <button type="button" className="mini-button" disabled={!source || isWorking} onClick={onOpenConvertDirectory}>
-            Convert subtree
+          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onOpenConvertDirectory}>
+            <FolderCog size={16} />
+            <span>{t("files.convertSubtree")}</span>
           </button>
-          <button type="button" className="mini-button" disabled={!source || isWorking} onClick={onPreviewDirectory}>
-            Preview subtree
+          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onPreviewDirectory}>
+            <ImagePlus size={16} />
+            <span>{t("files.previewSubtree")}</span>
           </button>
-          <button type="button" className="mini-button" disabled={!source || isWorking} onClick={onTagDirectory}>
-            Tag subtree
+          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onTagDirectory}>
+            <Tags size={16} />
+            <span>{t("files.tagSubtree")}</span>
           </button>
-          <button type="button" className="mini-button" disabled={!source || isWorking} onClick={onRescanDirectory}>
-            Rescan subtree
+          <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onRescanDirectory}>
+            <ScanSearch size={16} />
+            <span>{t("files.rescanSubtree")}</span>
           </button>
         </div>
       </div>
 
       <div className="list-header">
-        <span>Name</span>
-        <span>Type</span>
-        <span>Size</span>
-        <span>Modified</span>
-        <span>Status</span>
+        <span>{t("files.name")}</span>
+        <span>{t("files.type")}</span>
+        <span>{t("files.size")}</span>
+        <span>{t("files.modified")}</span>
+        <span>{t("files.status")}</span>
       </div>
 
       <div className="file-list">
@@ -72,18 +81,18 @@ export default function FileBrowserPanel({
               <span>{formatDate(file.modified_at)}</span>
               <div className="state-stack">
                 <span className={`state-pill state-${file.conversion_state}`}>
-                  Convert {formatStatusLabel(file.conversion_state)}
+                  {t("files.convertState", { state: formatStatusLabel(file.conversion_state) })}
                 </span>
                 <span className={`state-pill state-${file.preview_state}`}>
-                  Preview {formatStatusLabel(file.preview_state)}
+                  {t("files.previewState", { state: formatStatusLabel(file.preview_state) })}
                 </span>
               </div>
             </article>
           ))
         ) : (
           <div className="empty-state">
-            <h3>No files in this folder</h3>
-            <p>This folder either has no files yet or has not been discovered by a completed scan.</p>
+            <h3>{t("files.emptyTitle")}</h3>
+            <p>{t("files.emptyBody")}</p>
           </div>
         )}
       </div>

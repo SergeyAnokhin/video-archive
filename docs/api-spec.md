@@ -51,6 +51,8 @@ Query parameters:
 
 - `path` optional absolute path to browse, or omitted to return Windows drive roots
 
+Current implementation also returns `favorites` when available, including the repo-local `test-data/VideoArchive` folder and backend-adjacent directories that are useful for local testing.
+
 ### `PUT /api/source`
 
 Creates or replaces the active source configuration.
@@ -172,6 +174,7 @@ Request body includes:
 - sample frame count
 - timeline flow
 - large tile count
+- aspect ratio preset
 - identity diversity setting
 
 Response:

@@ -1,3 +1,5 @@
+import { RefreshCcw } from "lucide-react";
+
 export default function DirectoryTreePanel({
   treeItems,
   selectedDirectory,
@@ -5,17 +7,19 @@ export default function DirectoryTreePanel({
   isWorking,
   onScanSource,
   onSelectDirectory,
-  renderIndicatorBadges
+  renderIndicatorBadges,
+  t
 }) {
   return (
     <aside className="panel tree-panel">
       <div className="panel-header">
         <div>
-          <p className="section-kicker">Directories</p>
-          <h2>Tree</h2>
+          <p className="section-kicker">{t("directory.kicker")}</p>
+          <h2>{t("directory.title")}</h2>
         </div>
-        <button type="button" className="mini-button" disabled={!source || isWorking} onClick={onScanSource}>
-          Rescan source
+        <button type="button" className="mini-button icon-button" disabled={!source || isWorking} onClick={onScanSource}>
+          <RefreshCcw size={16} />
+          <span>{t("directory.rescanSource")}</span>
         </button>
       </div>
 
@@ -31,7 +35,7 @@ export default function DirectoryTreePanel({
                 style={{ paddingLeft: `${16 + node.depth * 16}px` }}
                 onClick={() => onSelectDirectory(node.path)}
               >
-                <span>{node.path ? node.name : "Source root"}</span>
+                <span>{node.path ? node.name : t("app.sourceRoot")}</span>
                 <span className="tree-badges">
                   {badges.map((badge) => (
                     <span key={badge.key} className={`tree-badge tree-badge-${badge.state}`} title={badge.title}>
@@ -44,8 +48,8 @@ export default function DirectoryTreePanel({
           })
         ) : (
           <div className="empty-state compact">
-            <h3>No scanned tree yet</h3>
-            <p>Save an active source, then run a source scan to populate the directory tree.</p>
+            <h3>{t("directory.emptyTitle")}</h3>
+            <p>{t("directory.emptyBody")}</p>
           </div>
         )}
       </div>

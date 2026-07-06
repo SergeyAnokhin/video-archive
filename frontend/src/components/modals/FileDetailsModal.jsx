@@ -1,3 +1,5 @@
+import { Clapperboard, FolderCog, ImagePlus, SlidersHorizontal, Tags, TextSearch, X } from "lucide-react";
+
 export default function FileDetailsModal({
   isOpen,
   selectedFile,
@@ -16,7 +18,8 @@ export default function FileDetailsModal({
   formatBytes,
   formatConfidence,
   formatDate,
-  formatStatusLabel
+  formatStatusLabel,
+  t
 }) {
   if (!isOpen) {
     return null;
@@ -27,12 +30,12 @@ export default function FileDetailsModal({
       <section className="overlay panel modal-shell details-shell" onClick={(event) => event.stopPropagation()}>
         <div className="panel-header">
           <div>
-            <p className="section-kicker">Video details</p>
-            <h2>{selectedFile?.file_name ?? "Selected file"}</h2>
+            <p className="section-kicker">{t("details.kicker")}</p>
+            <h2>{selectedFile?.file_name ?? t("details.titleFallback")}</h2>
           </div>
           <div className="inline-actions">
-            <button type="button" className="ghost-button" onClick={onClose}>
-              Close
+            <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={onClose}>
+              <X size={16} />
             </button>
           </div>
         </div>
@@ -44,46 +47,52 @@ export default function FileDetailsModal({
                 {selectedFilePreview?.image_data_url ? (
                   <img className="preview-image" src={selectedFilePreview.image_data_url} alt="Selected video preview" />
                 ) : (
-                  <span>No file preview stored yet.</span>
+                  <span>{t("details.noPreview")}</span>
                 )}
               </div>
 
               <div className="note-card">
-                <strong>File actions</strong>
+                <strong>{t("details.actions")}</strong>
                 <div className="inline-actions split-actions">
-                  <button type="button" className="mini-button" disabled={isWorking} onClick={() => onOpenPlayback(selectedFile)}>
-                    Playback
+                  <button type="button" className="mini-button icon-button" disabled={isWorking} onClick={() => onOpenPlayback(selectedFile)}>
+                    <Clapperboard size={16} />
+                    <span>{t("details.playback")}</span>
                   </button>
-                  <button type="button" className="mini-button" disabled={isWorking} onClick={() => onOpenConvertDialog("file", selectedFile)}>
-                    Convert file
+                  <button type="button" className="mini-button icon-button" disabled={isWorking} onClick={() => onOpenConvertDialog("file", selectedFile)}>
+                    <FolderCog size={16} />
+                    <span>{t("details.convert")}</span>
                   </button>
-                  <button type="button" className="mini-button" disabled={isWorking} onClick={() => onPreviewFile(selectedFile.id)}>
-                    Preview file
+                  <button type="button" className="mini-button icon-button" disabled={isWorking} onClick={() => onPreviewFile(selectedFile.id)}>
+                    <ImagePlus size={16} />
+                    <span>{t("details.preview")}</span>
                   </button>
-                  <button type="button" className="mini-button" disabled={isWorking} onClick={() => onTagFile(selectedFile.id)}>
-                    Tag file
+                  <button type="button" className="mini-button icon-button" disabled={isWorking} onClick={() => onTagFile(selectedFile.id)}>
+                    <Tags size={16} />
+                    <span>{t("details.tag")}</span>
                   </button>
-                  <button type="button" className="mini-button" disabled={isWorking} onClick={onOpenTune}>
-                    Tune file
+                  <button type="button" className="mini-button icon-button" disabled={isWorking} onClick={onOpenTune}>
+                    <SlidersHorizontal size={16} />
+                    <span>{t("details.tune")}</span>
                   </button>
                   <button
                     type="button"
-                    className="mini-button"
+                    className="mini-button icon-button"
                     onClick={() => onOpenLogViewer({ jobId: "", fileId: selectedFile.id, level: "" })}
                   >
-                    Filter logs
+                    <TextSearch size={16} />
+                    <span>{t("details.logs")}</span>
                   </button>
                 </div>
               </div>
 
               <div className="job-events-block">
-                <h4>Recent file activity</h4>
+                <h4>{t("details.activity")}</h4>
                 <pre className="log-console details-log-console">
                   {selectedFileLogs.length
                     ? selectedFileLogs
                         .map((event) => `${formatDate(event.created_at)}  ${event.level.toUpperCase()}  ${event.message}`)
                         .join("\n")
-                    : "No file-specific events yet."}
+                    : t("details.noEvents")}
                 </pre>
               </div>
             </div>
@@ -91,45 +100,45 @@ export default function FileDetailsModal({
             <div className="details-side">
               <dl className="meta-list">
                 <div>
-                  <dt>Relative path</dt>
+                  <dt>{t("details.relativePath")}</dt>
                   <dd>{selectedFileDetails.relative_path}</dd>
                 </div>
                 <div>
-                  <dt>Absolute path</dt>
+                  <dt>{t("details.absolutePath")}</dt>
                   <dd className="break-value">{selectedFileDetails.path}</dd>
                 </div>
                 <div>
-                  <dt>Size</dt>
+                  <dt>{t("details.size")}</dt>
                   <dd>{formatBytes(selectedFileDetails.size_bytes)}</dd>
                 </div>
                 <div>
-                  <dt>Modified</dt>
+                  <dt>{t("details.modified")}</dt>
                   <dd>{formatDate(selectedFileDetails.modified_at)}</dd>
                 </div>
                 <div>
-                  <dt>Discovered</dt>
+                  <dt>{t("details.discovered")}</dt>
                   <dd>{formatDate(selectedFileDetails.discovered_at)}</dd>
                 </div>
                 <div>
-                  <dt>Convert state</dt>
+                  <dt>{t("details.convertState")}</dt>
                   <dd>{formatStatusLabel(selectedFileDetails.conversion_state)}</dd>
                 </div>
                 <div>
-                  <dt>Preview state</dt>
+                  <dt>{t("details.previewState")}</dt>
                   <dd>{formatStatusLabel(selectedFileDetails.preview_state)}</dd>
                 </div>
                 <div>
-                  <dt>Last converted</dt>
+                  <dt>{t("details.lastConverted")}</dt>
                   <dd>{formatDate(selectedFileDetails.last_converted_at)}</dd>
                 </div>
                 <div>
-                  <dt>Preview generated</dt>
+                  <dt>{t("details.previewGenerated")}</dt>
                   <dd>{formatDate(selectedFileDetails.preview_generated_at)}</dd>
                 </div>
               </dl>
 
               <div className="note-card">
-                <strong>Assigned tags</strong>
+                <strong>{t("details.assignedTags")}</strong>
                 {selectedFileTags?.tags?.length ? (
                   <>
                     <div className="tag-pill-list">
@@ -144,15 +153,15 @@ export default function FileDetailsModal({
                     </p>
                   </>
                 ) : (
-                  <p>No tags stored yet.</p>
+                  <p>{t("details.noTags")}</p>
                 )}
               </div>
             </div>
           </div>
         ) : (
           <div className="empty-state compact">
-            <h3>Loading file details</h3>
-            <p>Fetching metadata, preview, tags, and recent file activity.</p>
+            <h3>{t("details.loadingTitle")}</h3>
+            <p>{t("details.loadingBody")}</p>
           </div>
         )}
       </section>

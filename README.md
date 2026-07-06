@@ -51,16 +51,16 @@ Implemented today:
 - real tuning jobs for a single file with dimension, quality, and codec sweeps that always write separate outputs and can be promoted into saved conversion profiles
 - real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, persisted preview assets, and directory collage generation
 - real closed-vocabulary tagging jobs for file and recursive directory scopes with configurable sampled-frame count, stored confidence scores, provider-backed inference, and provider-side batch preference
-- preview settings persistence with saved presets, live layout preview, and a dedicated preview section in the settings UI
+- preview settings persistence with saved presets, live layout preview, selectable aspect ratios including Samsung S24 portrait and ultrawide presets, and a dedicated preview section in the settings UI
 - playback settings persistence with embedded modal playback and external file-link opening when supported by the local environment
 - tagging settings persistence with allowed vocabulary editing, provider selection, batch preference, and separate provider configuration with API keys stored outside the main database
-- frontend source settings flow with local-folder browsing, test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, playback settings, conversion profile creation, a video details modal, a dedicated log viewer, a tuning workflow modal, and a jobs modal with detail, items, and live event updates
+- frontend source settings flow with backend-local folder browsing, repo test-archive shortcuts, test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, playback settings, conversion profile creation, a video details modal, a dedicated log viewer, a tuning workflow modal, and a jobs modal with detail, items, and live event updates
+- frontend RU/EN chrome copy switching, icon-first action buttons via `lucide-react`, and three visual presentation modes from strict to playful/casino-leaning while keeping the same responsive layout
 
 Not implemented yet:
 
 - protocol-native remote enumeration beyond backend-accessible source paths
 - backup and maintenance settings workflows
-- UI localization with Russian and English support
 
 ## Local Run
 
@@ -116,6 +116,16 @@ On first startup, the backend creates local development state under `backend/.lo
 - `secrets.json` for source credentials stored outside the main metadata database
 
 For the current browsing flow, `root_path` must point to a directory that is directly accessible from the backend machine, such as a local path or a reachable UNC share. The source settings screen now supports a `Local folder` mode with a backend-driven directory browser for test libraries on the same machine.
+
+### Recommended local test archive
+
+For UI checks, preview tuning, and browse-flow validation, use the repository-local test archive at [`test-data/VideoArchive`](test-data/VideoArchive). The source settings screen now exposes backend-local shortcuts for:
+
+- the repository test archive
+- the `backend/` folder
+- the current backend local-data folder
+
+The intent is visual and workflow verification only. Test runs should preserve the sample files rather than mutate them in place unless you explicitly choose a production conversion mode against another library.
 
 Optional local overrides can be placed in `backend/.env.local`. Start from [`backend/.env.example`](backend/.env.example) and set values such as:
 

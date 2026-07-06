@@ -131,6 +131,7 @@ class SourceServiceTests(unittest.TestCase):
 
             self.assertEqual(listing["path"], str(root.resolve()))
             self.assertEqual([entry["name"] for entry in listing["directories"]], ["alpha", "beta"])
+            self.assertIn("favorites", listing)
 
     def test_replace_active_source_keeps_existing_password_when_new_payload_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

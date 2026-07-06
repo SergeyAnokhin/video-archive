@@ -1,3 +1,5 @@
+import { ArrowUp, Folder, HardDriveDownload, Save, ScanSearch, ServerCog, TestTube2 } from "lucide-react";
+
 export default function SourceSettingsSection({
   source,
   sourceForm,
@@ -12,22 +14,27 @@ export default function SourceSettingsSection({
   onSourceTest,
   onReconnect,
   onScanSource,
-  onSourceSave
+  onSourceSave,
+  t
 }) {
+  const favoriteLabelByKey = {
+    repo_test_archive: t("sourceSettings.testArchive"),
+    backend_folder: t("sourceSettings.backendFolder"),
+    backend_local_data: t("sourceSettings.backendData")
+  };
+
   return (
     <div className="source-settings">
-      <p>
-        Video Archive supports one active source at a time. Use a remote protocol for server-backed libraries or switch to a local folder when you want to test directly on this machine.
-      </p>
+      <p>{t("sourceSettings.intro")}</p>
       <div className="form-grid">
         <label>
-          <span>Name</span>
+          <span>{t("sourceSettings.name")}</span>
           <input value={sourceForm.name} onChange={(event) => onUpdateSourceField("name", event.target.value)} />
         </label>
         <label>
-          <span>Protocol</span>
+          <span>{t("sourceSettings.protocol")}</span>
           <select value={sourceForm.protocol} onChange={(event) => onUpdateSourceField("protocol", event.target.value)}>
-            <option value="local">Local folder</option>
+            <option value="local">{t("sourceSettings.localOption")}</option>
             <option value="smb">SMB</option>
             <option value="ftp">FTP</option>
             <option value="sftp">SFTP</option>
@@ -35,86 +42,106 @@ export default function SourceSettingsSection({
           </select>
         </label>
         <label className="full-width">
-          <span>Root path</span>
+          <span>{t("sourceSettings.rootPath")}</span>
           <input
             value={sourceForm.root_path}
             onChange={(event) => onUpdateSourceField("root_path", event.target.value)}
-            placeholder={sourceFormIsLocal ? "C:\\Videos\\Test Library" : "Accessible path or UNC share"}
+            placeholder={sourceFormIsLocal ? t("sourceSettings.localPlaceholder") : t("sourceSettings.remotePlaceholder")}
           />
         </label>
         {sourceFormIsLocal ? null : (
           <>
             <label>
-              <span>Host</span>
+              <span>{t("sourceSettings.host")}</span>
               <input value={sourceForm.host} onChange={(event) => onUpdateSourceField("host", event.target.value)} />
             </label>
             <label>
-              <span>Port</span>
-              <input value={sourceForm.port} onChange={(event) => onUpdateSourceField("port", event.target.value)} placeholder="Default" />
+              <span>{t("sourceSettings.port")}</span>
+              <input value={sourceForm.port} onChange={(event) => onUpdateSourceField("port", event.target.value)} placeholder={t("sourceSettings.portPlaceholder")} />
             </label>
             <label>
-              <span>Username</span>
+              <span>{t("sourceSettings.username")}</span>
               <input value={sourceForm.username} onChange={(event) => onUpdateSourceField("username", event.target.value)} />
             </label>
             <label>
-              <span>Password</span>
+              <span>{t("sourceSettings.password")}</span>
               <input
                 type="password"
                 value={sourceForm.password}
                 onChange={(event) => onUpdateSourceField("password", event.target.value)}
-                placeholder={source?.has_password ? "Leave blank to keep saved password" : ""}
+                placeholder={source?.has_password ? t("sourceSettings.keepPassword") : ""}
               />
             </label>
           </>
         )}
       </div>
+      {sourceFormIsLocal && localDirectoryBrowser.favorites?.length ? (
+        <div className="note-card">
+          <strong>{t("sourceSettings.favorites")}</strong>
+          <div className="favorite-directory-list">
+            {localDirectoryBrowser.favorites.map((entry) => (
+              <button key={entry.id} type="button" className="mini-button icon-button" onClick={() => onSelectLocalDirectory(entry.path)}>
+                <HardDriveDownload size={16} />
+                <span>{favoriteLabelByKey[entry.label_key] ?? entry.path}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="inline-actions">
         {sourceFormIsLocal ? (
           <button
             type="button"
-            className="ghost-button"
+            className="ghost-button icon-button"
             disabled={isWorking}
             onClick={() => onLoadLocalDirectoryBrowser(localDirectoryBrowser.path || sourceForm.root_path || "")}
           >
-            Browse local folders
+            <Folder size={16} />
+            <span>{t("sourceSettings.browse")}</span>
           </button>
         ) : null}
-        <button type="button" className="ghost-button" disabled={isWorking} onClick={onSourceTest}>
-          Test connection
+        <button type="button" className="ghost-button icon-button" disabled={isWorking} onClick={onSourceTest}>
+          <TestTube2 size={16} />
+          <span>{t("sourceSettings.test")}</span>
         </button>
-        <button type="button" className="ghost-button" disabled={!source || isWorking} onClick={onReconnect}>
-          Reconnect
+        <button type="button" className="ghost-button icon-button" disabled={!source || isWorking} onClick={onReconnect}>
+          <ServerCog size={16} />
+          <span>{t("sourceSettings.reconnect")}</span>
         </button>
-        <button type="button" className="ghost-button" disabled={!source || isWorking} onClick={onScanSource}>
-          Scan source
+        <button type="button" className="ghost-button icon-button" disabled={!source || isWorking} onClick={onScanSource}>
+          <ScanSearch size={16} />
+          <span>{t("sourceSettings.scan")}</span>
         </button>
-        <button type="button" className="primary-button" disabled={isWorking} onClick={onSourceSave}>
-          Save source
+        <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={onSourceSave}>
+          <Save size={16} />
+          <span>{t("sourceSettings.save")}</span>
         </button>
       </div>
       {sourceFormIsLocal && isLocalDirectoryBrowserOpen ? (
         <div className="note-card local-directory-browser">
           <div className="panel-header compact-header">
             <div>
-              <strong>Local folder browser</strong>
-              <p className="muted">{localDirectoryBrowser.path || "This PC"}</p>
+              <strong>{t("sourceSettings.browseTitle")}</strong>
+              <p className="muted">{localDirectoryBrowser.path || t("sourceSettings.browseRoot")}</p>
             </div>
             <div className="inline-actions">
               <button
                 type="button"
-                className="ghost-button"
+                className="ghost-button icon-button"
                 disabled={isWorking || !localDirectoryBrowser.parent_path}
                 onClick={() => onLoadLocalDirectoryBrowser(localDirectoryBrowser.parent_path || "")}
               >
-                Up
+                <ArrowUp size={16} />
+                <span>{t("sourceSettings.up")}</span>
               </button>
               <button
                 type="button"
-                className="primary-button"
+                className="primary-button icon-button"
                 disabled={isWorking || !localDirectoryBrowser.path}
                 onClick={() => onSelectLocalDirectory(localDirectoryBrowser.path)}
               >
-                Use this folder
+                <Folder size={16} />
+                <span>{t("sourceSettings.useFolder")}</span>
               </button>
             </div>
           </div>
@@ -132,7 +159,7 @@ export default function SourceSettingsSection({
             ))}
             {!localDirectoryBrowser.directories.length ? (
               <div className="settings-placeholder compact-placeholder">
-                <span>No child directories found here.</span>
+                <span>{t("sourceSettings.noChildren")}</span>
               </div>
             ) : null}
           </div>
@@ -140,7 +167,7 @@ export default function SourceSettingsSection({
       ) : null}
       {testResult ? (
         <div className={`note-card ${testResult.ok ? "note-card-success" : "note-card-warning"}`}>
-          <strong>{testResult.ok ? "Ready to scan" : "Connection partial"}</strong>
+          <strong>{testResult.ok ? t("sourceSettings.ready") : t("sourceSettings.partial")}</strong>
           <p>{testResult.message}</p>
           <p className="muted">
             {testResult.protocol === "local"
