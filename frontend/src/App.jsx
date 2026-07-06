@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Play, Save, X } from "lucide-react";
 import {
   cancelJob,
   createConversionProfile,
@@ -47,6 +46,9 @@ import LibraryPreviewPanel from "./components/layout/LibraryPreviewPanel";
 import FileDetailsModal from "./components/modals/FileDetailsModal";
 import JobsModal from "./components/modals/JobsModal";
 import LogViewerModal from "./components/modals/LogViewerModal";
+import PlaybackModal from "./components/modals/PlaybackModal";
+import ConversionModal from "./components/modals/ConversionModal";
+import PromotionModal from "./components/modals/PromotionModal";
 import TuneModal from "./components/modals/TuneModal";
 import SettingsModal from "./components/settings/SettingsModal";
 import {
@@ -69,81 +71,18 @@ import {
   toSourcePayload,
   toTaggingForm
 } from "./features/source/sourceHelpers";
-import { createTranslator, getSettingsSections, visualModes } from "./i18n";
-
-function formatStatusLabel(value, t) {
-  return t(`status.${value}`).replaceAll("_", " ");
-}
-
-function formatBytes(value) {
-  if (!Number.isFinite(value)) {
-    return "-";
-  }
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let size = value;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-  return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
-}
-
-function formatDate(value, locale) {
-  if (!value) {
-    return "-";
-  }
-
-  return new Date(value).toLocaleString(locale === "ru" ? "ru-RU" : "en-US");
-}
-
-function formatProfileLabel(profile, t) {
-  const parts = [`${profile.video_codec.toUpperCase()} -> ${profile.container.toUpperCase()}`];
-  if (profile.max_dimension) {
-    parts.push(`${t("profiles.maxDimension")} ${profile.max_dimension}px`);
-  }
-  if (profile.quality_value) {
-    parts.push(`${(profile.quality_mode || "quality").toUpperCase()} ${profile.quality_value}`);
-  }
-  parts.push(profile.drop_audio ? t("profiles.dropAudio") : "audio");
-  return `${profile.name} (${parts.join(", ")})`;
-}
-
-function formatJobScope(job, t) {
-  if (!job) {
-    return "-";
-  }
-  if (job.scope_type === "source") {
-    return t("app.activeSource");
-  }
-  if (job.scope_type === "directory") {
-    return job.scope_ref || t("app.libraryRoot");
-  }
-  return job.scope_ref || "-";
-}
-
-function formatJobTypeLabel(value, t) {
-  return t(`jobTypes.${value}`);
-}
-
-function formatConfidence(value) {
-  if (!Number.isFinite(value)) {
-    return "-";
-  }
-  return `${Math.round(value * 100)}%`;
-}
-
-function renderIndicatorBadges(indicators, t) {
-  return [
-    indicators?.conversion
-      ? { key: "conversion", label: t("directory.convertBadge"), state: indicators.conversion.state, title: indicators.conversion.message }
-      : null,
-    indicators?.preview
-      ? { key: "preview", label: t("directory.previewBadge"), state: indicators.preview.state, title: indicators.preview.message }
-      : null
-  ].filter(Boolean);
-}
+import {
+  formatBytes,
+  formatConfidence,
+  formatDate,
+  formatJobScope,
+  formatJobTypeLabel,
+  formatProfileLabel,
+  formatStatusLabel,
+  renderIndicatorBadges
+} from "./appFormatters";
+import { getNextVisualMode, getSettingsSections, visualModes } from "./appShellConfig";
+import { createTranslator } from "./i18n";
 
 function App() {
   const [health, setHealth] = useState({ state: "loading", status: null, error: null });
@@ -1178,9 +1117,7 @@ function App() {
           setActiveOverlay("settings");
         }}
         onToggleLocale={() => setLocale((current) => (current === "ru" ? "en" : "ru"))}
-        onCycleVisualMode={() =>
-          setVisualMode((current) => visualModes[(visualModes.indexOf(current) + 1) % visualModes.length] ?? "strict")
-        }
+        onCycleVisualMode={() => setVisualMode((current) => getNextVisualMode(current))}
       />
 
       <section className={`workspace ${previewVisible ? "with-preview" : "without-preview"}`}>
@@ -1257,28 +1194,7 @@ function App() {
         t={t}
       />
 
-      {activeOverlay === "playback" && playbackTarget ? (
-        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
-          <section className="overlay panel modal-shell playback-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">{t("playbackModal.kicker")}</p>
-                <h2>{playbackTarget.file_name}</h2>
-              </div>
-              <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={() => setActiveOverlay(null)}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className="video-player-shell">
-              <video controls className="video-player" src={playbackTarget.embedded_url} />
-            </div>
-            <div className="note-card">
-              <strong>{t("playbackModal.target")}</strong>
-              <p className="break-value">{playbackTarget.path}</p>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <PlaybackModal isOpen={activeOverlay === "playback"} playbackTarget={playbackTarget} onClose={() => setActiveOverlay(null)} t={t} />
 
       <LogViewerModal
         isOpen={activeOverlay === "logs"}
@@ -1311,64 +1227,18 @@ function App() {
         t={t}
       />
 
-      {activeOverlay === "convert" && conversionDraft ? (
-        <div className="overlay-backdrop" onClick={() => setActiveOverlay(null)}>
-          <section className="overlay panel modal-shell convert-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">{t("conversionModal.kicker")}</p>
-                <h2>{conversionDraft.scope === "file" ? t("conversionModal.fileTitle") : t("conversionModal.directoryTitle")}</h2>
-              </div>
-              <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={() => setActiveOverlay(null)}>
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="convert-layout">
-              <div className="note-card">
-                <strong>
-                  {conversionDraft.scope === "file"
-                    ? conversionDraft.fileName || t("conversionModal.fileTitle")
-                    : formatDirectoryLabel(conversionDraft.relativePath, t)}
-                </strong>
-                <p>{t("conversionModal.description")}</p>
-              </div>
-
-              <div className="form-grid">
-                <label className="full-width">
-                  <span>{t("conversionModal.savedProfile")}</span>
-                  <select value={conversionDraft.profileId} onChange={(event) => updateConversionDraft("profileId", event.target.value)}>
-                    {conversionProfiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {formatProfileLabel(profile, t)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  <span>{t("conversionModal.mode")}</span>
-                  <select value={conversionDraft.mode} onChange={(event) => updateConversionDraft("mode", event.target.value)}>
-                    <option value="production">{t("conversionModal.production")}</option>
-                    <option value="test">{t("conversionModal.test")}</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="inline-actions">
-                <button type="button" className="ghost-button icon-button" onClick={() => setActiveOverlay(null)}>
-                  <X size={16} />
-                  <span>{t("common.cancel")}</span>
-                </button>
-                <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={submitConversionJob}>
-                  <Play size={16} />
-                  <span>{t("conversionModal.start")}</span>
-                </button>
-              </div>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <ConversionModal
+        isOpen={activeOverlay === "convert"}
+        conversionDraft={conversionDraft}
+        conversionProfiles={conversionProfiles}
+        formatProfileLabel={(profile) => formatProfileLabel(profile, t)}
+        isWorking={isWorking}
+        onClose={() => setActiveOverlay(null)}
+        onUpdateProfileId={(value) => updateConversionDraft("profileId", value)}
+        onUpdateMode={(value) => updateConversionDraft("mode", value)}
+        onSubmit={submitConversionJob}
+        t={t}
+      />
 
       <TuneModal
         isOpen={activeOverlay === "tune"}
@@ -1393,44 +1263,15 @@ function App() {
         t={t}
       />
 
-      {promotionDraft ? (
-        <div className="overlay-backdrop" onClick={() => setPromotionDraft(null)}>
-          <section className="overlay panel modal-shell promote-shell" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-header">
-              <div>
-                <p className="section-kicker">{t("promotion.kicker")}</p>
-                <h2>{t("promotion.title")}</h2>
-              </div>
-              <button type="button" className="ghost-button icon-only-button" aria-label={t("common.close")} title={t("common.close")} onClick={() => setPromotionDraft(null)}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className="form-grid">
-              <label className="full-width">
-                <span>{t("promotion.name")}</span>
-                <input value={promotionDraft.name} onChange={(event) => setPromotionDraft((current) => ({ ...current, name: event.target.value }))} />
-              </label>
-              <label className="toggle-row">
-                <span>{t("promotion.markDefault")}</span>
-                <input type="checkbox" checked={promotionDraft.isDefault} onChange={(event) => setPromotionDraft((current) => ({ ...current, isDefault: event.target.checked }))} />
-              </label>
-            </div>
-            <div className="note-card">
-              <strong>{promotionDraft.variant.label}</strong>
-              <p>
-                Codec {promotionDraft.variant.video_codec.toUpperCase()} - Max dimension {promotionDraft.variant.max_dimension ?? t("promotion.sourceDimension")} -{" "}
-                {promotionDraft.variant.quality_value ? `CRF ${promotionDraft.variant.quality_value}` : t("promotion.defaultQuality")}
-              </p>
-            </div>
-            <div className="inline-actions">
-              <button type="button" className="primary-button icon-button" disabled={isWorking || !promotionDraft.name.trim()} onClick={handlePromoteVariant}>
-                <Save size={16} />
-                <span>{t("promotion.save")}</span>
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <PromotionModal
+        isOpen={Boolean(promotionDraft)}
+        promotionDraft={promotionDraft}
+        isWorking={isWorking}
+        onClose={() => setPromotionDraft(null)}
+        onUpdate={(field, value) => setPromotionDraft((current) => ({ ...current, [field]: value }))}
+        onSubmit={handlePromoteVariant}
+        t={t}
+      />
 
       <SettingsModal
         isOpen={activeOverlay === "settings"}

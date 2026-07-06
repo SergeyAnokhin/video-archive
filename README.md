@@ -141,6 +141,8 @@ Optional local overrides can be placed in `backend/.env.local`. Start from [`bac
 npm.cmd run test --prefix backend
 ```
 
+The backend test package now includes `backend/tests/__init__.py`, and the backend npm script uses unittest discovery with `-t .` so local `app` imports resolve consistently from the repo instead of accidentally colliding with unrelated global `tests` packages.
+
 ### Conversion runtime dependency
 
 Real conversion jobs now call `ffmpeg` and `ffprobe` from the backend machine. Those binaries must be available on `PATH` for production or test conversion runs to succeed.
@@ -173,6 +175,7 @@ The backend stores provider API keys in `backend/.local/secrets.json`, keeps pro
 - [`docs/code-map.md`](docs/code-map.md) routes "where should I read first for this task?" across frontend and backend.
 - [`docs/frontend-map.md`](docs/frontend-map.md) points to the smallest frontend edit paths for common UI work.
 - [`docs/frontend-flows.md`](docs/frontend-flows.md) routes modal, jobs, settings, playback, and log-viewer flows.
+- [`docs/dev-entrypoints.md`](docs/dev-entrypoints.md) lists the canonical read-first files and verification commands for localization, theme, preview layout, and local source/test-archive work.
 - [`docs/`](docs/) contains the product and architecture specifications that guide the next implementation stages.
 
 ## Documentation
@@ -189,3 +192,4 @@ Core specification set:
 - [`docs/code-map.md`](docs/code-map.md)
 - [`docs/frontend-map.md`](docs/frontend-map.md)
 - [`docs/frontend-flows.md`](docs/frontend-flows.md)
+- [`docs/dev-entrypoints.md`](docs/dev-entrypoints.md)

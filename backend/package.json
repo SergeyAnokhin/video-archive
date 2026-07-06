@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "python -m app.main",
-    "test": "python -m unittest discover -s tests -p \"test_*.py\""
+    "test": "python -m unittest discover -s tests -t . -p \"test_*.py\""
   }
 }

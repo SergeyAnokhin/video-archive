@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .db import connection
 from .errors import ApiError
+from .frame_sampling import unique_sample_indices
 from .provider_settings_service import ProviderSettingsService
 from .time_utils import utc_now
 
@@ -492,7 +493,7 @@ class TaggingService:
             if frame_count <= 0:
                 raise ApiError("tagging_probe_failed", f"Unable to determine frame count for {file_path.name}.", status=500)
             images = []
-            for frame_index in _interior_sample_indices(frame_count=frame_count, sample_count=sample_count):
+            for frame_index in unique_sample_indices(frame_count=frame_count, sample_count=sample_count):
                 capture.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
                 ok, frame = capture.read()
                 if not ok or frame is None:
@@ -541,18 +542,6 @@ class TaggingService:
         if not isinstance(parsed, dict):
             raise ApiError("tagging_provider_invalid_response", "Provider tagging output must be a JSON object.", status=502)
         return parsed
-
-
-def _interior_sample_indices(*, frame_count: int, sample_count: int) -> list[int]:
-    if frame_count <= 0:
-        return []
-    safe_sample_count = max(1, min(sample_count, frame_count))
-    step = frame_count / (safe_sample_count + 1)
-    indices = []
-    for sample_index in range(safe_sample_count):
-        candidate = int(round((sample_index + 1) * step))
-        indices.append(max(0, min(frame_count - 1, candidate)))
-    return sorted(set(indices))
 
 
 def _slugify_tag(value: str) -> str:
