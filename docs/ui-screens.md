@@ -281,9 +281,11 @@ Tuning should be initiated from a file, not from the main folder toolbar.
 
 The tuning UI should support:
 
-- min/max/step controls for max-side sweeps
-- min/max/step controls for CRF sweeps
-- parameter sweeps over codec variants
+- explicit choice of one tuning parameter per run
+- min/max/step controls for max-side sweeps when size is the selected axis
+- min/max/step controls for CRF sweeps when quality is the selected axis
+- codec selection when codec is the selected axis
+- fixed companion settings for the non-swept parameters in the same run
 - comparison of generated outputs
 - generated outputs appearing beside the source file in the same folder with a visible generated marker
 - promotion of a successful tuning result into a reusable conversion profile

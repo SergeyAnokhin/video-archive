@@ -246,7 +246,10 @@ export function buildTuneSweep(draft) {
       label: "CRF"
     }).map((value) => String(value));
   } else if (parameter === "codec") {
-    selectedCodecs = codecs.length ? codecs : ["h265"];
+    if (!codecs.length) {
+      throw new Error("Select at least one codec for tuning.");
+    }
+    selectedCodecs = codecs;
   } else {
     throw new Error("Unsupported tuning parameter.");
   }
