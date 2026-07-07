@@ -19,6 +19,13 @@
   font-size: 13px;
 }
 
+.library-view__toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-1);
+}
+
 .library-view__icon-btn {
   display: inline-flex;
   align-items: center;

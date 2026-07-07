@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import PurePosixPath
+from math import gcd
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import similarity
+from app import conversion, similarity
+from app.conversion_profiles import get_profile
 from app.db import get_engine
 from app.media import ORIGINAL_MARKER, VARIANT_MARKER, preview_gif_relative_path
 from app.source_access import get_active_source_or_404
@@ -161,6 +163,49 @@ def get_file(file_id: str):
         "tagged_at": row.tagged_at,
         "is_variant": VARIANT_MARKER in row.file_name,
         "is_original": ORIGINAL_MARKER in row.file_name,
+    }
+
+
+@router.get("/files/{file_id}/media-info")
+def get_file_media_info(file_id: str):
+    """On-demand technical info (codec/resolution/bitrate/etc.) for the file
+    info panel. Not persisted: ffprobe runs fresh on each request, mirroring
+    how `conversion.probe_media()` is already used elsewhere (jobs/convert.py,
+    tagging.py, similarity.py) rather than adding a DB column + rescan."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT f.relative_path, f.last_conversion_profile_id, s.*
+                FROM files f
+                JOIN sources s ON s.id = f.source_id
+                WHERE f.id = :id AND s.is_active = 1
+                """
+            ),
+            {"id": file_id},
+        ).fetchone()
+        if row is None:
+            raise _file_not_found_error(file_id)
+        profile = get_profile(engine, row.last_conversion_profile_id) if row.last_conversion_profile_id else None
+
+    access = get_source_access(row)
+    info = conversion.probe_media(Path(access.direct_path(row.relative_path)))
+
+    aspect_ratio = None
+    if info and info.get("width") and info.get("height"):
+        divisor = gcd(info["width"], info["height"])
+        aspect_ratio = f"{info['width'] // divisor}:{info['height'] // divisor}"
+
+    return {
+        "width": info.get("width") if info else None,
+        "height": info.get("height") if info else None,
+        "aspect_ratio": aspect_ratio,
+        "video_codec": info.get("video_codec_name") if info else None,
+        "format_name": info.get("format_name") if info else None,
+        "duration": info.get("duration") if info else None,
+        "bit_rate": info.get("bit_rate") if info else None,
+        "conversion_profile": profile,
     }
 
 

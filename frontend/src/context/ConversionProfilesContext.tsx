@@ -13,6 +13,18 @@ interface ConversionProfilesContextValue {
   profiles: ConversionProfile[]
   loading: boolean
   refresh: () => Promise<void>
+  ensureDefaultProfile: (name: string) => Promise<ConversionProfile>
+}
+
+// Baseline used to seed a "starter" profile when none exist yet, so Convert/
+// Tune always have something to work from instead of blocking on an empty
+// profile list.
+const FALLBACK_PROFILE_DEFAULTS = {
+  video_codec: 'h265',
+  container: 'mp4',
+  max_dimension: 1024,
+  crf: 28,
+  drop_audio: true,
 }
 
 const ConversionProfilesContext = createContext<ConversionProfilesContextValue | null>(null)
@@ -39,7 +51,30 @@ export function ConversionProfilesProvider({ children }: { children: ReactNode }
     void refresh()
   }, [refresh])
 
-  const value = useMemo(() => ({ profiles, loading, refresh }), [profiles, loading, refresh])
+  const ensureDefaultProfile = useCallback(
+    async (name: string): Promise<ConversionProfile> => {
+      const res = await fetch('/api/conversion-profiles')
+      const data: { profiles: ConversionProfile[] } = await res.json()
+      const existing = data.profiles.find((p) => p.is_default) ?? data.profiles[0]
+      if (existing) {
+        return existing
+      }
+      const createRes = await fetch('/api/conversion-profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, is_default: true, ...FALLBACK_PROFILE_DEFAULTS }),
+      })
+      const created: ConversionProfile = await createRes.json()
+      await refresh()
+      return created
+    },
+    [refresh],
+  )
+
+  const value = useMemo(
+    () => ({ profiles, loading, refresh, ensureDefaultProfile }),
+    [profiles, loading, refresh, ensureDefaultProfile],
+  )
 
   return (
     <ConversionProfilesContext.Provider value={value}>

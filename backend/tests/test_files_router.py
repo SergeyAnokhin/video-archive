@@ -92,6 +92,57 @@ def test_delete_file_not_found(engine, source):
     assert res.status_code == 404
 
 
+def test_media_info_not_found(engine, source):
+    with TestClient(app) as client:
+        res = client.get(f"/api/files/{uuid.uuid4()}/media-info")
+    assert res.status_code == 404
+
+
+def test_media_info_gracefully_nulls_when_unprobeable(engine, source):
+    # Not a real video (ffprobe will fail or be absent), so codec/resolution
+    # fields should come back null rather than erroring.
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "clip.mp4").write_bytes(b"not actually a video")
+    file_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+
+    with TestClient(app) as client:
+        res = client.get(f"/api/files/{file_id}/media-info")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["width"] is None
+    assert body["aspect_ratio"] is None
+    assert body["conversion_profile"] is None
+
+
+def test_media_info_includes_conversion_profile_used(engine, source):
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "clip.mp4").write_bytes(b"data")
+    file_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+
+    profile_id = str(uuid.uuid4())
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO conversion_profiles (id, name, is_default, video_codec, container, "
+                "max_dimension, crf, drop_audio, created_at, updated_at) "
+                "VALUES (:id, 'My Profile', 0, 'h265', 'mp4', 1024, 28, 0, :now, :now)"
+            ),
+            {"id": profile_id, "now": now},
+        )
+        conn.execute(
+            text("UPDATE files SET last_conversion_profile_id = :pid WHERE id = :id"),
+            {"pid": profile_id, "id": file_id},
+        )
+
+    with TestClient(app) as client:
+        res = client.get(f"/api/files/{file_id}/media-info")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["conversion_profile"]["id"] == profile_id
+    assert body["conversion_profile"]["name"] == "My Profile"
+
+
 def test_move_file_updates_path_and_directory(engine, source):
     root_id = _insert_directory(engine, source["id"], "", None)
     dest_id = _insert_directory(engine, source["id"], "dest", "")

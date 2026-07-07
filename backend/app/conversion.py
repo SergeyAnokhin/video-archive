@@ -67,6 +67,8 @@ def probe_media(path: Path) -> dict | None:
     video_stream = video_streams[0] if video_streams else None
     fmt = data.get("format", {})
 
+    bit_rate = fmt.get("bit_rate") or (video_stream.get("bit_rate") if video_stream else None)
+
     return {
         "has_video_stream": video_stream is not None,
         "width": video_stream.get("width") if video_stream else None,
@@ -74,6 +76,7 @@ def probe_media(path: Path) -> dict | None:
         "video_codec_name": video_stream.get("codec_name") if video_stream else None,
         "format_name": fmt.get("format_name"),
         "duration": float(fmt["duration"]) if fmt.get("duration") else None,
+        "bit_rate": int(bit_rate) if bit_rate else None,
     }
 
 

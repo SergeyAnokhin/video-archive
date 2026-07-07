@@ -34,13 +34,20 @@
   color: var(--color-text);
 }
 
+.file-info-panel__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
 .file-info-panel__thumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  flex: 1 1 40%;
   min-height: 0;
-  margin-bottom: var(--space-2);
   color: var(--color-text-muted);
   background: var(--color-bg);
   border-radius: var(--radius-sm);
@@ -53,22 +60,45 @@
   object-fit: contain;
 }
 
+.file-info-panel__details {
+  display: flex;
+  flex: 1 1 60%;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 639px) {
+  .file-info-panel__body {
+    flex-direction: column;
+  }
+
+  .file-info-panel__thumb {
+    flex: 0 0 auto;
+    max-height: 30vh;
+  }
+}
+
 .file-info-panel__status {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: var(--space-1) var(--space-4);
-  margin: 0 0 var(--space-3);
+  gap: var(--space-2);
+  margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
-  color: var(--color-text-muted);
 }
 
 .file-info-panel__status-item {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-surface-raised);
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 .file-info-panel__dot {
@@ -80,6 +110,7 @@
 
 .file-info-panel__dot--done {
   background: var(--color-success);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-success) 35%, transparent);
 }
 
 .file-info-panel__dot--conversion {
@@ -92,4 +123,39 @@
 
 .file-info-panel__dot--tag {
   background: var(--color-danger);
+}
+
+.file-info-panel__media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  transition: opacity 0.15s ease;
+}
+
+.file-info-panel__media-grid--loading {
+  opacity: 0.5;
+}
+
+.file-info-panel__media-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.file-info-panel__media-field dt {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.file-info-panel__media-field dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
 }

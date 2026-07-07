@@ -160,6 +160,17 @@ export interface VariantOverride {
   video_codec?: string
 }
 
+export interface FileMediaInfo {
+  width: number | null
+  height: number | null
+  aspect_ratio: string | null
+  video_codec: string | null
+  format_name: string | null
+  duration: number | null
+  bit_rate: number | null
+  conversion_profile: ConversionProfile | null
+}
+
 export type TimelineFlow = 'row' | 'column' | 'shuffle'
 export type AspectRatioMode = 'standard' | 'phone-portrait' | 'phone-landscape' | 'ultra-wide' | 'custom'
 

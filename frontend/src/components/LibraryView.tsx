@@ -20,6 +20,7 @@ import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
+import { FileTuneModal } from './FileTuneModal'
 import type { ActiveSearch } from './LibrarySearchBox'
 import { MoveFileDialog } from './MoveFileDialog'
 import { PlaybackModal } from './PlaybackModal'
@@ -46,6 +47,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
   const [rescanning, setRescanning] = useState(false)
   const [convertDirOpen, setConvertDirOpen] = useState(false)
   const [convertFile, setConvertFile] = useState<FileEntry | null>(null)
+  const [tuneFile, setTuneFile] = useState<FileEntry | null>(null)
   const [previewDirOpen, setPreviewDirOpen] = useState(false)
   const [previewingFileId, setPreviewingFileId] = useState<string | null>(null)
   const [tagDirOpen, setTagDirOpen] = useState(false)
@@ -228,62 +230,64 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
           })}
         </nav>
 
-        <button
-          type="button"
-          className="library-view__icon-btn"
-          aria-label={t('library.rescan')}
-          title={t('library.rescan')}
-          onClick={handleRescan}
-          disabled={rescanning}
-        >
-          <RefreshCw size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
-        </button>
-
-        {/* Design System §5 (< 640px): secondary icon buttons collapse into an
-            overflow menu; the same actions render inline on tablet/desktop. */}
-        {directoryActions.map((action) => (
-          <button
-            key={action.key}
-            type="button"
-            className="library-view__icon-btn library-view__actions-inline"
-            aria-label={action.label}
-            title={action.label}
-            onClick={action.onClick}
-          >
-            {action.icon}
-          </button>
-        ))}
-
-        <div className="library-view__overflow" ref={overflowRef}>
+        <div className="library-view__toolbar-actions">
           <button
             type="button"
-            className="library-view__icon-btn library-view__overflow-trigger"
-            aria-label={t('library.moreActions')}
-            aria-haspopup="menu"
-            aria-expanded={overflowOpen}
-            onClick={() => setOverflowOpen((open) => !open)}
+            className="library-view__icon-btn"
+            aria-label={t('library.rescan')}
+            title={t('library.rescan')}
+            onClick={handleRescan}
+            disabled={rescanning}
           >
-            <MoreVertical size={16} />
+            <RefreshCw size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
           </button>
-          {overflowOpen && (
-            <div className="library-view__overflow-menu" role="menu">
-              {directoryActions.map((action) => (
-                <button
-                  key={action.key}
-                  type="button"
-                  role="menuitem"
-                  className="library-view__overflow-item"
-                  onClick={() => {
-                    action.onClick()
-                    setOverflowOpen(false)
-                  }}
-                >
-                  {action.icon}
-                  <span>{action.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
+
+          {/* Design System §5 (< 640px): secondary icon buttons collapse into an
+              overflow menu; the same actions render inline on tablet/desktop. */}
+          {directoryActions.map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              className="library-view__icon-btn library-view__actions-inline"
+              aria-label={action.label}
+              title={action.label}
+              onClick={action.onClick}
+            >
+              {action.icon}
+            </button>
+          ))}
+
+          <div className="library-view__overflow" ref={overflowRef}>
+            <button
+              type="button"
+              className="library-view__icon-btn library-view__overflow-trigger"
+              aria-label={t('library.moreActions')}
+              aria-haspopup="menu"
+              aria-expanded={overflowOpen}
+              onClick={() => setOverflowOpen((open) => !open)}
+            >
+              <MoreVertical size={16} />
+            </button>
+            {overflowOpen && (
+              <div className="library-view__overflow-menu" role="menu">
+                {directoryActions.map((action) => (
+                  <button
+                    key={action.key}
+                    type="button"
+                    role="menuitem"
+                    className="library-view__overflow-item"
+                    onClick={() => {
+                      action.onClick()
+                      setOverflowOpen(false)
+                    }}
+                  >
+                    {action.icon}
+                    <span>{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -370,6 +374,14 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
         />
       )}
 
+      {tuneFile && (
+        <FileTuneModal
+          file={tuneFile}
+          onClose={() => setTuneFile(null)}
+          onStarted={refreshJobs}
+        />
+      )}
+
       {previewDirOpen && (
         <PreviewDirectoryDialog
           path={path}
@@ -399,6 +411,10 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
           onTag={() => void handleTagFile(infoFile.id)}
           onConvert={() => {
             setConvertFile(infoFile)
+            setInfoFile(null)
+          }}
+          onTune={() => {
+            setTuneFile(infoFile)
             setInfoFile(null)
           }}
           onSimilar={() => {
