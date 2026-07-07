@@ -29,6 +29,8 @@ import {
   fetchSettings,
   fetchTree,
   generateLivePreview,
+  getDirectoryPreviewCardUrl,
+  getFilePreviewCardUrl,
   loadAppShellData,
   reconnectSource,
   restartJob,
@@ -961,6 +963,20 @@ function App() {
     return `/api/files/${encodeURIComponent(file.id)}/preview-image`;
   }
 
+  function getFilePreviewCardImageUrl(file) {
+    if (!file?.id || !file.has_preview_assets) {
+      return "";
+    }
+    return getFilePreviewCardUrl(file.id);
+  }
+
+  function getDirectoryPreviewCardImageUrl(directory) {
+    if (!directory?.has_preview_asset) {
+      return "";
+    }
+    return getDirectoryPreviewCardUrl(directory.path ?? "");
+  }
+
   function openTuneModal() {
     setTuneDraft(defaultTuneDraft);
     setTuningJobId(null);
@@ -1144,7 +1160,8 @@ function App() {
           onSelectFile={setSelectedFileId}
           onOpenFileDetails={openDetailsModal}
           renderIndicatorBadges={(indicators) => renderIndicatorBadges(indicators, t)}
-          getFilePreviewImageUrl={getFilePreviewImageUrl}
+          getFilePreviewImageUrl={getFilePreviewCardImageUrl}
+          getDirectoryPreviewImageUrl={getDirectoryPreviewCardImageUrl}
           formatDirectoryLabel={(path) => formatDirectoryLabel(path, t)}
           formatStatusLabel={(value) => formatStatusLabel(value, t)}
           t={t}

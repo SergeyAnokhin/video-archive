@@ -50,9 +50,9 @@ Implemented today:
 - saved conversion profiles can now also be created from the UI and from successful tuning results
 - real conversion jobs for file and recursive directory scopes with temp output, lightweight validation, production replacement, and separate test outputs
 - real tuning jobs for a single file with dimension, quality, and codec sweeps that always write separate outputs and can be promoted into saved conversion profiles
-- real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, file-level `.jpg` previews written next to their source videos, and directory collage generation
+- real preview jobs for file and recursive directory scopes with local frame sampling, local face/body prioritization, file-level `.jpg` collage previews written next to their source videos, compact animated `.gif` card previews written under backend technical preview storage, and directory collage generation
 - real closed-vocabulary tagging jobs for file and recursive directory scopes with configurable sampled-frame count, stored confidence scores, provider-backed inference, and provider-side batch preference
-- preview settings persistence with saved presets, live layout preview, selectable aspect ratios including Samsung S24 portrait and ultrawide presets, and a dedicated preview section in the settings UI
+- preview settings persistence with saved presets, live layout preview, and a dedicated preview section in the settings UI; the current card/collage ratio is fixed to `19.5:9`
 - playback settings persistence with embedded modal playback and external file-link opening when supported by the local environment
 - tagging settings persistence with allowed vocabulary editing, provider selection, batch preference, and separate provider configuration with API keys stored outside the main database
 - frontend source settings flow with backend-local folder browsing, repo test-archive shortcuts, test, save, reconnect, scan, rescan, preview display, tag display, tagging/provider settings, playback settings, conversion profile creation, a video details modal, a dedicated log viewer, a tuning workflow modal, and a jobs modal with detail, items, and live event updates

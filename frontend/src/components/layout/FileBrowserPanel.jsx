@@ -17,6 +17,7 @@ export default function FileBrowserPanel({
   onOpenFileDetails,
   renderIndicatorBadges,
   getFilePreviewImageUrl,
+  getDirectoryPreviewImageUrl,
   formatDirectoryLabel,
   formatStatusLabel,
   t
@@ -108,6 +109,7 @@ export default function FileBrowserPanel({
       <div className="file-list">
         {childDirectories.map((directory) => {
           const badges = renderIndicatorBadges(directory.indicators);
+          const previewImageUrl = getDirectoryPreviewImageUrl(directory);
           return (
             <button
               key={directory.id}
@@ -115,21 +117,32 @@ export default function FileBrowserPanel({
               className="file-card directory-card"
               onClick={() => onSelectDirectory(directory.path)}
             >
-              <div className="directory-card-main">
-                <span className="directory-card-icon">
-                  <Folder size={20} />
-                </span>
-                <div className="directory-card-copy">
-                  <strong title={directory.name}>{directory.name}</strong>
-                  <span>{t("files.folderCard")}</span>
+              <div className="file-card-media directory-card-media">
+                {previewImageUrl ? (
+                  <img className="preview-image" src={previewImageUrl} alt={directory.name} loading="lazy" />
+                ) : (
+                  <div className="file-card-placeholder">
+                    <Folder size={20} />
+                  </div>
+                )}
+                <div className="file-card-chrome directory-card-chrome">
+                  <span className="directory-card-icon">
+                    <Folder size={18} />
+                  </span>
                 </div>
               </div>
-              <div className="tree-badges directory-card-badges">
-                {badges.map((badge) => (
-                  <span key={badge.key} className={`tree-badge tree-badge-${badge.state}`} title={badge.title}>
-                    {badge.label}
-                  </span>
-                ))}
+              <div className="file-card-body directory-card-body">
+                <strong title={directory.name}>{directory.name}</strong>
+                <div className="directory-card-meta-row">
+                  <span>{t("files.folderCard")}</span>
+                  <div className="tree-badges directory-card-badges">
+                    {badges.map((badge) => (
+                      <span key={badge.key} className={`tree-badge tree-badge-${badge.state}`} title={badge.title}>
+                        {badge.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
             </button>
           );

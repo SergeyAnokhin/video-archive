@@ -18,7 +18,7 @@ DEFAULT_PREVIEW_SETTINGS = {
     "large_tile_count": 2,
     "timeline_flow": "row",
     "identity_diversity_enabled": True,
-    "aspect_ratio_preset": "video",
+    "aspect_ratio_preset": "s24",
     "layout_preset_id": DEFAULT_PRESET_ID,
 }
 

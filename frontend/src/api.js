@@ -408,6 +408,14 @@ export function fetchDirectoryPreview(relativePath = "") {
   return requestJson(`/api/directories/preview${query}`, undefined, "Directory preview");
 }
 
+export function getFilePreviewCardUrl(fileId) {
+  return `/api/files/${encodeURIComponent(fileId)}/preview-card`;
+}
+
+export function getDirectoryPreviewCardUrl(relativePath = "") {
+  return `/api/directories/preview-card?relative_path=${encodeURIComponent(relativePath)}`;
+}
+
 export function fetchFileTags(fileId) {
   return requestJson(`/api/files/${encodeURIComponent(fileId)}/tags`, undefined, "File tags");
 }

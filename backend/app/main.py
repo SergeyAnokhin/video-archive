@@ -110,6 +110,14 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._serve_file_content(Path(preview["image_path"]))
                 return
 
+            if path.startswith("/api/files/") and path.endswith("/preview-card"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/preview-card")
+                preview_path = _require_app_state().preview_service.get_file_card_preview_path(file_id)
+                if preview_path is None:
+                    raise ApiError("preview_not_found", "Requested preview asset does not exist.", status=404)
+                self._serve_file_content(preview_path)
+                return
+
             if path.startswith("/api/files/") and path.endswith("/playback"):
                 file_id = path.removeprefix("/api/files/").removesuffix("/playback")
                 file_row = _require_app_state().library_service.get_file(file_id)
@@ -141,6 +149,17 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                     raise ApiError("source_not_configured", "Configure an active source before loading directory previews.", status=400)
                 preview = _require_app_state().preview_service.get_directory_preview(source["id"], relative_path)
                 self._write_json(HTTPStatus.OK, {"preview": preview})
+                return
+
+            if path == "/api/directories/preview-card":
+                relative_path = normalize_relative_path(_first_query_value(query, "relative_path"))
+                source = _require_app_state().source_service.get_active_source()
+                if source is None:
+                    raise ApiError("source_not_configured", "Configure an active source before loading directory previews.", status=400)
+                preview_path = _require_app_state().preview_service.get_directory_card_preview_path(source["id"], relative_path)
+                if preview_path is None:
+                    raise ApiError("preview_not_found", "Requested preview asset does not exist.", status=404)
+                self._serve_file_content(preview_path)
                 return
 
             if path == "/api/jobs":

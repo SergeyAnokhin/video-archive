@@ -26,11 +26,23 @@ export default function FileDetailsModal({
   }
 
   const previewFileName = selectedFilePreview?.image_path ? selectedFilePreview.image_path.split(/[/\\]/).pop() : "";
+  const taggingState = selectedFileTags?.tagging_updated_at ? "done" : "not_started";
+  const statusRows = selectedFileDetails
+    ? [
+        { key: "convert", label: t("details.convertState"), state: selectedFileDetails.conversion_state },
+        { key: "preview", label: t("details.previewState"), state: selectedFileDetails.preview_state },
+        { key: "tag", label: t("details.tagState"), state: taggingState }
+      ]
+    : [];
+
+  function renderStateLamp(state) {
+    return <span className={`state-lamp state-lamp-${state}`} aria-hidden="true" />;
+  }
 
   return (
     <div className="overlay-backdrop" onClick={onClose}>
       <section className="overlay panel modal-shell details-shell" onClick={(event) => event.stopPropagation()}>
-        <div className="panel-header">
+        <div className="panel-header details-header">
           <div>
             <p className="section-kicker">{t("details.kicker")}</p>
             <h2>{selectedFile?.file_name ?? t("details.titleFallback")}</h2>
@@ -58,9 +70,23 @@ export default function FileDetailsModal({
                 </span>
               </button>
 
+              <div className="note-card details-status-card">
+                <strong>{t("details.statusLine")}</strong>
+                <div className="details-status-row">
+                  {statusRows.map((entry) => (
+                    <span key={entry.key} className="details-status-item">
+                      {renderStateLamp(entry.state)}
+                      <span>
+                        {entry.label}: {formatStatusLabel(entry.state)}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               <div className="note-card details-actions-card">
                 <strong>{t("details.actions")}</strong>
-                <div className="inline-actions split-actions">
+                <div className="inline-actions split-actions details-actions-row">
                   <button type="button" className="mini-button icon-button" disabled={isWorking} onClick={() => onOpenConvertDialog("file", selectedFile)}>
                     <FolderCog size={16} />
                     <span>{t("details.convert")}</span>

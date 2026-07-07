@@ -20,7 +20,7 @@ export const defaultPreviewSettings = {
   large_tile_count: 2,
   timeline_flow: "row",
   identity_diversity_enabled: true,
-  aspect_ratio_preset: "video",
+  aspect_ratio_preset: "s24",
   layout_preset_id: "default-preview-grid"
 };
 

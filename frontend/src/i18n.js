@@ -155,6 +155,7 @@ const messages = {
       rulesTitle: "Selection rules",
       rulesBody:
         "First two large tiles prefer faces. Remaining large tiles prefer figures. When identity diversity is enabled, the backend falls back to separate timeline regions if a full identity pass is too expensive.",
+      fixedAspectRatio: "The card and collage aspect ratio is currently fixed at 19.5:9.",
       livePreview: "Live preview",
       generating: "Generating layout preview...",
       row: "Row by row",
@@ -243,6 +244,8 @@ const messages = {
       discovered: "Discovered",
       convertState: "Convert state",
       previewState: "Preview state",
+      tagState: "Tag state",
+      statusLine: "Processing status",
       lastConverted: "Last converted",
       previewGenerated: "Preview generated",
       assignedTags: "Assigned tags",
@@ -519,6 +522,7 @@ const messages = {
       rulesTitle: "Правила отбора",
       rulesBody:
         "Первые две крупные плитки предпочитают лица. Остальные крупные плитки предпочитают фигуры. Когда включено разнообразие лиц, бэкенд может переходить к разным временным сегментам, если полный проход слишком дорогой.",
+      fixedAspectRatio: "Соотношение сторон для карточек и коллажей сейчас жестко зафиксировано: 19.5:9.",
       livePreview: "Live preview",
       generating: "Генерация макета...",
       row: "По строкам",
@@ -607,6 +611,8 @@ const messages = {
       discovered: "Обнаружен",
       convertState: "Статус конвертации",
       previewState: "Статус превью",
+      tagState: "Статус тегов",
+      statusLine: "Статус обработки",
       lastConverted: "Последняя конвертация",
       previewGenerated: "Превью создано",
       assignedTags: "Назначенные теги",

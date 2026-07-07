@@ -70,6 +70,16 @@ class LibraryService:
                 """,
                 (source["id"],),
             ).fetchall()
+            directory_preview_rows = conn.execute(
+                """
+                SELECT directory_relative_path
+                FROM preview_assets
+                WHERE source_id = ? AND asset_kind = 'directory'
+                """,
+                (source["id"],),
+            ).fetchall()
+
+        directory_preview_paths = {row["directory_relative_path"] for row in directory_preview_rows}
 
         nodes_by_path: dict[str, dict] = {}
         for row in directory_rows:
@@ -79,6 +89,7 @@ class LibraryService:
                 "name": row["name"] or source["name"],
                 "path": path,
                 "parent_path": row["parent_relative_path"],
+                "has_preview_asset": path in directory_preview_paths,
                 "children": [],
                 "indicators": {
                     "conversion": None,
@@ -92,6 +103,7 @@ class LibraryService:
                 "name": source["name"],
                 "path": "",
                 "parent_path": None,
+                "has_preview_asset": "" in directory_preview_paths,
                 "children": [],
                 "indicators": {
                     "conversion": None,

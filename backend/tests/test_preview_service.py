@@ -21,9 +21,9 @@ class PreviewServiceTests(unittest.TestCase):
 
             self.assertEqual(settings["sample_count"], 9)
             self.assertTrue(settings["identity_diversity_enabled"])
-            self.assertEqual(settings["aspect_ratio_preset"], "video")
+            self.assertEqual(settings["aspect_ratio_preset"], "s24")
             self.assertEqual(preview["layout"]["sample_count"], settings["sample_count"])
-            self.assertEqual(preview["layout"]["aspect_ratio_preset"], "video")
+            self.assertEqual(preview["layout"]["aspect_ratio_preset"], "s24")
             self.assertTrue(preview["image_data_url"].startswith("data:image/png;base64,"))
 
     def test_create_and_update_preview_preset(self) -> None:
@@ -61,7 +61,7 @@ class PreviewServiceTests(unittest.TestCase):
             self.assertEqual(created["aspect_ratio_preset"], "s24")
             self.assertEqual(updated["name"], "Dense collage v2")
             self.assertEqual(updated["timeline_flow"], "shuffle")
-            self.assertEqual(updated["aspect_ratio_preset"], "ultrawide")
+            self.assertEqual(updated["aspect_ratio_preset"], "s24")
             self.assertTrue(updated["identity_diversity_enabled"])
 
     def test_file_preview_output_path_uses_source_directory(self) -> None:

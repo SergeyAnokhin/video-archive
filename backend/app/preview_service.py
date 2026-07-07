@@ -4,7 +4,9 @@ import base64
 import io
 import json
 import math
+import re
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +35,10 @@ from .time_utils import utc_now
 
 
 PREVIEW_SECTION = "preview"
+FIXED_ASPECT_RATIO_PRESET = "s24"
+CARD_GIF_FRAME_COUNT = 4
+CARD_GIF_SIZE = (390, 180)
+CARD_GIF_DURATION_MS = 520
 
 
 @dataclass
@@ -66,6 +72,8 @@ class PreviewService:
         self._database_path = database_path
         self._preview_dir = data_dir / "previews"
         self._preview_dir.mkdir(parents=True, exist_ok=True)
+        self._animated_preview_dir = self._preview_dir / "animated"
+        self._animated_preview_dir.mkdir(parents=True, exist_ok=True)
         self._face_cascade = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"))
         self._body_detector = cv2.HOGDescriptor()
         self._body_detector.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
@@ -251,6 +259,8 @@ class PreviewService:
         output_path = self._build_file_preview_output_path(file_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         collage.save(output_path, format="JPEG", quality=88)
+        card_gif_path = self._build_file_card_gif_output_path(file_row["relative_path"], file_row["file_name"])
+        self._render_card_gif(card_gif_path, self._select_frames_for_card_gif(analyses, frame_count=CARD_GIF_FRAME_COUNT))
 
         face_summary = {
             "max_face_count": max(frame.face_count for frame in analyses),
@@ -278,6 +288,7 @@ class PreviewService:
             "face_detection_summary": face_summary,
             "body_detection_summary": body_summary,
             "layout_version": LAYOUT_VERSION,
+            "card_gif_path": str(card_gif_path),
         }
         self._store_file_preview_asset(
             source_id=file_row["source_id"],
@@ -293,6 +304,9 @@ class PreviewService:
 
     def _build_file_preview_output_path(self, file_path: Path) -> Path:
         return file_path.with_suffix(".jpg")
+
+    def _build_file_card_gif_output_path(self, relative_path: str, file_name: str) -> Path:
+        return self._animated_preview_dir / "files" / f"{self._asset_stem(relative_path, fallback=file_name)}.gif"
 
     def generate_directory_preview(
         self,
@@ -345,6 +359,10 @@ class PreviewService:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path = output_path.with_suffix(".jpg")
         collage.save(output_path, format="JPEG", quality=88)
+        card_gif_frames = self._collect_directory_card_frames(relative_path=relative_path, file_rows=file_rows, frame_count=CARD_GIF_FRAME_COUNT)
+        card_gif_path = self._build_directory_card_gif_output_path(relative_path)
+        if card_gif_frames:
+            self._render_card_gif(card_gif_path, card_gif_frames)
         metadata = {
             "scope_type": "directory",
             "relative_path": relative_path,
@@ -358,6 +376,7 @@ class PreviewService:
             "large_tile_timestamps": [round(value, 3) for value in large_tile_timestamps],
             "layout_version": LAYOUT_VERSION,
             "video_count": len(file_rows),
+            "card_gif_path": str(card_gif_path) if card_gif_frames else None,
         }
         self._store_directory_preview_asset(
             source_id=source_id,
@@ -369,6 +388,9 @@ class PreviewService:
             "output_ref": str(output_path),
             "metadata": metadata,
         }
+
+    def _build_directory_card_gif_output_path(self, relative_path: str) -> Path:
+        return self._animated_preview_dir / "directories" / f"{self._asset_stem(relative_path, fallback='root')}.gif"
 
     def get_file_preview(self, file_id: str, *, include_image_data: bool = True) -> dict | None:
         with connection(self._database_path) as conn:
@@ -397,6 +419,32 @@ class PreviewService:
         if row is None:
             return None
         return self._serialize_preview_asset_row(row, include_image_data=include_image_data)
+
+    def get_file_card_preview_path(self, file_id: str) -> Path | None:
+        preview = self.get_file_preview(file_id, include_image_data=False)
+        if preview is None:
+            return None
+        metadata = preview["metadata"]
+        card_gif_path = metadata.get("card_gif_path")
+        if isinstance(card_gif_path, str) and card_gif_path:
+            candidate = Path(card_gif_path)
+            if candidate.exists():
+                return candidate
+        image_path = preview.get("image_path")
+        return None if not image_path else Path(image_path)
+
+    def get_directory_card_preview_path(self, source_id: str, relative_path: str) -> Path | None:
+        preview = self.get_directory_preview(source_id, relative_path, include_image_data=False)
+        if preview is None:
+            return None
+        metadata = preview["metadata"]
+        card_gif_path = metadata.get("card_gif_path")
+        if isinstance(card_gif_path, str) and card_gif_path:
+            candidate = Path(card_gif_path)
+            if candidate.exists():
+                return candidate
+        image_path = preview.get("image_path")
+        return None if not image_path else Path(image_path)
 
     def clear_file_preview(self, file_id: str) -> None:
         with connection(self._database_path) as conn, conn:
@@ -718,19 +766,12 @@ class PreviewService:
         identity_diversity_enabled = payload.get("identity_diversity_enabled", DEFAULT_PREVIEW_SETTINGS["identity_diversity_enabled"])
         if not isinstance(identity_diversity_enabled, bool):
             raise ApiError("invalid_request", "Field 'identity_diversity_enabled' must be a boolean.", status=400)
-        aspect_ratio_preset = payload.get("aspect_ratio_preset", DEFAULT_PREVIEW_SETTINGS["aspect_ratio_preset"])
-        if aspect_ratio_preset not in ASPECT_RATIO_PRESETS:
-            raise ApiError(
-                "invalid_request",
-                "Field 'aspect_ratio_preset' must be one of: square, video, portrait, s24, ultrawide.",
-                status=400,
-            )
         return {
             "sample_count": sample_count,
             "large_tile_count": large_tile_count,
             "timeline_flow": timeline_flow,
             "identity_diversity_enabled": identity_diversity_enabled,
-            "aspect_ratio_preset": aspect_ratio_preset,
+            "aspect_ratio_preset": FIXED_ASPECT_RATIO_PRESET,
             "layout_preset_id": (preset_id or DEFAULT_PRESET_ID).strip() or DEFAULT_PRESET_ID,
         }
 
@@ -807,12 +848,142 @@ class PreviewService:
         if not image_path.exists():
             raise ApiError("preview_asset_missing", "Preview image is no longer available on disk.", status=404)
         encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
-        return f"data:image/jpeg;base64,{encoded}"
+        mime = "image/gif" if image_path.suffix.lower() == ".gif" else "image/jpeg"
+        return f"data:{mime};base64,{encoded}"
 
     def _build_layout(self, *, sample_count: int, large_tile_count: int, timeline_flow: str, aspect_ratio_preset: str) -> dict:
         return build_preview_layout(
             sample_count=sample_count,
             large_tile_count=large_tile_count,
             timeline_flow=timeline_flow,
-            aspect_ratio_preset=aspect_ratio_preset,
+            aspect_ratio_preset=FIXED_ASPECT_RATIO_PRESET,
         )
+
+    def _render_card_gif(self, output_path: Path, frames: list[_FrameAnalysis]) -> None:
+        if not frames:
+            return
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        images = [frame_to_tile_image(frame.image_bgr, CARD_GIF_SIZE[0], CARD_GIF_SIZE[1]) for frame in frames]
+        first, *rest = images
+        first.save(
+            output_path,
+            format="GIF",
+            save_all=True,
+            append_images=rest or [first],
+            duration=CARD_GIF_DURATION_MS,
+            loop=0,
+            optimize=False,
+            disposal=2,
+        )
+
+    def _select_frames_for_card_gif(self, analyses: list[_FrameAnalysis], *, frame_count: int) -> list[_FrameAnalysis]:
+        if not analyses:
+            return []
+        if len(analyses) <= frame_count:
+            return analyses
+        positions = self._even_positions(len(analyses), frame_count)
+        return [analyses[index] for index in positions]
+
+    def _collect_directory_card_frames(self, *, relative_path: str, file_rows: list[dict], frame_count: int) -> list[_FrameAnalysis]:
+        if not file_rows or frame_count <= 0:
+            return []
+
+        grouped: dict[str, list[dict]] = defaultdict(list)
+        for file_row in sorted(file_rows, key=lambda row: row["relative_path"]):
+            grouped[self._directory_branch_key(relative_path, file_row["relative_path"])].append(file_row)
+
+        selected_files: list[dict] = []
+        branch_keys = sorted(grouped)
+        branch_offsets = {key: 0 for key in branch_keys}
+        while len(selected_files) < frame_count:
+            progressed = False
+            for branch_key in branch_keys:
+                branch_rows = grouped[branch_key]
+                offset = branch_offsets[branch_key]
+                if offset >= len(branch_rows):
+                    continue
+                selected_files.append(branch_rows[offset])
+                branch_offsets[branch_key] += 1
+                progressed = True
+                if len(selected_files) >= frame_count:
+                    break
+            if not progressed:
+                break
+
+        if not selected_files:
+            return []
+
+        frame_budget_by_file = {row["id"]: 0 for row in selected_files}
+        for budget_index in range(frame_count):
+            row = selected_files[budget_index % len(selected_files)]
+            frame_budget_by_file[row["id"]] += 1
+
+        results: list[_FrameAnalysis] = []
+        for sample_index, file_row in enumerate(selected_files):
+            preview = self.get_file_preview(file_row["id"], include_image_data=False)
+            if preview is None:
+                continue
+            metadata = preview["metadata"]
+            timestamps = metadata.get("keyframe_timestamps") or metadata.get("large_tile_timestamps") or []
+            if not timestamps:
+                continue
+            positions = self._even_positions(len(timestamps), frame_budget_by_file[file_row["id"]])
+            for offset, position in enumerate(positions):
+                timestamp = float(timestamps[position])
+                frame = self._read_specific_frame(Path(file_row["path"]), timestamp)
+                if frame is None:
+                    continue
+                results.append(
+                    self._analyze_frame(
+                        frame,
+                        sample_index=(sample_index * frame_count) + offset,
+                        frame_index=position,
+                        timestamp_seconds=timestamp,
+                    )
+                )
+        return results[:frame_count]
+
+    def _directory_branch_key(self, relative_path: str, file_relative_path: str) -> str:
+        normalized_scope = relative_path.strip("/")
+        normalized_file = file_relative_path.strip("/")
+        if normalized_scope:
+            prefix = f"{normalized_scope}/"
+            if normalized_file.startswith(prefix):
+                normalized_file = normalized_file.removeprefix(prefix)
+            elif normalized_file == normalized_scope:
+                normalized_file = ""
+        parts = [part for part in normalized_file.split("/") if part]
+        if len(parts) <= 1:
+            return "."
+        return parts[0]
+
+    def _asset_stem(self, relative_path: str, *, fallback: str) -> str:
+        base = relative_path or fallback
+        normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", base.replace("\\", "/").replace("/", "__")).strip("._")
+        return normalized or "preview"
+
+    def _even_positions(self, length: int, count: int) -> list[int]:
+        if length <= 0 or count <= 0:
+            return []
+        if count >= length:
+            return list(range(length))
+        results: list[int] = []
+        for offset in range(count):
+            position = int(round(((offset + 1) * (length + 1)) / (count + 1))) - 1
+            results.append(max(0, min(length - 1, position)))
+        unique: list[int] = []
+        seen: set[int] = set()
+        for value in results:
+            if value in seen:
+                continue
+            seen.add(value)
+            unique.append(value)
+        if len(unique) == count:
+            return unique
+        for candidate in range(length):
+            if candidate in seen:
+                continue
+            unique.append(candidate)
+            if len(unique) == count:
+                break
+        return unique[:count]

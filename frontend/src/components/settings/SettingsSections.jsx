@@ -114,16 +114,6 @@ function PreviewSettingsSection({
           <span>{t("previewSettings.identityDiversity")}</span>
           <input type="checkbox" checked={previewSettings.identity_diversity_enabled} onChange={(event) => onUpdatePreviewSetting("identity_diversity_enabled", event.target.checked)} />
         </label>
-        <label>
-          <span>{t("previewSettings.aspectRatio")}</span>
-          <select value={previewSettings.aspect_ratio_preset} onChange={(event) => onUpdatePreviewSetting("aspect_ratio_preset", event.target.value)}>
-            <option value="square">{t("previewSettings.square")}</option>
-            <option value="video">{t("previewSettings.video")}</option>
-            <option value="portrait">{t("previewSettings.portrait")}</option>
-            <option value="s24">{t("previewSettings.s24")}</option>
-            <option value="ultrawide">{t("previewSettings.ultrawide")}</option>
-          </select>
-        </label>
         <label className="full-width">
           <span>{t("previewSettings.savedPreset")}</span>
           <select value={previewSettings.layout_preset_id} onChange={(event) => onUpdatePreviewSetting("layout_preset_id", event.target.value)}>
@@ -166,6 +156,7 @@ function PreviewSettingsSection({
         <div className="note-card">
           <strong>{t("previewSettings.rulesTitle")}</strong>
           <p>{t("previewSettings.rulesBody")}</p>
+          <p>{t("previewSettings.fixedAspectRatio")}</p>
         </div>
         <div className="note-card preview-layout-card">
           <strong>{t("previewSettings.livePreview")}</strong>

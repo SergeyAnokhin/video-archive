@@ -141,11 +141,15 @@ class JobServiceTests(unittest.TestCase):
             files = library_service.list_files("clips")
             events = job_service.list_events(job_id=job["id"], limit=50)
             directory_preview = job_service._preview_service.get_directory_preview(source["id"], "clips")
+            file_card_preview = job_service._preview_service.get_file_card_preview_path(files[0]["id"])
+            directory_card_preview = job_service._preview_service.get_directory_card_preview_path(source["id"], "clips")
 
             self.assertEqual(completed["status"], "completed")
             self.assertTrue(all(file["preview_state"] == "done" for file in files))
             self.assertTrue(all(file["has_preview_assets"] for file in files))
             self.assertIsNotNone(directory_preview)
+            self.assertIsNotNone(file_card_preview)
+            self.assertIsNotNone(directory_card_preview)
             self.assertTrue(any(event["event_type"] == "preview.item.completed" for event in events))
 
     def test_tag_job_stores_closed_vocabulary_tags(self) -> None:
@@ -295,8 +299,11 @@ class FakePreviewService(PreviewService):
 
     def generate_file_preview(self, *, source_root: str, file_row: dict, settings: dict) -> dict:
         output_path = Path(file_row["path"]).with_suffix(".jpg")
+        card_gif_path = self._preview_dir / "animated" / "files" / f"{file_row['id']}.gif"
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        card_gif_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"fake-preview")
+        card_gif_path.write_bytes(b"fake-gif")
         metadata = {
             "scope_type": "file",
             "file_id": file_row["id"],
@@ -312,6 +319,7 @@ class FakePreviewService(PreviewService):
             "face_detection_summary": {"samples_with_faces": 2},
             "body_detection_summary": {"samples_with_bodies": 1},
             "layout_version": 1,
+            "card_gif_path": str(card_gif_path),
         }
         self._store_file_preview_asset(
             source_id=file_row["source_id"],
@@ -324,9 +332,12 @@ class FakePreviewService(PreviewService):
 
     def generate_directory_preview(self, *, source_id: str, source_root: str, relative_path: str, settings: dict, file_rows: list[dict]) -> dict | None:
         output_path = self._preview_dir / "directories" / (relative_path.replace("/", "__") or "root")
+        card_gif_path = self._preview_dir / "animated" / "directories" / f"{(relative_path.replace('/', '__') or 'root')}.gif"
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        card_gif_path.parent.mkdir(parents=True, exist_ok=True)
         output_path = output_path.with_suffix(".jpg")
         output_path.write_bytes(b"fake-directory-preview")
+        card_gif_path.write_bytes(b"fake-directory-gif")
         metadata = {
             "scope_type": "directory",
             "relative_path": relative_path,
@@ -339,6 +350,7 @@ class FakePreviewService(PreviewService):
             "large_tile_timestamps": [1.0],
             "layout_version": 1,
             "video_count": len(file_rows),
+            "card_gif_path": str(card_gif_path),
         }
         self._store_directory_preview_asset(
             source_id=source_id,
