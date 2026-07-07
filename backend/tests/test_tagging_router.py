@@ -142,26 +142,88 @@ def test_tagging_settings_roundtrip_over_http(tmp_path, monkeypatch):
         assert r.json()["combine_into_collage"] is False
 
 
-def test_provider_settings_mask_api_key_over_http(tmp_path, monkeypatch):
+def test_provider_entries_crud_and_key_masking_over_http(tmp_path, monkeypatch):
     with _fresh_client(tmp_path, monkeypatch) as client:
-        r = client.get("/api/settings/providers")
+        r = client.get("/api/settings/provider-entries")
         assert r.status_code == 200
-        names = {p["provider_name"] for p in r.json()["providers"]}
-        assert names == {"openrouter", "gemini", "fal", "mistral"}
-        assert all(p["has_api_key"] is False for p in r.json()["providers"])
+        assert r.json()["entries"] == []
 
-        r = client.put(
-            "/api/settings/providers/openrouter",
-            json={"enabled": True, "vision_model": "test-model", "api_key": "sk-should-not-leak"},
+        r = client.post(
+            "/api/settings/provider-entries",
+            json={"provider_type": "openrouter", "vision_model": "test-model", "api_key": "sk-should-not-leak"},
         )
         assert r.status_code == 200
         body = r.json()
         assert body["has_api_key"] is True
         assert "api_key" not in body
         assert "sk-should-not-leak" not in r.text
+        entry_id = body["id"]
 
-        r = client.put("/api/settings/providers/not-a-provider", json={"enabled": True})
+        r = client.post("/api/settings/provider-entries", json={"provider_type": "not-a-provider"})
+        assert r.status_code == 400
+
+        r = client.put(
+            f"/api/settings/provider-entries/{entry_id}",
+            json={"display_name": "Renamed", "enabled": True, "vision_model": "test-model", "batch_enabled": False},
+        )
+        assert r.status_code == 200
+        assert r.json()["display_name"] == "Renamed"
+
+        r = client.put("/api/settings/provider-entries/missing-id", json={"display_name": "x", "enabled": False})
         assert r.status_code == 404
+
+        r = client.delete(f"/api/settings/provider-entries/{entry_id}")
+        assert r.status_code == 200
+        r = client.delete(f"/api/settings/provider-entries/{entry_id}")
+        assert r.status_code == 404
+
+
+def test_provider_entries_reorder_over_http(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        a = client.post("/api/settings/provider-entries", json={"provider_type": "gemini"}).json()
+        b = client.post("/api/settings/provider-entries", json={"provider_type": "mistral"}).json()
+
+        r = client.post("/api/settings/provider-entries/reorder", json={"ordered_ids": [b["id"], a["id"]]})
+        assert r.status_code == 200
+        assert [e["id"] for e in r.json()["entries"]] == [b["id"], a["id"]]
+
+        r = client.post("/api/settings/provider-entries/reorder", json={"ordered_ids": [b["id"]]})
+        assert r.status_code == 400
+
+
+def test_provider_entries_export_includes_plaintext_key_over_http(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        client.post("/api/settings/provider-entries", json={"provider_type": "gemini", "api_key": "sk-export-me"})
+
+        r = client.get("/api/settings/provider-entries/export")
+        assert r.status_code == 200
+        payload = r.json()
+        assert payload["entries"][0]["api_key"] == "sk-export-me"
+        assert "attachment" in r.headers["content-disposition"]
+
+
+def test_provider_entries_model_listing_endpoints_over_http(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        registry, "list_models_for_provider_type", lambda provider_type, api_key: ["model-a", "model-b"]
+    )
+
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        r = client.post(
+            "/api/settings/provider-entries/models", json={"provider_type": "gemini", "api_key": "sk-test"}
+        )
+        assert r.status_code == 200
+        assert r.json()["models"] == ["model-a", "model-b"]
+
+        entry = client.post(
+            "/api/settings/provider-entries", json={"provider_type": "gemini", "api_key": "sk-test"}
+        ).json()
+        r = client.post(f"/api/settings/provider-entries/{entry['id']}/models")
+        assert r.status_code == 200
+        assert r.json()["models"] == ["model-a", "model-b"]
+
+        no_key_entry = client.post("/api/settings/provider-entries", json={"provider_type": "mistral"}).json()
+        r = client.post(f"/api/settings/provider-entries/{no_key_entry['id']}/models")
+        assert r.status_code == 400
 
 
 def test_tag_job_triggers_require_provider_and_vocabulary(tmp_path, monkeypatch):
@@ -169,7 +231,9 @@ def test_tag_job_triggers_require_provider_and_vocabulary(tmp_path, monkeypatch)
     # module docstring) and could pick up the job created below before the
     # test finishes; stub the provider call so that never means a real
     # network request with a fake key.
-    monkeypatch.setattr(registry, "score_tags_with_provider", lambda *args, **kwargs: [50])
+    monkeypatch.setattr(
+        registry, "score_tags_with_fallback", lambda engine, entries, images, tags, dead_entry_ids: ([50], entries[0])
+    )
 
     with _fresh_client(tmp_path, monkeypatch) as client:
         engine = db_module.get_engine()
@@ -179,7 +243,9 @@ def test_tag_job_triggers_require_provider_and_vocabulary(tmp_path, monkeypatch)
         assert r.status_code == 400
         assert r.json()["detail"]["error"]["code"] == "no_provider_configured"
 
-        client.put("/api/settings/providers/openrouter", json={"enabled": True, "api_key": "sk-test"})
+        client.post(
+            "/api/settings/provider-entries", json={"provider_type": "openrouter", "enabled": True, "api_key": "sk-test"}
+        )
 
         r = client.post("/api/jobs/tag-file", json={"file_id": file_id})
         assert r.status_code == 400

@@ -30,12 +30,28 @@ from app.providers.base import ProviderError, build_prompt, encode_image_base64,
 API_URL = "https://api.mistral.ai/v1/chat/completions"
 FILES_URL = "https://api.mistral.ai/v1/files"
 BATCH_JOBS_URL = "https://api.mistral.ai/v1/batch/jobs"
+MODELS_URL = "https://api.mistral.ai/v1/models"
 DEFAULT_MODEL = "pixtral-12b-2409"
 TIMEOUT_SECONDS = 60
 BATCH_POLL_INTERVAL_SECONDS = 5
 BATCH_POLL_TIMEOUT_SECONDS = 1800
 SUPPORTS_BATCH = True
 _DONE_STATUSES = {"SUCCESS", "FAILED", "TIMEOUT_EXCEEDED", "CANCELLED", "CANCELLATION_REQUESTED"}
+
+
+def list_models(api_key: str) -> list[str]:
+    """Lists models available to this Mistral account, for the
+    provider-entry "Load models" flow."""
+    try:
+        response = httpx.get(MODELS_URL, headers={"Authorization": f"Bearer {api_key}"}, timeout=TIMEOUT_SECONDS)
+        response.raise_for_status()
+        models = response.json()["data"]
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"Mistral model list request failed: {exc}") from exc
+    except (KeyError, TypeError) as exc:
+        raise ProviderError(f"Unexpected Mistral model list response shape: {exc}") from exc
+
+    return sorted(m["id"] for m in models)
 
 
 def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> list[int]:

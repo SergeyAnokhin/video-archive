@@ -1,0 +1,68 @@
+.move-file-dialog__tree {
+  max-height: 260px;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2);
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.move-file-dialog__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.move-file-dialog__expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.move-file-dialog__expand-icon--open {
+  transform: rotate(90deg);
+}
+
+.move-file-dialog__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.move-file-dialog__label:hover {
+  background: var(--color-surface-raised);
+}
+
+.move-file-dialog__label--selected {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.move-file-dialog__children {
+  display: flex;
+  flex-direction: column;
+}
+
+.move-file-dialog__loading {
+  margin: 0;
+  padding-left: 40px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}

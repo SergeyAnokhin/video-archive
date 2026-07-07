@@ -1,3 +1,4 @@
+import { Plug, RefreshCw, RotateCcw, Save, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
@@ -275,7 +276,7 @@ export function SourceSection() {
           onClick={handleTestConnection}
           disabled={testing || !canSubmit}
         >
-          {t('settings.testConnection')}
+          <Plug size={14} /> {t('settings.testConnection')}
         </button>
         <button
           type="button"
@@ -283,7 +284,7 @@ export function SourceSection() {
           onClick={handleSave}
           disabled={saving || !canSubmit}
         >
-          {confirmingReplace ? t('settings.confirmReplace') : t('settings.saveSource')}
+          <Save size={14} /> {confirmingReplace ? t('settings.confirmReplace') : t('settings.saveSource')}
         </button>
         {confirmingReplace && (
           <button
@@ -291,17 +292,19 @@ export function SourceSection() {
             className="settings-modal__option"
             onClick={() => setConfirmingReplace(false)}
           >
-            {t('settings.cancel')}
+            <X size={14} /> {t('settings.cancel')}
           </button>
         )}
         {source && source.protocol === 'smb' && (
           <button
             type="button"
-            className="settings-modal__option"
+            className="settings-modal__option settings-modal__option--icon"
             onClick={handleReconnect}
             disabled={reconnecting}
+            aria-label={t('settings.reconnect')}
+            title={t('settings.reconnect')}
           >
-            {t('settings.reconnect')}
+            <RefreshCw size={14} />
           </button>
         )}
       </div>
@@ -319,11 +322,13 @@ export function SourceSection() {
               <div className="settings-modal__actions">
                 <button
                   type="button"
-                  className="settings-modal__option"
+                  className="settings-modal__option settings-modal__option--icon"
                   onClick={() => handleRestoreDetected(entry.id)}
                   disabled={restoringId === entry.id}
+                  aria-label={t('settings.restoreDetected')}
+                  title={t('settings.restoreDetected')}
                 >
-                  {t('settings.restoreDetected')}
+                  <RotateCcw size={14} />
                 </button>
               </div>
             </div>

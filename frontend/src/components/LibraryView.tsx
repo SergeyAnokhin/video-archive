@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  Archive,
   File as FileIcon,
   Film,
   Folder,
+  Home,
   Images,
   Info,
   MoreVertical,
   RefreshCw,
+  SlidersHorizontal,
   Tags,
   Wand2,
   X,
@@ -18,6 +21,7 @@ import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
 import type { ActiveSearch } from './LibrarySearchBox'
+import { MoveFileDialog } from './MoveFileDialog'
 import { PlaybackModal } from './PlaybackModal'
 import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import { SimilarFilesModal } from './SimilarFilesModal'
@@ -49,6 +53,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
   const [playingFile, setPlayingFile] = useState<FileEntry | null>(null)
   const [similarFile, setSimilarFile] = useState<FileEntry | null>(null)
   const [infoFile, setInfoFile] = useState<FileEntry | null>(null)
+  const [moveFile, setMoveFile] = useState<FileEntry | null>(null)
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
@@ -195,12 +200,20 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
     }
   }
 
+  async function handleDeleteFile(fileId: string) {
+    const res = await fetch(`/api/files/${fileId}`, { method: 'DELETE' })
+    if (res.ok) {
+      setInfoFile(null)
+      setReloadTick((tick) => tick + 1)
+    }
+  }
+
   return (
     <div className="library-view">
       <div className="library-view__toolbar">
         <nav className="library-view__breadcrumb" aria-label={t('library.breadcrumb')}>
           <button type="button" onClick={() => onNavigate('')}>
-            {t('library.root')}
+            <Home size={14} /> {t('library.root')}
           </button>
           {segments.map((segment, index) => {
             const segmentPath = segments.slice(0, index + 1).join('/')
@@ -392,6 +405,23 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
             setSimilarFile(infoFile)
             setInfoFile(null)
           }}
+          onDelete={() => void handleDeleteFile(infoFile.id)}
+          onMove={() => {
+            setMoveFile(infoFile)
+            setInfoFile(null)
+          }}
+        />
+      )}
+
+      {moveFile && (
+        <MoveFileDialog
+          file={moveFile}
+          currentPath={path}
+          onClose={() => setMoveFile(null)}
+          onMoved={() => {
+            setMoveFile(null)
+            setReloadTick((tick) => tick + 1)
+          }}
         />
       )}
     </div>
@@ -499,7 +529,7 @@ function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProps) {
         {file.file_name}
       </div>
       <div className="library-card__meta">{formatSize(file.size_bytes)}</div>
-      {(showConversionDot || showPreviewDot) && (
+      {(showConversionDot || showPreviewDot || file.is_variant || file.is_original) && (
         <div className="library-card__badges">
           {showConversionDot && (
             <span
@@ -512,6 +542,22 @@ function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProps) {
               className="library-card__dot library-card__dot--preview"
               title={t('indicators.fileNoPreview')}
             />
+          )}
+          {file.is_variant && (
+            <span
+              className="library-card__marker library-card__marker--variant"
+              title={t('indicators.fileIsVariant')}
+            >
+              <SlidersHorizontal size={14} />
+            </span>
+          )}
+          {file.is_original && (
+            <span
+              className="library-card__marker library-card__marker--original"
+              title={t('indicators.fileIsOriginal')}
+            >
+              <Archive size={14} />
+            </span>
           )}
         </div>
       )}

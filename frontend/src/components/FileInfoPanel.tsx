@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Copy, Film, Images, Tags, Wand2, X } from 'lucide-react'
+import { Copy, Film, FolderInput, Images, Tags, Trash2, Wand2, X } from 'lucide-react'
 import { formatSize } from '../utils/format'
 import type { FileEntry } from '../types/api'
 import './ConvertDialog.css'
@@ -15,6 +15,8 @@ interface FileInfoPanelProps {
   onTag: () => void
   onConvert: () => void
   onSimilar: () => void
+  onDelete: () => void
+  onMove: () => void
 }
 
 export function FileInfoPanel({
@@ -27,9 +29,17 @@ export function FileInfoPanel({
   onTag,
   onConvert,
   onSimilar,
+  onDelete,
+  onMove,
 }: FileInfoPanelProps) {
   const { t } = useTranslation()
   const showThumbnail = previewsVisible && file.is_video_supported && file.has_preview_asset
+
+  function handleDelete() {
+    if (window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
+      onDelete()
+    }
+  }
 
   return (
     <div className="convert-dialog-overlay" onClick={onClose}>
@@ -87,6 +97,18 @@ export function FileInfoPanel({
             />
             {t(file.tagged_at ? 'library.statusTaggedYes' : 'library.statusTaggedNo')}
           </li>
+          {file.is_variant && (
+            <li className="file-info-panel__status-item">
+              <span className="file-info-panel__dot file-info-panel__dot--done" />
+              {t('indicators.fileIsVariant')}
+            </li>
+          )}
+          {file.is_original && (
+            <li className="file-info-panel__status-item">
+              <span className="file-info-panel__dot file-info-panel__dot--done" />
+              {t('indicators.fileIsOriginal')}
+            </li>
+          )}
         </ul>
 
         <div className="convert-dialog__actions">
@@ -101,6 +123,12 @@ export function FileInfoPanel({
           </button>
           <button type="button" className="convert-dialog__button" onClick={onSimilar}>
             <Copy size={14} /> {t('library.similar')}
+          </button>
+          <button type="button" className="convert-dialog__button" onClick={onMove}>
+            <FolderInput size={14} /> {t('library.moveFile')}
+          </button>
+          <button type="button" className="convert-dialog__button" onClick={handleDelete}>
+            <Trash2 size={14} /> {t('library.deleteFile')}
           </button>
         </div>
       </div>

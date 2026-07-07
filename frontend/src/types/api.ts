@@ -128,6 +128,8 @@ export interface FileEntry {
   has_preview_asset: boolean
   converted_at: string | null
   tagged_at: string | null
+  is_variant: boolean
+  is_original: boolean
 }
 
 export interface DirectoryChildrenResponse {
@@ -228,20 +230,23 @@ export interface TaggingSettings {
   sample_frame_count: number
   combine_into_collage: boolean
   top_tag_count: number
-  default_provider: string | null
-  default_vision_model: string | null
   updated_at: string
 }
 
-export type ProviderName = 'openrouter' | 'gemini' | 'fal' | 'mistral'
+export type ProviderType = 'openrouter' | 'gemini' | 'fal' | 'mistral'
 
-export interface ProviderConfig {
-  provider_name: ProviderName
+export interface ProviderEntry {
+  id: string
+  provider_type: ProviderType
+  display_name: string
   enabled: boolean
   vision_model: string | null
   text_model: string | null
   batch_enabled: boolean
+  sort_order: number
   has_api_key: boolean
+  key_suffix: string | null
+  created_at: string
   updated_at: string
 }
 

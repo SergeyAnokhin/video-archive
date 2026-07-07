@@ -1,3 +1,4 @@
+import { Play, SlidersHorizontal, Trash2, Wand2, Save, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConversionProfiles } from '../context/ConversionProfilesContext'
@@ -18,9 +19,9 @@ interface VariantRow {
 }
 
 let rowCounter = 0
-function newRow(): VariantRow {
+function newRow(patch: Partial<VariantRow> = {}): VariantRow {
   rowCounter += 1
-  return { key: `row-${rowCounter}`, maxDimension: '', crf: '', codec: '' }
+  return { key: `row-${rowCounter}`, maxDimension: '', crf: '', codec: '', ...patch }
 }
 
 function rowToOverride(row: VariantRow): VariantOverride {
@@ -31,6 +32,18 @@ function rowToOverride(row: VariantRow): VariantOverride {
   return override
 }
 
+const CODEC_OPTIONS = ['h265', 'h264', 'vp9', 'av1']
+
+type SweepParameter = 'dimension' | 'crf' | 'codec'
+
+function generateRange(min: number, max: number, step: number): number[] {
+  const values: number[] = []
+  for (let value = min; value <= max; value += step) {
+    values.push(value)
+  }
+  return values
+}
+
 export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalProps) {
   const { t } = useTranslation()
   const { profiles, refresh: refreshProfiles } = useConversionProfiles()
@@ -38,13 +51,25 @@ export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalP
   const [profileId, setProfileId] = useState(profiles.find((p) => p.is_default)?.id ?? profiles[0]?.id ?? '')
   const [mode, setMode] = useState<ConversionMode>('production')
   const [skipProcessed, setSkipProcessed] = useState(true)
-  const [rows, setRows] = useState<VariantRow[]>([newRow(), newRow()])
+  const [rows, setRows] = useState<VariantRow[]>([])
+  const [sweepParameter, setSweepParameter] = useState<SweepParameter>('crf')
+  const [sweepMin, setSweepMin] = useState('')
+  const [sweepMax, setSweepMax] = useState('')
+  const [sweepStep, setSweepStep] = useState('')
+  const [sweepCodecs, setSweepCodecs] = useState<string[]>([])
+  const [generateError, setGenerateError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sweepJobId, setSweepJobId] = useState<string | null>(null)
   const [submittedOverrides, setSubmittedOverrides] = useState<VariantOverride[]>([])
   const [items, setItems] = useState<JobItem[]>([])
   const pollRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!profileId && profiles.length > 0) {
+      setProfileId(profiles.find((p) => p.is_default)?.id ?? profiles[0].id)
+    }
+  }, [profiles, profileId])
 
   useEffect(() => {
     if (!sweepJobId) {
@@ -123,8 +148,42 @@ export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalP
     }
   }
 
-  function updateRow(key: string, patch: Partial<VariantRow>) {
-    setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)))
+  function removeRow(key: string) {
+    setRows((current) => current.filter((row) => row.key !== key))
+  }
+
+  function toggleSweepCodec(codec: string) {
+    setSweepCodecs((current) =>
+      current.includes(codec) ? current.filter((c) => c !== codec) : [...current, codec],
+    )
+  }
+
+  function handleGenerate() {
+    setGenerateError(null)
+
+    if (sweepParameter === 'codec') {
+      if (sweepCodecs.length === 0) {
+        setGenerateError(t('convertDialog.variantsGenerateErrorCodec'))
+        return
+      }
+      setRows(sweepCodecs.map((codec) => newRow({ codec })))
+      return
+    }
+
+    const min = Number(sweepMin)
+    const max = Number(sweepMax)
+    const step = Number(sweepStep)
+    if (!sweepMin || !sweepMax || !sweepStep || Number.isNaN(min) || Number.isNaN(max) || Number.isNaN(step) || min > max || step <= 0) {
+      setGenerateError(t('convertDialog.variantsGenerateError'))
+      return
+    }
+
+    const values = generateRange(min, max, step)
+    setRows(
+      values.map((value) =>
+        sweepParameter === 'dimension' ? newRow({ maxDimension: String(value) }) : newRow({ crf: String(value) }),
+      ),
+    )
   }
 
   const baseProfile = profiles.find((p) => p.id === profileId)
@@ -141,49 +200,50 @@ export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalP
         <h2 className="convert-dialog__title">{t('convertDialog.fileTitle')}</h2>
         <p className="convert-dialog__hint">{file.file_name}</p>
 
-        {profiles.length === 0 ? (
-          <p className="convert-dialog__hint convert-dialog__hint--warning">
-            {t('convertDialog.noProfiles')}
-          </p>
-        ) : (
-          <>
-            <div className="convert-dialog__tabs" role="tablist">
-              <button
-                type="button"
-                className="convert-dialog__tab"
-                role="tab"
-                aria-selected={tab === 'convert'}
-                onClick={() => setTab('convert')}
-              >
-                {t('convertDialog.convertTab')}
-              </button>
-              <button
-                type="button"
-                className="convert-dialog__tab"
-                role="tab"
-                aria-selected={tab === 'variants'}
-                onClick={() => setTab('variants')}
-              >
-                {t('convertDialog.variantsTab')}
-              </button>
-            </div>
+        <div className="convert-dialog__tabs" role="tablist">
+          <button
+            type="button"
+            className="convert-dialog__tab"
+            role="tab"
+            aria-selected={tab === 'convert'}
+            onClick={() => setTab('convert')}
+          >
+            <Wand2 size={14} /> {t('convertDialog.convertTab')}
+          </button>
+          <button
+            type="button"
+            className="convert-dialog__tab"
+            role="tab"
+            aria-selected={tab === 'variants'}
+            onClick={() => setTab('variants')}
+          >
+            <SlidersHorizontal size={14} /> {t('convertDialog.variantsTab')}
+          </button>
+        </div>
 
-            <label className="convert-dialog__label">
-              {t('convertDialog.profile')}
-              <select
-                className="convert-dialog__input"
-                value={profileId}
-                onChange={(event) => setProfileId(event.target.value)}
-              >
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+        <div className="convert-dialog__panel">
+          <label className="convert-dialog__label">
+            {t('convertDialog.profile')}
+            <select
+              className="convert-dialog__input"
+              value={profileId}
+              onChange={(event) => setProfileId(event.target.value)}
+            >
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-            {tab === 'convert' && !sweepJobId && (
+          {profiles.length === 0 && (
+            <p className="convert-dialog__hint convert-dialog__hint--warning">
+              {t('convertDialog.noProfiles')}
+            </p>
+          )}
+
+          {tab === 'convert' && !sweepJobId && (
               <>
                 <fieldset className="convert-dialog__fieldset">
                   <legend>{t('convertDialog.mode')}</legend>
@@ -219,10 +279,10 @@ export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalP
                     onClick={handleStartConvert}
                     disabled={starting || !profileId}
                   >
-                    {t('convertDialog.start')}
+                    <Play size={14} /> {t('convertDialog.start')}
                   </button>
                   <button type="button" className="convert-dialog__button" onClick={onClose}>
-                    {t('convertDialog.cancel')}
+                    <X size={14} /> {t('convertDialog.cancel')}
                   </button>
                 </div>
               </>
@@ -233,51 +293,89 @@ export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalP
                 {!sweepJobId && (
                   <>
                     <p className="convert-dialog__hint">{t('convertDialog.variantsHint')}</p>
-                    {rows.map((row) => (
-                      <div key={row.key} className="convert-dialog__variant-row">
-                        <input
-                          type="number"
-                          placeholder={t('convertDialog.variantMaxDimension')}
-                          value={row.maxDimension}
-                          onChange={(event) => updateRow(row.key, { maxDimension: event.target.value })}
-                        />
-                        <input
-                          type="number"
-                          min={22}
-                          max={32}
-                          placeholder={t('convertDialog.variantCrf')}
-                          value={row.crf}
-                          onChange={(event) => updateRow(row.key, { crf: event.target.value })}
-                        />
-                        <select
-                          value={row.codec}
-                          onChange={(event) => updateRow(row.key, { codec: event.target.value })}
-                        >
-                          <option value="">{t('convertDialog.variantCodecInherit')}</option>
-                          <option value="h265">H.265</option>
-                          <option value="h264">H.264</option>
-                          <option value="vp9">VP9</option>
-                          <option value="av1">AV1</option>
-                        </select>
-                        <button
-                          type="button"
-                          className="convert-dialog__button"
-                          onClick={() => setRows((current) => current.filter((r) => r.key !== row.key))}
-                          disabled={rows.length <= 1}
-                        >
-                          {t('convertDialog.variantsRemove')}
-                        </button>
-                      </div>
-                    ))}
-                    <div className="convert-dialog__actions">
-                      <button
-                        type="button"
-                        className="convert-dialog__button"
-                        onClick={() => setRows((current) => [...current, newRow()])}
+
+                    <label className="convert-dialog__label">
+                      {t('convertDialog.variantsParameter')}
+                      <select
+                        className="convert-dialog__input"
+                        value={sweepParameter}
+                        onChange={(event) => setSweepParameter(event.target.value as SweepParameter)}
                       >
-                        {t('convertDialog.variantsAdd')}
+                        <option value="dimension">{t('convertDialog.variantsParameterDimension')}</option>
+                        <option value="crf">{t('convertDialog.variantsParameterCrf')}</option>
+                        <option value="codec">{t('convertDialog.variantsParameterCodec')}</option>
+                      </select>
+                    </label>
+
+                    {sweepParameter === 'codec' ? (
+                      <div className="convert-dialog__codec-options">
+                        {CODEC_OPTIONS.map((codec) => (
+                          <label key={codec} className="convert-dialog__checkbox">
+                            <input
+                              type="checkbox"
+                              checked={sweepCodecs.includes(codec)}
+                              onChange={() => toggleSweepCodec(codec)}
+                            />
+                            {codec.toUpperCase()}
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="convert-dialog__sweep-range">
+                        <input
+                          type="number"
+                          placeholder={t('convertDialog.variantsMin')}
+                          value={sweepMin}
+                          onChange={(event) => setSweepMin(event.target.value)}
+                        />
+                        <input
+                          type="number"
+                          placeholder={t('convertDialog.variantsMax')}
+                          value={sweepMax}
+                          onChange={(event) => setSweepMax(event.target.value)}
+                        />
+                        <input
+                          type="number"
+                          placeholder={t('convertDialog.variantsStep')}
+                          value={sweepStep}
+                          onChange={(event) => setSweepStep(event.target.value)}
+                        />
+                      </div>
+                    )}
+
+                    {generateError && (
+                      <p className="convert-dialog__hint convert-dialog__hint--error">{generateError}</p>
+                    )}
+
+                    <div className="convert-dialog__actions">
+                      <button type="button" className="convert-dialog__button" onClick={handleGenerate}>
+                        <SlidersHorizontal size={14} /> {t('convertDialog.variantsGenerate')}
                       </button>
                     </div>
+
+                    {rows.length > 0 && (
+                      <>
+                        <p className="convert-dialog__hint">{t('convertDialog.variantsGenerated')}</p>
+                        {rows.map((row) => (
+                          <div key={row.key} className="convert-dialog__variant-row">
+                            <span>
+                              {row.maxDimension && `${t('convertDialog.variantMaxDimension')}: ${row.maxDimension}`}
+                              {row.crf && `${t('convertDialog.variantCrf')}: ${row.crf}`}
+                              {row.codec && row.codec.toUpperCase()}
+                            </span>
+                            <button
+                              type="button"
+                              className="convert-dialog__button convert-dialog__button--icon"
+                              onClick={() => removeRow(row.key)}
+                              aria-label={t('convertDialog.variantsRemove')}
+                              title={t('convertDialog.variantsRemove')}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </>
+                    )}
 
                     {error && <p className="convert-dialog__hint convert-dialog__hint--error">{error}</p>}
 
@@ -286,12 +384,12 @@ export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalP
                         type="button"
                         className="convert-dialog__button convert-dialog__button--primary"
                         onClick={handleStartVariants}
-                        disabled={starting || !profileId}
+                        disabled={starting || !profileId || rows.length === 0}
                       >
-                        {t('convertDialog.start')}
+                        <Play size={14} /> {t('convertDialog.start')}
                       </button>
                       <button type="button" className="convert-dialog__button" onClick={onClose}>
-                        {t('convertDialog.cancel')}
+                        <X size={14} /> {t('convertDialog.cancel')}
                       </button>
                     </div>
                   </>
@@ -314,15 +412,14 @@ export function FileConvertModal({ file, onClose, onStarted }: FileConvertModalP
                     ))}
                     <div className="convert-dialog__actions">
                       <button type="button" className="convert-dialog__button" onClick={onClose}>
-                        {t('convertDialog.close')}
+                        <X size={14} /> {t('convertDialog.close')}
                       </button>
                     </div>
                   </div>
                 )}
               </>
             )}
-          </>
-        )}
+          </div>
       </div>
     </div>
   )
@@ -372,7 +469,7 @@ function VariantResultRow({ item, override, baseProfile, onPromoted }: VariantRe
       </span>
       {item.status === 'completed' && !promoting && (
         <button type="button" className="convert-dialog__button" onClick={() => setPromoting(true)}>
-          {t('convertDialog.saveAsProfile')}
+          <Save size={14} /> {t('convertDialog.saveAsProfile')}
         </button>
       )}
       {promoting && (
@@ -389,7 +486,7 @@ function VariantResultRow({ item, override, baseProfile, onPromoted }: VariantRe
             onClick={handleSave}
             disabled={saving || !name}
           >
-            {t('conversionProfiles.save')}
+            <Save size={14} /> {t('conversionProfiles.save')}
           </button>
         </>
       )}

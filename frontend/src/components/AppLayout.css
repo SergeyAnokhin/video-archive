@@ -71,6 +71,9 @@
 }
 
 .app-main__empty-state > button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: 0 var(--space-4);
   background: var(--color-accent);
   border: none;

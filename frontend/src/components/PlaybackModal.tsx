@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X } from 'lucide-react'
+import { Check, Copy, Link, PlayCircle, X } from 'lucide-react'
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
 import './PlaybackModal.css'
 
@@ -82,6 +82,7 @@ export function PlaybackModal({ file, onClose }: PlaybackModalProps) {
             setMode(mode === 'stream' ? 'direct_link' : 'stream')
           }}
         >
+          {mode === 'stream' ? <Link size={14} /> : <PlayCircle size={14} />}{' '}
           {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
         </button>
       )}
@@ -110,7 +111,7 @@ export function PlaybackModal({ file, onClose }: PlaybackModalProps) {
           <p className="playback-overlay__message">{t('playbackModal.directLinkHint')}</p>
           <code className="playback-overlay__path">{info.direct_path}</code>
           <button type="button" className="playback-overlay__copy-btn" onClick={() => void handleCopyPath()}>
-            {t('playbackModal.copyPath')}
+            {copied ? <Check size={14} /> : <Copy size={14} />} {t('playbackModal.copyPath')}
           </button>
           {copied && <span className="playback-overlay__message">{t('playbackModal.copied')}</span>}
         </div>

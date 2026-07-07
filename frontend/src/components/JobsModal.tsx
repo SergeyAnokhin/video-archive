@@ -1,4 +1,4 @@
-import { RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
+import { Eraser, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
@@ -123,7 +123,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
             onClick={handleClearFinished}
             disabled={!hasFinished}
           >
-            {t('jobs.clearFinished')}
+            <Eraser size={14} /> {t('jobs.clearFinished')}
           </button>
         </div>
       </div>

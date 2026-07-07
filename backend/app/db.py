@@ -331,6 +331,39 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE preview_settings ADD COLUMN gif_max_width INTEGER NOT NULL DEFAULT 640",
         "ALTER TABLE preview_settings ADD COLUMN gif_colors INTEGER NOT NULL DEFAULT 64",
     ],
+    # Post-V1: provider settings become a user-managed, priority-ordered list
+    # of entries (`app/provider_entries.py`) instead of four fixed rows keyed
+    # by provider name -- multiple entries per provider type are allowed (e.g.
+    # two Gemini keys), and the tag job now falls back through enabled
+    # entries in `sort_order` instead of using one frozen provider per job.
+    # `sort_order` follows the same "priority" convention as
+    # `tag_catalog.sort_order`. No seed step: the table starts empty, the
+    # user adds their own entries. Schema intentionally leaves room for a
+    # later `ALTER TABLE ... ADD COLUMN extra_params_json` if per-model
+    # parameters are ever needed -- nothing here assumes a closed field set.
+    # `default_provider`/`default_vision_model` on `tagging_settings` are
+    # dropped since "the active provider" is no longer a single manual
+    # choice -- it's whichever enabled entry the fallback chain picks.
+    12: [
+        "DROP TABLE IF EXISTS provider_configs",
+        """
+        CREATE TABLE provider_entries (
+            id TEXT PRIMARY KEY,
+            provider_type TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            vision_model TEXT,
+            text_model TEXT,
+            batch_enabled INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_provider_entries_sort_order ON provider_entries (sort_order)",
+        "ALTER TABLE tagging_settings DROP COLUMN default_provider",
+        "ALTER TABLE tagging_settings DROP COLUMN default_vision_model",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -398,11 +431,9 @@ def init_db() -> int:
             seed_default_settings(conn)
 
         if current_version < 6 <= SCHEMA_VERSION:
-            from app.provider_configs import seed_default_providers
             from app.tagging_settings import seed_default_settings as seed_default_tagging_settings
 
             seed_default_tagging_settings(conn)
-            seed_default_providers(conn)
 
         if current_version < 7 <= SCHEMA_VERSION:
             from app.playback_settings import seed_default_settings as seed_default_playback_settings

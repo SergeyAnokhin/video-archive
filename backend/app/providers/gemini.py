@@ -26,11 +26,32 @@ from app.providers.base import ProviderError, build_prompt, encode_image_base64,
 API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 BATCH_CREATE_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:batchGenerateContent"
 BATCH_POLL_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/{name}"
+MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_MODEL = "gemini-2.5-flash"
 TIMEOUT_SECONDS = 60
 BATCH_POLL_INTERVAL_SECONDS = 5
 BATCH_POLL_TIMEOUT_SECONDS = 1800
 SUPPORTS_BATCH = True
+
+
+def list_models(api_key: str) -> list[str]:
+    """Lists Gemini models that support `generateContent` (i.e. can score
+    tags), for the provider-entry "Load models" flow."""
+    try:
+        response = httpx.get(MODELS_URL, params={"key": api_key}, timeout=TIMEOUT_SECONDS)
+        response.raise_for_status()
+        models = response.json()["models"]
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"Gemini model list request failed: {exc}") from exc
+    except (KeyError, TypeError) as exc:
+        raise ProviderError(f"Unexpected Gemini model list response shape: {exc}") from exc
+
+    names = [
+        m["name"].removeprefix("models/")
+        for m in models
+        if "generateContent" in m.get("supportedGenerationMethods", [])
+    ]
+    return sorted(names)
 
 
 def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> list[int]:

@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion_profiles, preview_layouts, provider_configs, tagging_settings, tags as tags_service
+from app import conversion_profiles, preview_layouts, provider_entries, tags as tags_service
 from app.db import get_engine
 from app.jobs import service
 from app.source_access import get_active_source_or_404
@@ -332,31 +332,22 @@ def preview_file(body: PreviewFileRequest):
     )
 
 
-def _resolve_tagging_provider(engine) -> str:
-    """Picks the provider a tag job should use: the configured default if
-    it's enabled, otherwise the first enabled provider. Raises 400 if none
-    is enabled (Specification §18 — provider setup is a settings-time
-    concern, not a per-job parameter)."""
-    settings = tagging_settings.get_settings(engine)
-    default_name = settings.get("default_provider")
-    if default_name:
-        config = provider_configs.get_provider(engine, default_name)
-        if config and config["enabled"]:
-            return default_name
-
-    for config in provider_configs.list_providers(engine):
-        if config["enabled"]:
-            return config["provider_name"]
-
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "error": {
-                "code": "no_provider_configured",
-                "message": "No AI provider is enabled. Configure one in Settings first.",
-            }
-        },
-    )
+def _require_enabled_provider(engine) -> None:
+    """Raises 400 if no provider entry is enabled (Specification §18 —
+    provider setup is a settings-time concern, not a per-job parameter).
+    Which entry actually runs each file is resolved live by the worker via
+    the priority-ordered fallback chain (`app/providers/registry.py`), not
+    frozen here at job-creation time."""
+    if not any(entry["enabled"] for entry in provider_entries.list_entries(engine)):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "no_provider_configured",
+                    "message": "No AI provider is enabled. Configure one in Settings first.",
+                }
+            },
+        )
 
 
 def _require_tag_vocabulary(engine) -> None:
@@ -380,7 +371,7 @@ class TagDirectoryRequest(BaseModel):
 @router.post("/jobs/tag-directory")
 def tag_directory(body: TagDirectoryRequest):
     engine = get_engine()
-    provider_name = _resolve_tagging_provider(engine)
+    _require_enabled_provider(engine)
     _require_tag_vocabulary(engine)
 
     with engine.connect() as conn:
@@ -406,7 +397,7 @@ def tag_directory(body: TagDirectoryRequest):
         job_type="tag",
         scope_type="directory" if body.path else "source",
         scope_ref=body.path or None,
-        parameters={"path": body.path, "skip_processed": body.skip_processed, "provider_name": provider_name},
+        parameters={"path": body.path, "skip_processed": body.skip_processed},
     )
 
 
@@ -417,7 +408,7 @@ class TagFileRequest(BaseModel):
 @router.post("/jobs/tag-file")
 def tag_file(body: TagFileRequest):
     engine = get_engine()
-    provider_name = _resolve_tagging_provider(engine)
+    _require_enabled_provider(engine)
     _require_tag_vocabulary(engine)
 
     with engine.connect() as conn:
@@ -434,7 +425,7 @@ def tag_file(body: TagFileRequest):
         job_type="tag",
         scope_type="file",
         scope_ref=body.file_id,
-        parameters={"file_id": body.file_id, "provider_name": provider_name},
+        parameters={"file_id": body.file_id},
     )
 
 

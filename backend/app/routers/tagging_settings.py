@@ -19,8 +19,6 @@ class TaggingSettingsRequest(BaseModel):
     sample_frame_count: int = service.DEFAULT_SAMPLE_FRAME_COUNT
     combine_into_collage: bool = service.DEFAULT_COMBINE_INTO_COLLAGE
     top_tag_count: int = service.DEFAULT_TOP_TAG_COUNT
-    default_provider: str | None = None
-    default_vision_model: str | None = None
 
 
 @router.get("/tagging-settings")

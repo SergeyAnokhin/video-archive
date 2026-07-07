@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import text
 
 import app.db as db_module
-from app import backup, backup_settings
+from app import backup, backup_settings, provider_entries
 from app import secrets_store as secrets_store_module
 from app import tags as tags_service
 from app.jobs import service
@@ -184,7 +184,7 @@ def test_restore_backup_missing_package_raises(engine, source):
 
 
 def test_backup_include_secrets_roundtrip(engine, source):
-    secrets_store_module.set_provider_api_key("openrouter", "sk-test-123")
+    secrets_store_module.set_entry_api_key("entry-1", "sk-test-123")
     row = _source_row(engine, source["id"])
     access = get_source_access(row)
 
@@ -194,10 +194,31 @@ def test_backup_include_secrets_roundtrip(engine, source):
     backup_id = entries[0]["id"]
 
     secrets_store_module.SECRETS_PATH.write_text("")
-    assert secrets_store_module.has_provider_api_key("openrouter") is False
+    assert secrets_store_module.has_entry_api_key("entry-1") is False
 
     backup.restore_backup(engine, access, row, backup_id)
-    assert secrets_store_module.has_provider_api_key("openrouter") is True
+    assert secrets_store_module.has_entry_api_key("entry-1") is True
+
+
+def test_backup_and_restore_provider_entries(engine, source):
+    provider_entries.create_entry(
+        engine,
+        {"provider_type": "gemini", "display_name": "My Gemini", "enabled": True, "vision_model": "gemini-2.5-flash"},
+    )
+    row = _source_row(engine, source["id"])
+    access = get_source_access(row)
+    backup.create_backup(engine, access, row)
+    backup_id = backup.list_backups(access)[0]["id"]
+
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM provider_entries"))
+    assert provider_entries.list_entries(engine) == []
+
+    backup.restore_backup(engine, access, row, backup_id)
+    restored = provider_entries.list_entries(engine)
+    assert len(restored) == 1
+    assert restored[0]["display_name"] == "My Gemini"
+    assert restored[0]["provider_type"] == "gemini"
 
 
 def test_create_and_restore_backup_over_smb(engine, smb_source):

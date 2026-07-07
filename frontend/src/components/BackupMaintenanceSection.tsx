@@ -1,3 +1,4 @@
+import { Database, Eraser, RefreshCw, RotateCcw, Save, ScanLine, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
@@ -152,19 +153,23 @@ export function BackupMaintenanceSection() {
           <div className="settings-modal__actions">
             <button
               type="button"
-              className="settings-modal__option"
+              className="settings-modal__option settings-modal__option--icon"
               onClick={() => handleRestore(entry.id)}
               disabled={busyId === entry.id}
+              aria-label={t('backupMaintenance.restore')}
+              title={t('backupMaintenance.restore')}
             >
-              {t('backupMaintenance.restore')}
+              <RotateCcw size={14} />
             </button>
             <button
               type="button"
-              className="settings-modal__option"
+              className="settings-modal__option settings-modal__option--icon"
               onClick={() => handleDelete(entry.id)}
               disabled={busyId === entry.id}
+              aria-label={t('backupMaintenance.delete')}
+              title={t('backupMaintenance.delete')}
             >
-              {t('backupMaintenance.delete')}
+              <Trash2 size={14} />
             </button>
           </div>
         </div>
@@ -201,10 +206,16 @@ export function BackupMaintenanceSection() {
           onClick={handleCreateBackup}
           disabled={creating}
         >
-          {t('backupMaintenance.createBackup')}
+          <Save size={14} /> {t('backupMaintenance.createBackup')}
         </button>
-        <button type="button" className="settings-modal__option" onClick={() => void loadBackups()}>
-          {t('backupMaintenance.refresh')}
+        <button
+          type="button"
+          className="settings-modal__option settings-modal__option--icon"
+          onClick={() => void loadBackups()}
+          aria-label={t('backupMaintenance.refresh')}
+          title={t('backupMaintenance.refresh')}
+        >
+          <RefreshCw size={14} />
         </button>
       </div>
 
@@ -216,7 +227,7 @@ export function BackupMaintenanceSection() {
           onClick={() => void runMaintenance('rescan', '/api/jobs/rescan-directory', { path: '' })}
           disabled={maintenanceBusy !== null}
         >
-          {t('backupMaintenance.fullRescan')}
+          <ScanLine size={14} /> {t('backupMaintenance.fullRescan')}
         </button>
         <button
           type="button"
@@ -224,7 +235,7 @@ export function BackupMaintenanceSection() {
           onClick={() => void runMaintenance('cleanup', '/api/jobs/cleanup-stale-records')}
           disabled={maintenanceBusy !== null}
         >
-          {t('backupMaintenance.cleanupStale')}
+          <Eraser size={14} /> {t('backupMaintenance.cleanupStale')}
         </button>
         <button
           type="button"
@@ -232,7 +243,7 @@ export function BackupMaintenanceSection() {
           onClick={() => void runMaintenance('optimize', '/api/jobs/optimize-database')}
           disabled={maintenanceBusy !== null}
         >
-          {t('backupMaintenance.optimizeDb')}
+          <Database size={14} /> {t('backupMaintenance.optimizeDb')}
         </button>
       </div>
       {maintenanceMessage && <p className="settings-modal__hint">{maintenanceMessage}</p>}

@@ -1,9 +1,33 @@
-import { useEffect, useState } from 'react'
+import { Check, Copy, Plus, X } from 'lucide-react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTags } from '../context/TagsContext'
-import type { ProviderName, Tag, TaggingSettings } from '../types/api'
+import type { Tag, TaggingSettings } from '../types/api'
 
-const PROVIDERS: ProviderName[] = ['openrouter', 'gemini', 'fal', 'mistral']
+// Cheerful, high-contrast-on-dark palette (Design System dark surfaces) so
+// tags stay easy to tell apart even with 20-30 of them on screen at once.
+const TAG_PALETTE = [
+  '#ff6b6b',
+  '#f59f00',
+  '#ffd43b',
+  '#69db7c',
+  '#38d9a9',
+  '#4dabf7',
+  '#748ffc',
+  '#da77f2',
+  '#f783ac',
+  '#ff922b',
+  '#20c997',
+  '#22b8cf',
+]
+
+function tagColor(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0
+  }
+  return TAG_PALETTE[Math.abs(hash) % TAG_PALETTE.length]
+}
 
 export function TaggingSettingsSection() {
   const { t } = useTranslation()
@@ -11,7 +35,9 @@ export function TaggingSettingsSection() {
   const [settings, setSettings] = useState<TaggingSettings | null>(null)
   const [newTagName, setNewTagName] = useState('')
   const [tagError, setTagError] = useState<string | null>(null)
-  const [savingSettings, setSavingSettings] = useState(false)
+  const [editingTagId, setEditingTagId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -71,48 +97,97 @@ export function TaggingSettingsSection() {
   }
 
   async function handleSaveSettings(next: TaggingSettings) {
-    setSavingSettings(true)
-    try {
-      const res = await fetch('/api/tagging-settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      })
-      if (res.ok) {
-        setSettings(await res.json())
-      }
-    } finally {
-      setSavingSettings(false)
+    const res = await fetch('/api/tagging-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    })
+    if (res.ok) {
+      setSettings(await res.json())
     }
+  }
+
+  function startEditing(tag: Tag) {
+    setEditingTagId(tag.id)
+    setEditValue(tag.display_name)
+  }
+
+  async function commitEdit(tag: Tag) {
+    const value = editValue
+    setEditingTagId(null)
+    await handleRenameTag(tag, value)
+  }
+
+  async function handleCopyAll() {
+    const text = tags.map((tag) => tag.display_name).join(', ')
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
     <section className="settings-modal__section">
       <h3 className="settings-modal__section-title">{t('tagging.title')}</h3>
 
-      <p className="settings-modal__hint">{t('tagging.vocabularyHint')}</p>
+      <div className="tag-chip-toolbar">
+        <p className="tag-chip-toolbar__hint">{t('tagging.vocabularyHint')}</p>
+        {tags.length > 0 && (
+          <button
+            type="button"
+            className="settings-modal__option settings-modal__option--icon"
+            onClick={() => void handleCopyAll()}
+            title={t('tagging.copyAll')}
+            aria-label={t('tagging.copyAll')}
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </button>
+        )}
+      </div>
 
       {tags.length === 0 && <p className="settings-modal__hint">{t('tagging.vocabularyEmpty')}</p>}
 
-      {tags.map((tag) => (
-        <div key={tag.id} className="conversion-profile-row">
-          <div>
-            <input
-              className="settings-modal__input"
-              defaultValue={tag.display_name}
-              onBlur={(event) => void handleRenameTag(tag, event.target.value)}
-            />
-          </div>
-          <div className="settings-modal__actions">
-            <button type="button" className="settings-modal__option" onClick={() => void handleToggleActive(tag)}>
-              {tag.is_active ? t('tagging.deactivate') : t('tagging.activate')}
+      <div className="tag-chip-list">
+        {tags.map((tag) => (
+          <span
+            key={tag.id}
+            className={`tag-chip${tag.is_active ? '' : ' tag-chip--inactive'}`}
+            style={{ '--tag-color': tagColor(tag.id) } as CSSProperties}
+          >
+            {editingTagId === tag.id ? (
+              <input
+                className="tag-chip__label-input"
+                autoFocus
+                value={editValue}
+                onChange={(event) => setEditValue(event.target.value)}
+                onBlur={() => void commitEdit(tag)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void commitEdit(tag)
+                  if (event.key === 'Escape') setEditingTagId(null)
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                className="tag-chip__label"
+                onClick={() => void handleToggleActive(tag)}
+                onDoubleClick={() => startEditing(tag)}
+                title={tag.is_active ? t('tagging.deactivate') : t('tagging.activate')}
+              >
+                {tag.display_name}
+              </button>
+            )}
+            <button
+              type="button"
+              className="tag-chip__remove"
+              onClick={() => void handleDeleteTag(tag)}
+              aria-label={t('tagging.delete')}
+              title={t('tagging.delete')}
+            >
+              <X size={12} />
             </button>
-            <button type="button" className="settings-modal__option" onClick={() => void handleDeleteTag(tag)}>
-              {t('tagging.delete')}
-            </button>
-          </div>
-        </div>
-      ))}
+          </span>
+        ))}
+      </div>
 
       <div className="settings-modal__actions">
         <input
@@ -126,26 +201,47 @@ export function TaggingSettingsSection() {
             }
           }}
         />
-        <button type="button" className="settings-modal__option" onClick={() => void handleAddTag()}>
-          {t('tagging.add')}
+        <button
+          type="button"
+          className="settings-modal__option settings-modal__option--icon"
+          onClick={() => void handleAddTag()}
+          aria-label={t('tagging.add')}
+          title={t('tagging.add')}
+        >
+          <Plus size={16} />
         </button>
       </div>
       {tagError && <p className="settings-modal__hint settings-modal__hint--error">{tagError}</p>}
 
       {settings && (
         <>
-          <label className="settings-modal__label">
-            {t('tagging.sampleFrameCount')}
-            <input
-              className="settings-modal__input"
-              type="number"
-              min={1}
-              max={16}
-              value={settings.sample_frame_count}
-              onChange={(event) => setSettings({ ...settings, sample_frame_count: Number(event.target.value) })}
-              onBlur={() => void handleSaveSettings(settings)}
-            />
-          </label>
+          <div className="settings-modal__row">
+            <label className="settings-modal__label">
+              {t('tagging.sampleFrameCount')}
+              <input
+                className="settings-modal__input"
+                type="number"
+                min={1}
+                max={16}
+                value={settings.sample_frame_count}
+                onChange={(event) => setSettings({ ...settings, sample_frame_count: Number(event.target.value) })}
+                onBlur={() => void handleSaveSettings(settings)}
+              />
+            </label>
+
+            <label className="settings-modal__label">
+              {t('tagging.topTagCount')}
+              <input
+                className="settings-modal__input"
+                type="number"
+                min={1}
+                max={50}
+                value={settings.top_tag_count}
+                onChange={(event) => setSettings({ ...settings, top_tag_count: Number(event.target.value) })}
+                onBlur={() => void handleSaveSettings(settings)}
+              />
+            </label>
+          </div>
 
           <label className="settings-modal__field">
             <span className="settings-modal__field-label">{t('tagging.combineIntoCollage')}</span>
@@ -157,50 +253,6 @@ export function TaggingSettingsSection() {
                 setSettings(next)
                 void handleSaveSettings(next)
               }}
-            />
-          </label>
-
-          <label className="settings-modal__label">
-            {t('tagging.topTagCount')}
-            <input
-              className="settings-modal__input"
-              type="number"
-              min={1}
-              max={50}
-              value={settings.top_tag_count}
-              onChange={(event) => setSettings({ ...settings, top_tag_count: Number(event.target.value) })}
-              onBlur={() => void handleSaveSettings(settings)}
-            />
-          </label>
-
-          <label className="settings-modal__label">
-            {t('tagging.defaultProvider')}
-            <select
-              className="settings-modal__input"
-              value={settings.default_provider ?? ''}
-              onChange={(event) => {
-                const next = { ...settings, default_provider: event.target.value || null }
-                setSettings(next)
-                void handleSaveSettings(next)
-              }}
-            >
-              <option value="">{t('tagging.noDefaultProvider')}</option>
-              {PROVIDERS.map((provider) => (
-                <option key={provider} value={provider}>
-                  {t(`providers.${provider}`)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="settings-modal__label">
-            {t('tagging.defaultVisionModel')}
-            <input
-              className="settings-modal__input"
-              value={settings.default_vision_model ?? ''}
-              onChange={(event) => setSettings({ ...settings, default_vision_model: event.target.value || null })}
-              onBlur={() => void handleSaveSettings(settings)}
-              disabled={savingSettings}
             />
           </label>
         </>

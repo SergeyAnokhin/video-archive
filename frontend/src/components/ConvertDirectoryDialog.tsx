@@ -1,3 +1,4 @@
+import { Play, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConversionProfiles } from '../context/ConversionProfilesContext'
@@ -112,10 +113,10 @@ export function ConvertDirectoryDialog({ path, onClose, onStarted }: ConvertDire
             onClick={handleStart}
             disabled={starting || !profileId}
           >
-            {t('convertDialog.start')}
+            <Play size={14} /> {t('convertDialog.start')}
           </button>
           <button type="button" className="convert-dialog__button" onClick={onClose}>
-            {t('convertDialog.cancel')}
+            <X size={14} /> {t('convertDialog.cancel')}
           </button>
         </div>
       </div>

@@ -1,10 +1,17 @@
 """`tag` job execution (Specification §12): resolves the active tag
-vocabulary, tagging settings, and configured provider once at launch (same
-"settings snapshot at launch time" convention as the `preview` job), then for
-each video builds sampled-frame images (`app/tagging.py`), sends them to the
-provider (`app/providers/registry.py`), and replaces the file's `file_tags`
-with the top-N scoring tags (Data Model §9 "Re-tagging replaces the file's
-previous tag set").
+vocabulary and tagging settings once at launch (same "settings snapshot at
+launch time" convention as the `preview` job), then for each video builds
+sampled-frame images (`app/tagging.py`) and sends them to a provider
+(`app/providers/registry.py`), trying enabled `app/provider_entries.py`
+entries in priority order until one succeeds -- replacing the file's
+`file_tags` with the top-N scoring tags (Data Model §9 "Re-tagging replaces
+the file's previous tag set").
+
+The list of enabled entries and which ones have already failed
+(`dead_entries`) are read/tracked fresh per job run rather than frozen at
+job-creation time, so the fallback chain reflects the live provider
+priority list and a broken entry is skipped for the rest of the run once it
+fails once.
 """
 
 from __future__ import annotations
@@ -14,7 +21,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from app import provider_configs, tagging, tagging_settings, tags as tags_service
+from app import provider_entries, tagging, tagging_settings, tags as tags_service
 from app.jobs import service
 from app.media import is_test_artifact
 from app.providers import registry
@@ -25,7 +32,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_name: str, model_name: str | None) -> None:
+def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_type: str, model_name: str | None) -> None:
     now = _now()
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM file_tags WHERE file_id = :file_id"), {"file_id": file_id})
@@ -42,7 +49,7 @@ def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_name: s
                     "file_id": file_id,
                     "tag_id": entry["id"],
                     "score": entry["score"],
-                    "provider_name": provider_name,
+                    "provider_name": provider_type,
                     "model_name": model_name,
                     "now": now,
                 },
@@ -54,7 +61,8 @@ def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_name: s
 
 
 def _tag_one_file(
-    engine, access: SourceAccess, file_row, vocabulary: list[dict], settings: dict, provider_name: str, model_name: str | None
+    engine, access: SourceAccess, file_row, vocabulary: list[dict], settings: dict,
+    entries: list[dict], dead_entries: set[str],
 ) -> str:
     if not access.exists(file_row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
@@ -64,29 +72,27 @@ def _tag_one_file(
             video_path, settings["sample_frame_count"], settings["combine_into_collage"]
         )
     display_names = [tag["display_name"] for tag in vocabulary]
-    scores = registry.score_tags_with_provider(engine, provider_name, images, display_names)
+    scores, used_entry = registry.score_tags_with_fallback(engine, entries, images, display_names, dead_entries)
 
     ranked = sorted(zip(vocabulary, scores), key=lambda pair: pair[1], reverse=True)
     top = ranked[: settings["top_tag_count"]]
     scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
 
-    _assign_tags(engine, file_row.id, scored_tags, provider_name, model_name)
+    _assign_tags(engine, file_row.id, scored_tags, used_entry["provider_type"], used_entry["vision_model"])
     return f"{len(scored_tags)} tag(s) assigned"
 
 
 def run_tag_job(engine, job: dict) -> tuple[str, str]:
-    params = job["parameters"] or {}
-    provider_name = params.get("provider_name")
-    if not provider_name:
-        raise RuntimeError("No tagging provider configured.")
+    entries = [entry for entry in provider_entries.list_entries(engine) if entry["enabled"]]
+    if not entries:
+        raise RuntimeError("No AI provider is enabled. Configure one in Settings first.")
+    dead_entries: set[str] = set()
 
     vocabulary = tags_service.list_tags(engine, active_only=True)
     if not vocabulary:
         raise RuntimeError("Tag vocabulary is empty; add tags in settings before tagging.")
 
     settings = tagging_settings.get_settings(engine)
-    provider_config = provider_configs.get_provider(engine, provider_name)
-    model_name = provider_config["vision_model"] if provider_config else None
 
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -94,17 +100,15 @@ def run_tag_job(engine, job: dict) -> tuple[str, str]:
         raise RuntimeError("No active source is configured.")
     access = get_source_access(source_row)
 
+    params = job["parameters"] or {}
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, access, params, vocabulary, settings, provider_name, model_name)
-    batch_enabled = bool(provider_config and provider_config.get("batch_enabled"))
-    return _run_directory_scope(
-        engine, job, access, params, vocabulary, settings, provider_name, model_name, batch_enabled
-    )
+        return _run_file_scope(engine, job, access, params, vocabulary, settings, entries, dead_entries)
+    return _run_directory_scope(engine, job, access, params, vocabulary, settings, entries, dead_entries)
 
 
 def _run_file_scope(
     engine, job: dict, access: SourceAccess, params: dict, vocabulary: list[dict], settings: dict,
-    provider_name: str, model_name: str | None,
+    entries: list[dict], dead_entries: set[str],
 ) -> tuple[str, str]:
     file_id = params.get("file_id")
     with engine.connect() as conn:
@@ -115,7 +119,7 @@ def _run_file_scope(
     item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="tag_file")
     service.start_job_item(engine, item_id)
     try:
-        message = _tag_one_file(engine, access, row, vocabulary, settings, provider_name, model_name)
+        message = _tag_one_file(engine, access, row, vocabulary, settings, entries, dead_entries)
         service.complete_job_item(engine, item_id, output_ref=None, message=message)
         service.log_event(engine, job["id"], row.id, "info", "job_item_completed", f"Tagged {row.relative_path}: {message}")
         return "completed", message
@@ -129,14 +133,14 @@ def _run_file_scope(
 
 def _process_pending_file(
     engine, job: dict, access: SourceAccess, row, item_id: str, vocabulary: list[dict], settings: dict,
-    provider_name: str, model_name: str | None,
+    entries: list[dict], dead_entries: set[str],
 ) -> bool:
-    """Runs the synchronous per-file tagging path for one already-created job
-    item. Returns whether it succeeded, so callers can update their own
-    processed/failed counters."""
+    """Runs the synchronous per-file tagging path (full fallback chain over
+    `entries`) for one already-created job item. Returns whether it
+    succeeded, so callers can update their own processed/failed counters."""
     service.start_job_item(engine, item_id)
     try:
-        message = _tag_one_file(engine, access, row, vocabulary, settings, provider_name, model_name)
+        message = _tag_one_file(engine, access, row, vocabulary, settings, entries, dead_entries)
         service.complete_job_item(engine, item_id, output_ref=None, message=message)
         service.log_event(
             engine, job["id"], row.id, "info", "job_item_completed", f"Tagged {row.relative_path}: {message}"
@@ -152,7 +156,7 @@ def _process_pending_file(
 
 def _run_directory_scope(
     engine, job: dict, access: SourceAccess, params: dict, vocabulary: list[dict], settings: dict,
-    provider_name: str, model_name: str | None, batch_enabled: bool = False,
+    entries: list[dict], dead_entries: set[str],
 ) -> tuple[str, str]:
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
@@ -182,14 +186,20 @@ def _run_directory_scope(
 
     # Batch tagging (Specification §12.3, Stage 9) needs the whole pending
     # set up front (one provider request for many files), unlike the
-    # lazy create-then-process loop below. To keep that ordinary path
-    # byte-for-byte unchanged when batch isn't in play (the common case --
-    # batch_enabled defaults off, and only two of four providers support
-    # it), the eager pass only runs when batch is actually applicable;
-    # `remaining` stays `None` otherwise and the original loop handles
-    # everything, including item creation.
+    # lazy create-then-process loop below. Batch mode only ever tries the
+    # single highest-priority entry that is enabled, `batch_enabled`, and
+    # whose provider type actually supports batch -- everything the batch
+    # pass doesn't resolve (submission failure, missing/unparseable
+    # per-file result, or no batch-capable entry at all) falls through to
+    # the ordinary per-file loop below, which runs the *full* fallback
+    # chain over every enabled entry, so a wrong assumption about the batch
+    # API never loses a file's tags -- it just costs what a non-batch run
+    # would have cost anyway.
     remaining: list[tuple] | None = None
-    if batch_enabled and registry.provider_supports_batch(provider_name):
+    batch_entry = next(
+        (e for e in entries if e["batch_enabled"] and registry.entry_supports_batch(e)), None
+    )
+    if batch_entry is not None:
         pending: list[tuple] = []
         for row in candidates:
             if service.is_cancel_requested(job["id"]):
@@ -210,13 +220,8 @@ def _run_directory_scope(
             pending.append((row, item_id))
 
         if not cancelled and pending:
-            # Any file the batch pass couldn't resolve (submission failure, a
-            # cancel request mid-prep, or a missing/unparseable per-file
-            # result) falls through to the ordinary per-file loop below, so a
-            # wrong assumption about the batch API never loses a file's tags
-            # -- it just costs what a non-batch run would have cost anyway.
             batch_processed, pending = _run_batch(
-                engine, job, access, pending, vocabulary, settings, provider_name, model_name
+                engine, job, access, pending, vocabulary, settings, batch_entry, dead_entries
             )
             processed += batch_processed
 
@@ -227,7 +232,7 @@ def _run_directory_scope(
             if service.is_cancel_requested(job["id"]):
                 cancelled = True
                 break
-            if _process_pending_file(engine, job, access, row, item_id, vocabulary, settings, provider_name, model_name):
+            if _process_pending_file(engine, job, access, row, item_id, vocabulary, settings, entries, dead_entries):
                 processed += 1
             else:
                 failed += 1
@@ -248,7 +253,7 @@ def _run_directory_scope(
                 skipped += 1
                 continue
 
-            if _process_pending_file(engine, job, access, row, item_id, vocabulary, settings, provider_name, model_name):
+            if _process_pending_file(engine, job, access, row, item_id, vocabulary, settings, entries, dead_entries):
                 processed += 1
             else:
                 failed += 1
@@ -270,12 +275,13 @@ def _run_directory_scope(
 
 def _run_batch(
     engine, job: dict, access: SourceAccess, pending: list[tuple], vocabulary: list[dict], settings: dict,
-    provider_name: str, model_name: str | None,
+    batch_entry: dict, dead_entries: set[str],
 ) -> tuple[int, list[tuple]]:
-    """Attempts to score every `(row, item_id)` in `pending` via one provider
-    batch request. Returns `(processed_count, fallback_pending)`: files the
-    batch pass didn't resolve are returned untouched (item still `queued`) so
-    the caller's ordinary per-file loop picks them up next."""
+    """Attempts to score every `(row, item_id)` in `pending` via one
+    `batch_entry` batch request. Returns `(processed_count,
+    fallback_pending)`: files the batch pass didn't resolve are returned
+    untouched (item still `queued`) so the caller's per-file fallback loop
+    picks them up next."""
     display_names = [tag["display_name"] for tag in vocabulary]
     items: list[tuple[str, list[bytes]]] = []
     keyed_rows: dict[str, tuple] = {}
@@ -313,13 +319,14 @@ def _run_batch(
     try:
         service.log_event(
             engine, job["id"], None, "info", "batch_submitted",
-            f"Submitting {len(items)} file(s) to {provider_name} for batch tagging.",
+            f"Submitting {len(items)} file(s) to {batch_entry['display_name']} for batch tagging.",
         )
-        results = registry.score_tags_batch_with_provider(engine, provider_name, items, display_names)
+        results = registry.score_tags_batch_with_entry(engine, batch_entry, items, display_names)
     except Exception as exc:  # noqa: BLE001 - batch failure falls back to the per-file loop for every file
+        dead_entries.add(batch_entry["id"])
         service.log_event(
             engine, job["id"], None, "warning", "batch_failed",
-            f"Batch submission to {provider_name} failed, falling back to per-file tagging: {exc}",
+            f"Batch submission to {batch_entry['display_name']} failed, falling back to per-file tagging: {exc}",
         )
         return 0, unresolved + [keyed_rows[key] for key, _images in items]
 
@@ -335,7 +342,7 @@ def _run_batch(
             ranked = sorted(zip(vocabulary, scores), key=lambda pair: pair[1], reverse=True)
             top = ranked[: settings["top_tag_count"]]
             scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
-            _assign_tags(engine, row.id, scored_tags, provider_name, model_name)
+            _assign_tags(engine, row.id, scored_tags, batch_entry["provider_type"], batch_entry["vision_model"])
             message = f"{len(scored_tags)} tag(s) assigned (batch)"
             service.complete_job_item(engine, item_id, output_ref=None, message=message)
             service.log_event(

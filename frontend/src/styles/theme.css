@@ -70,6 +70,12 @@
   --breakpoint-desktop: 1024px;
 }
 
+/* Playful background glow (user request, 2026-07): a soft radial glow atop
+ * the flat surface color, same treatment as Casino below but subtler. */
+[data-theme='playful'] body {
+  background: radial-gradient(circle at 50% 0%, var(--color-surface-raised) 0%, var(--color-bg) 65%);
+}
+
 /* Playful decorative animations (Design System §3): short (100-250ms),
  * transform/opacity only, never gating input, off by default in Strict.
  * `prefers-reduced-motion` disables the motion but keeps the static glow. */
@@ -147,8 +153,10 @@
   --breakpoint-desktop: 1024px;
 }
 
-[data-theme='casino'] {
-  background: radial-gradient(circle at 50% 0%, #2a1533 0%, var(--color-bg) 60%);
+[data-theme='casino'] body {
+  background:
+    radial-gradient(circle at 15% 100%, color-mix(in srgb, var(--color-border) 25%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, #2a1533 0%, var(--color-bg) 60%);
 }
 
 [data-theme='casino'] .library-card,

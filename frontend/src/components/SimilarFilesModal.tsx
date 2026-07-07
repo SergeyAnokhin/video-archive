@@ -1,3 +1,4 @@
+import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { FileEntry, SimilarFile } from '../types/api'
@@ -71,7 +72,7 @@ export function SimilarFilesModal({ file, onClose }: SimilarFilesModalProps) {
 
         <div className="convert-dialog__actions">
           <button type="button" className="convert-dialog__button" onClick={onClose}>
-            {t('library.similarClose')}
+            <X size={14} /> {t('library.similarClose')}
           </button>
         </div>
       </div>

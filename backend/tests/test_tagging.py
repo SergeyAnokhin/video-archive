@@ -12,7 +12,7 @@ import shutil
 import pytest
 from sqlalchemy import text
 
-from app import provider_configs, secrets_store, tagging, tagging_settings
+from app import provider_entries, secrets_store, tagging, tagging_settings
 from app import tags as tags_service
 from app.jobs import service
 from app.jobs import tag as tag_job
@@ -94,7 +94,8 @@ def test_delete_tag_cascades_file_tags(engine, source):
     assert remaining == 0
 
 
-# --- tagging settings + provider configs + secrets --------------------------
+# --- tagging settings + secrets ----------------------------------------------
+# Provider entry CRUD lives in `test_provider_entries.py`.
 
 
 def test_tagging_settings_singleton_roundtrip(engine):
@@ -104,47 +105,24 @@ def test_tagging_settings_singleton_roundtrip(engine):
     assert defaults["top_tag_count"] == 10
 
     updated = tagging_settings.update_settings(
-        engine,
-        {"sample_frame_count": 6, "combine_into_collage": False, "top_tag_count": 5, "default_provider": "openrouter"},
+        engine, {"sample_frame_count": 6, "combine_into_collage": False, "top_tag_count": 5}
     )
     assert updated["sample_frame_count"] == 6
     assert updated["combine_into_collage"] is False
-    assert updated["default_provider"] == "openrouter"
-
-
-def test_provider_configs_seeded_and_updatable(engine):
-    providers = provider_configs.list_providers(engine)
-    assert {p["provider_name"] for p in providers} == set(provider_configs.PROVIDERS)
-    assert all(p["enabled"] is False and p["has_api_key"] is False for p in providers)
-
-    updated = provider_configs.update_provider(
-        engine, "openrouter", {"enabled": True, "vision_model": "test-model", "api_key": "sk-test"}
-    )
-    assert updated["enabled"] is True
-    assert updated["vision_model"] == "test-model"
-    assert updated["has_api_key"] is True
-
-
-def test_provider_configs_never_expose_api_key_value(engine):
-    provider_configs.update_provider(engine, "gemini", {"enabled": True, "api_key": "secret-value"})
-    config = provider_configs.get_provider(engine, "gemini")
-    assert "api_key" not in config
-    assert config["has_api_key"] is True
-
-
-def test_provider_configs_rejects_unknown_provider(engine):
-    with pytest.raises(provider_configs.UnknownProviderError):
-        provider_configs.update_provider(engine, "not-a-provider", {"enabled": True})
+    assert updated["top_tag_count"] == 5
 
 
 def test_secrets_store_roundtrip():
     # `isolated_secrets_file` (conftest.py, autouse) already points
     # `secrets_store.SECRETS_PATH` at a per-test temp file.
-    assert secrets_store.get_provider_api_key("openrouter") is None
-    secrets_store.set_provider_api_key("openrouter", "sk-abc123")
-    assert secrets_store.get_provider_api_key("openrouter") == "sk-abc123"
-    assert secrets_store.has_provider_api_key("openrouter") is True
-    assert secrets_store.has_provider_api_key("gemini") is False
+    assert secrets_store.get_entry_api_key("entry-1") is None
+    secrets_store.set_entry_api_key("entry-1", "sk-abc123")
+    assert secrets_store.get_entry_api_key("entry-1") == "sk-abc123"
+    assert secrets_store.has_entry_api_key("entry-1") is True
+    assert secrets_store.has_entry_api_key("entry-2") is False
+    assert secrets_store.get_entry_api_key_suffix("entry-1") == "c123"
+    secrets_store.delete_entry_api_key("entry-1")
+    assert secrets_store.has_entry_api_key("entry-1") is False
 
 
 # --- provider prompt/response parsing ---------------------------------------
@@ -209,18 +187,21 @@ def stub_provider(monkeypatch):
     """Bypasses the real HTTP call: returns a fixed score per tag position so
     top-N ranking is deterministic and no network access happens in tests."""
 
-    def fake_score(engine, provider_name, images, tags):
-        assert provider_name == "openrouter"
+    def fake_fallback(engine, entries, images, tags, dead_entry_ids):
+        assert entries and entries[0]["provider_type"] == "openrouter"
         assert images
-        return [max(0, 90 - 10 * i) for i in range(len(tags))]
+        scores = [max(0, 90 - 10 * i) for i in range(len(tags))]
+        return scores, entries[0]
 
-    monkeypatch.setattr(registry, "score_tags_with_provider", fake_score)
-    return fake_score
+    monkeypatch.setattr(registry, "score_tags_with_fallback", fake_fallback)
+    return fake_fallback
 
 
 def _enable_openrouter(engine):
-    provider_configs.update_provider(engine, "openrouter", {"enabled": True, "api_key": "sk-test"})
-    tagging_settings.update_settings(engine, {"default_provider": "openrouter", "top_tag_count": 2})
+    provider_entries.create_entry(
+        engine, {"provider_type": "openrouter", "display_name": "openrouter", "enabled": True, "api_key": "sk-test"}
+    )
+    tagging_settings.update_settings(engine, {"top_tag_count": 2})
 
 
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
@@ -235,9 +216,7 @@ def test_tag_job_file_scope_assigns_top_n_tags(engine, source, stub_provider):
     with engine.connect() as conn:
         file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clips/movie.mp4'")).fetchone()
 
-    job = service.create_job(
-        engine, "tag", "file", file_row.id, {"file_id": file_row.id, "provider_name": "openrouter"}
-    )
+    job = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
     service.start_job(engine, job["id"])
     status, message = tag_job.run_tag_job(engine, job)
 
@@ -270,9 +249,9 @@ def test_tag_job_retagging_replaces_previous_tags(engine, source, stub_provider)
     with engine.connect() as conn:
         file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clips/movie.mp4'")).fetchone()
 
-    job1 = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id, "provider_name": "openrouter"})
+    job1 = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
     tag_job.run_tag_job(engine, job1)
-    job2 = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id, "provider_name": "openrouter"})
+    job2 = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
     tag_job.run_tag_job(engine, job2)
 
     with engine.connect() as conn:
@@ -289,14 +268,12 @@ def test_tag_job_directory_scope_skip_processed_and_test_artifacts(engine, sourc
     make_video(source["root"] / "clips" / "movie.original.mov", duration=2.0, size="320x240")
     scan_source(engine, source["id"], source["root"])
 
-    job1 = service.create_job(engine, "tag", "source", None, {"path": "", "provider_name": "openrouter"})
+    job1 = service.create_job(engine, "tag", "source", None, {"path": ""})
     status1, message1 = tag_job.run_tag_job(engine, job1)
     assert status1 == "completed"
     assert "1 of 1" in message1  # test-artifact excluded from the total
 
-    job2 = service.create_job(
-        engine, "tag", "source", None, {"path": "", "skip_processed": True, "provider_name": "openrouter"}
-    )
+    job2 = service.create_job(engine, "tag", "source", None, {"path": "", "skip_processed": True})
     status2, message2 = tag_job.run_tag_job(engine, job2)
     assert status2 == "completed"
     assert "1 skipped" in message2
@@ -307,6 +284,6 @@ def test_tag_job_fails_without_vocabulary(engine, source):
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM tag_catalog"))
 
-    job = service.create_job(engine, "tag", "source", None, {"path": "", "provider_name": "openrouter"})
+    job = service.create_job(engine, "tag", "source", None, {"path": ""})
     with pytest.raises(RuntimeError, match="vocabulary"):
         tag_job.run_tag_job(engine, job)

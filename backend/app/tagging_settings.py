@@ -2,11 +2,12 @@
 
 Holds the tagging job's non-vocabulary configuration: how many frames to
 sample per video, whether to combine them into one collage image before
-sending to the provider (default behavior per Specification §12.2), how many
-top-scoring tags to keep, and a default provider/model shortcut used when a
-tagging job doesn't override it. The tag vocabulary itself lives in
-`app/tags.py`; provider credentials/enablement live in
-`app/provider_configs.py` + `app/secrets_store.py`.
+sending to the provider (default behavior per Specification §12.2), and how
+many top-scoring tags to keep. There is no manual "default provider" choice
+here anymore -- the tag job picks the active provider by trying enabled
+`app/provider_entries.py` entries in priority order (see `app/jobs/tag.py`).
+The tag vocabulary itself lives in `app/tags.py`; provider credentials/
+enablement live in `app/provider_entries.py` + `app/secrets_store.py`.
 """
 
 from __future__ import annotations
@@ -29,8 +30,6 @@ def _row_to_dict(row) -> dict:
         "sample_frame_count": row.sample_frame_count,
         "combine_into_collage": bool(row.combine_into_collage),
         "top_tag_count": row.top_tag_count,
-        "default_provider": row.default_provider,
-        "default_vision_model": row.default_vision_model,
         "updated_at": row.updated_at,
     }
 
@@ -51,8 +50,6 @@ def update_settings(engine, data: dict) -> dict:
                 SET sample_frame_count = :frame_count,
                     combine_into_collage = :combine,
                     top_tag_count = :top_count,
-                    default_provider = :provider,
-                    default_vision_model = :model,
                     updated_at = :now
                 WHERE id = 1
                 """
@@ -61,8 +58,6 @@ def update_settings(engine, data: dict) -> dict:
                 "frame_count": data.get("sample_frame_count", DEFAULT_SAMPLE_FRAME_COUNT),
                 "combine": bool(data.get("combine_into_collage", DEFAULT_COMBINE_INTO_COLLAGE)),
                 "top_count": data.get("top_tag_count", DEFAULT_TOP_TAG_COUNT),
-                "provider": data.get("default_provider"),
-                "model": data.get("default_vision_model"),
                 "now": now,
             },
         )
@@ -76,9 +71,8 @@ def seed_default_settings(conn) -> None:
         text(
             """
             INSERT OR IGNORE INTO tagging_settings
-                (id, sample_frame_count, combine_into_collage, top_tag_count,
-                 default_provider, default_vision_model, updated_at)
-            VALUES (1, :frame_count, :combine, :top_count, NULL, NULL, :now)
+                (id, sample_frame_count, combine_into_collage, top_tag_count, updated_at)
+            VALUES (1, :frame_count, :combine, :top_count, :now)
             """
         ),
         {

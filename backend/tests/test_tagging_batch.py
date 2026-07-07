@@ -16,7 +16,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from app import provider_configs, tagging, tagging_settings
+from app import provider_entries, tagging, tagging_settings
 from app import tags as tags_service
 from app.jobs import service
 from app.jobs import tag as tag_job
@@ -175,10 +175,11 @@ def two_files(engine, source):
     file_b = _make_file_row(engine, source["id"], dir_id, source["root"], "b.mp4")
     tags_service.create_tag(engine, {"display_name": "Beach"})
     tags_service.create_tag(engine, {"display_name": "Snow"})
-    provider_configs.update_provider(
-        engine, "gemini", {"enabled": True, "api_key": "gm-test", "batch_enabled": True}
+    provider_entries.create_entry(
+        engine,
+        {"provider_type": "gemini", "display_name": "gemini", "enabled": True, "api_key": "gm-test", "batch_enabled": True},
     )
-    tagging_settings.update_settings(engine, {"default_provider": "gemini", "top_tag_count": 2})
+    tagging_settings.update_settings(engine, {"top_tag_count": 2})
     return file_a, file_b
 
 
@@ -188,7 +189,7 @@ def stub_build_images(monkeypatch):
 
 
 def _run_directory_tag_job(engine):
-    job = service.create_job(engine, "tag", "source", None, {"path": "", "provider_name": "gemini"})
+    job = service.create_job(engine, "tag", "source", None, {"path": ""})
     service.start_job(engine, job["id"])
     return tag_job.run_tag_job(engine, job)
 
@@ -196,22 +197,24 @@ def _run_directory_tag_job(engine):
 def test_directory_batch_tagging_all_succeed(engine, source, two_files, stub_build_images, monkeypatch):
     file_a, file_b = two_files
 
-    def fake_batch(engine_, provider_name, items, tags):
-        assert provider_name == "gemini"
+    def fake_batch(engine_, entry, items, tags):
+        assert entry["provider_type"] == "gemini"
         assert {key for key, _images in items} == {file_a, file_b}
         return {file_a: [90, 10], file_b: [10, 90]}
 
-    monkeypatch.setattr(registry, "score_tags_batch_with_provider", fake_batch)
-    called_single = []
+    monkeypatch.setattr(registry, "score_tags_batch_with_entry", fake_batch)
+    called_fallback = []
     monkeypatch.setattr(
-        registry, "score_tags_with_provider", lambda *a, **k: called_single.append(1) or [0, 0]
+        registry,
+        "score_tags_with_fallback",
+        lambda engine_, entries, images, tags, dead: (called_fallback.append(1), ([0, 0], entries[0]))[1],
     )
 
     status, message = _run_directory_tag_job(engine)
 
     assert status == "completed"
     assert "2 of 2" in message
-    assert not called_single  # batch resolved everything; no per-file fallback needed
+    assert not called_fallback  # batch resolved everything; no per-file fallback needed
 
     with engine.connect() as conn:
         tagged_count = conn.execute(
@@ -223,17 +226,17 @@ def test_directory_batch_tagging_all_succeed(engine, source, two_files, stub_bui
 def test_directory_batch_tagging_partial_fallback(engine, source, two_files, stub_build_images, monkeypatch):
     file_a, file_b = two_files
 
-    def fake_batch(engine_, provider_name, items, tags):
+    def fake_batch(engine_, entry, items, tags):
         return {file_a: [90, 10], file_b: None}  # b unresolved by the batch
 
-    monkeypatch.setattr(registry, "score_tags_batch_with_provider", fake_batch)
+    monkeypatch.setattr(registry, "score_tags_batch_with_entry", fake_batch)
     fallback_calls = []
 
-    def fake_single(engine_, provider_name, images, tags):
+    def fake_fallback(engine_, entries, images, tags, dead_entry_ids):
         fallback_calls.append(1)
-        return [20, 80]
+        return [20, 80], entries[0]
 
-    monkeypatch.setattr(registry, "score_tags_with_provider", fake_single)
+    monkeypatch.setattr(registry, "score_tags_with_fallback", fake_fallback)
 
     status, message = _run_directory_tag_job(engine)
 
@@ -251,20 +254,101 @@ def test_directory_batch_tagging_partial_fallback(engine, source, two_files, stu
 def test_directory_batch_tagging_submission_failure_falls_back_for_all(
     engine, source, two_files, stub_build_images, monkeypatch
 ):
-    def fake_batch(engine_, provider_name, items, tags):
+    def fake_batch(engine_, entry, items, tags):
         raise ProviderError("batch endpoint unavailable")
 
-    monkeypatch.setattr(registry, "score_tags_batch_with_provider", fake_batch)
+    monkeypatch.setattr(registry, "score_tags_batch_with_entry", fake_batch)
     fallback_calls = []
 
-    def fake_single(engine_, provider_name, images, tags):
+    def fake_fallback(engine_, entries, images, tags, dead_entry_ids):
         fallback_calls.append(1)
-        return [50, 50]
+        return [50, 50], entries[0]
 
-    monkeypatch.setattr(registry, "score_tags_with_provider", fake_single)
+    monkeypatch.setattr(registry, "score_tags_with_fallback", fake_fallback)
 
     status, message = _run_directory_tag_job(engine)
 
     assert status == "completed"
     assert "2 of 2" in message
     assert len(fallback_calls) == 2  # both files fell back to per-file scoring
+
+
+def test_directory_batch_submission_failure_marks_entry_dead_before_fallback(
+    engine, source, two_files, stub_build_images, monkeypatch
+):
+    """On a total batch submission failure, the batch entry should already be
+    in `dead_entries` by the time the per-file fallback chain runs, so the
+    fallback never wastes a call retrying the entry we already know is
+    broken (Specification: fallback design, `app/jobs/tag.py::_run_batch`)."""
+
+    def fake_batch(engine_, entry, items, tags):
+        raise ProviderError("batch endpoint unavailable")
+
+    monkeypatch.setattr(registry, "score_tags_batch_with_entry", fake_batch)
+    seen_dead_ids: list[set] = []
+
+    def fake_fallback(engine_, entries, images, tags, dead_entry_ids):
+        seen_dead_ids.append(set(dead_entry_ids))
+        return [50, 50], entries[0]
+
+    monkeypatch.setattr(registry, "score_tags_with_fallback", fake_fallback)
+
+    status, _message = _run_directory_tag_job(engine)
+
+    assert status == "completed"
+    batch_entry = provider_entries.list_entries(engine)[0]
+    assert all(batch_entry["id"] in dead_ids for dead_ids in seen_dead_ids)
+
+
+def test_per_file_fallback_tries_next_entry_after_first_fails(engine, source, monkeypatch):
+    """A single-file job with two enabled entries: the first fails, the
+    second succeeds -- the real (unpatched) `score_tags_with_fallback`
+    should be exercised here, not a stub, to prove the fallback chain
+    itself works end-to-end."""
+    now = datetime.now(timezone.utc).isoformat()
+    dir_id = str(uuid.uuid4())
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO directories (id, source_id, relative_path, name, parent_relative_path, "
+                "has_folder_preview, last_scanned_at, created_at, updated_at) "
+                "VALUES (:id, :sid, '', 'root', NULL, 0, :now, :now, :now)"
+            ),
+            {"id": dir_id, "sid": source["id"], "now": now},
+        )
+    file_id = _make_file_row(engine, source["id"], dir_id, source["root"], "a.mp4")
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+    tags_service.create_tag(engine, {"display_name": "Snow"})
+
+    provider_entries.create_entry(
+        engine, {"provider_type": "openrouter", "display_name": "broken", "enabled": True, "api_key": "or-test"}
+    )
+    provider_entries.create_entry(
+        engine, {"provider_type": "gemini", "display_name": "working", "enabled": True, "api_key": "gm-test"}
+    )
+
+    monkeypatch.setattr(tagging, "build_tagging_images", lambda video_path, count, combine: [FAKE_IMAGE])
+
+    def fake_score(images, tags, model, api_key):
+        raise ProviderError("openrouter is down")
+
+    def fake_score_gemini(images, tags, model, api_key):
+        return [10, 90]
+
+    # `registry._CLIENTS` captured `openrouter.score_tags`/`gemini.score_tags`
+    # by reference at import time, so patching the provider modules'
+    # attributes wouldn't reach calls made through the registry's dict --
+    # patch the dict entries themselves instead.
+    monkeypatch.setitem(registry._CLIENTS, "openrouter", fake_score)
+    monkeypatch.setitem(registry._CLIENTS, "gemini", fake_score_gemini)
+
+    job = service.create_job(engine, "tag", "file", file_id, {"file_id": file_id})
+    service.start_job(engine, job["id"])
+    status, message = tag_job.run_tag_job(engine, job)
+
+    assert status == "completed"
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT provider_name FROM file_tags WHERE file_id = :fid LIMIT 1"), {"fid": file_id}
+        ).fetchone()
+    assert row.provider_name == "gemini"

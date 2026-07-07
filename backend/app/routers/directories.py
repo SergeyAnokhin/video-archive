@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import text
 
 from app.db import get_engine
-from app.media import FOLDER_PREVIEW_FILENAME
+from app.media import FOLDER_PREVIEW_FILENAME, ORIGINAL_MARKER, VARIANT_MARKER
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 from app.status import compute_directory_status
@@ -26,6 +26,8 @@ def _file_row_to_dict(row) -> dict:
         "has_preview_asset": bool(row.has_preview_asset),
         "converted_at": row.converted_at,
         "tagged_at": row.tagged_at,
+        "is_variant": VARIANT_MARKER in row.file_name,
+        "is_original": ORIGINAL_MARKER in row.file_name,
     }
 
 

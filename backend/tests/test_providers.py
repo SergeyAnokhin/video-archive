@@ -85,6 +85,37 @@ def test_openrouter_raises_provider_error_on_malformed_response(monkeypatch):
         openrouter.score_tags([FAKE_IMAGE], TAGS, None, "sk-test")
 
 
+def test_openrouter_list_models_filters_to_vision_capable(monkeypatch):
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda *a, **k: FakeResponse(
+            {
+                "data": [
+                    {"id": "vendor/vision-model", "architecture": {"input_modalities": ["text", "image"]}},
+                    {"id": "vendor/text-only-model", "architecture": {"input_modalities": ["text"]}},
+                ]
+            }
+        ),
+    )
+    models = openrouter.list_models("sk-test")
+    assert models == ["vendor/vision-model"]
+
+
+def test_openrouter_list_models_falls_back_to_full_list_without_modalities(monkeypatch):
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **k: FakeResponse({"data": [{"id": "vendor/b"}, {"id": "vendor/a"}]})
+    )
+    models = openrouter.list_models("sk-test")
+    assert models == ["vendor/a", "vendor/b"]
+
+
+def test_openrouter_list_models_raises_provider_error_on_http_error(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: FakeResponse({}, status_code=500))
+    with pytest.raises(ProviderError):
+        openrouter.list_models("sk-test")
+
+
 # --- Gemini --------------------------------------------------------------
 
 
@@ -113,6 +144,28 @@ def test_gemini_raises_provider_error_on_malformed_response(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResponse({"candidates": []}))
     with pytest.raises(ProviderError):
         gemini.score_tags([FAKE_IMAGE], TAGS, None, "gm-test")
+
+
+def test_gemini_list_models_filters_to_generate_content_and_strips_prefix(monkeypatch):
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda *a, **k: FakeResponse(
+            {
+                "models": [
+                    {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/embedding-001", "supportedGenerationMethods": ["embedContent"]},
+                ]
+            }
+        ),
+    )
+    assert gemini.list_models("gm-test") == ["gemini-2.5-flash"]
+
+
+def test_gemini_list_models_raises_provider_error_on_http_error(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: FakeResponse({}, status_code=401))
+    with pytest.raises(ProviderError):
+        gemini.list_models("gm-bad")
 
 
 # --- Mistral ---------------------------------------------------------------
@@ -147,7 +200,24 @@ def test_mistral_raises_provider_error_on_http_error(monkeypatch):
         mistral.score_tags([FAKE_IMAGE], TAGS, None, "ms-test")
 
 
+def test_mistral_list_models_sorted(monkeypatch):
+    monkeypatch.setattr(
+        httpx, "get", lambda *a, **k: FakeResponse({"data": [{"id": "mistral-large"}, {"id": "pixtral-12b"}]})
+    )
+    assert mistral.list_models("ms-test") == ["mistral-large", "pixtral-12b"]
+
+
+def test_mistral_list_models_raises_provider_error_on_http_error(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: FakeResponse({}, status_code=401))
+    with pytest.raises(ProviderError):
+        mistral.list_models("ms-bad")
+
+
 # --- FAL -------------------------------------------------------------------
+# No `list_models()` here, deliberately: FAL has no fixed vision-chat schema
+# and its model-listing API mixes every model type (image-gen, LoRA, audio,
+# ...), not a clean vision-tagging subset -- see `app/providers/fal.py` and
+# `app/providers/registry.py`'s `_MODEL_LIST_CLIENTS`.
 
 
 def test_fal_builds_expected_request_and_parses_scores(monkeypatch):

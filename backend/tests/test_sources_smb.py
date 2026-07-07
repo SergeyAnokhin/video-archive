@@ -209,13 +209,15 @@ def test_tag_file_over_smb(engine, smb_source, tmp_path, monkeypatch):
     with engine.connect() as conn:
         file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clips/movie.mp4'")).fetchone()
 
+    from app import provider_entries
     from app.providers import registry
 
-    monkeypatch.setattr(registry, "score_tags_with_provider", lambda *a, **k: [77])
-
-    job = service.create_job(
-        engine, "tag", "file", file_row.id, {"file_id": file_row.id, "provider_name": "openrouter"}
+    provider_entries.create_entry(engine, {"provider_type": "openrouter", "enabled": True, "api_key": "sk-test"})
+    monkeypatch.setattr(
+        registry, "score_tags_with_fallback", lambda engine, entries, images, tags, dead: ([77], entries[0])
     )
+
+    job = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
     service.start_job(engine, job["id"])
     status, message = tag_job.run_tag_job(engine, job)
     service.finish_job(engine, job["id"], status, message)

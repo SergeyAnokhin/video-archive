@@ -1,3 +1,4 @@
+import { Copy, Eraser, FolderOpen, Grid2x2, Grid3x3, LayoutGrid, Save, Square, Star, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -363,42 +364,44 @@ export function PreviewSettingsSection() {
             </div>
           )}
 
-          <label className="settings-modal__label">
-            {t('previewSettings.folderFrameCount')}
-            <input
-              type="number"
-              min={1}
-              max={20}
-              className="settings-modal__input"
-              value={settings.folder_preview_frame_count}
-              onChange={(event) => void updateSettings({ folder_preview_frame_count: Number(event.target.value) })}
-            />
-          </label>
+          <div className="settings-modal__row">
+            <label className="settings-modal__label">
+              {t('previewSettings.folderFrameCount')}
+              <input
+                type="number"
+                min={1}
+                max={20}
+                className="settings-modal__input"
+                value={settings.folder_preview_frame_count}
+                onChange={(event) => void updateSettings({ folder_preview_frame_count: Number(event.target.value) })}
+              />
+            </label>
 
-          <label className="settings-modal__label">
-            {t('previewSettings.gifMaxWidth')}
-            <input
-              type="number"
-              min={120}
-              max={1920}
-              step={20}
-              className="settings-modal__input"
-              value={settings.gif_max_width}
-              onChange={(event) => void updateSettings({ gif_max_width: Number(event.target.value) })}
-            />
-          </label>
+            <label className="settings-modal__label">
+              {t('previewSettings.gifMaxWidth')}
+              <input
+                type="number"
+                min={120}
+                max={1920}
+                step={20}
+                className="settings-modal__input"
+                value={settings.gif_max_width}
+                onChange={(event) => void updateSettings({ gif_max_width: Number(event.target.value) })}
+              />
+            </label>
 
-          <label className="settings-modal__label">
-            {t('previewSettings.gifColors')}
-            <input
-              type="number"
-              min={8}
-              max={256}
-              className="settings-modal__input"
-              value={settings.gif_colors}
-              onChange={(event) => void updateSettings({ gif_colors: Number(event.target.value) })}
-            />
-          </label>
+            <label className="settings-modal__label">
+              {t('previewSettings.gifColors')}
+              <input
+                type="number"
+                min={8}
+                max={256}
+                className="settings-modal__input"
+                value={settings.gif_colors}
+                onChange={(event) => void updateSettings({ gif_colors: Number(event.target.value) })}
+              />
+            </label>
+          </div>
         </>
       )}
 
@@ -406,35 +409,41 @@ export function PreviewSettingsSection() {
         <div className="settings-modal__options" role="group" aria-label={t('previewSettings.brush')}>
           <button
             type="button"
-            className="settings-modal__option"
+            className="settings-modal__option settings-modal__option--icon"
             aria-pressed={brush === 'small'}
             onClick={() => setBrush('small')}
+            aria-label={t('previewSettings.brushSmall')}
+            title={t('previewSettings.brushSmall')}
           >
-            {t('previewSettings.brushSmall')}
+            <Square size={14} />
           </button>
           <button
             type="button"
-            className="settings-modal__option"
+            className="settings-modal__option settings-modal__option--icon"
             aria-pressed={brush === 2}
             onClick={() => setBrush(2)}
+            aria-label={t('previewSettings.brushEnlarged2')}
+            title={t('previewSettings.brushEnlarged2')}
           >
-            {t('previewSettings.brushEnlarged2')}
+            <Grid2x2 size={14} />
           </button>
           <button
             type="button"
-            className="settings-modal__option"
+            className="settings-modal__option settings-modal__option--icon"
             aria-pressed={brush === 3}
             onClick={() => setBrush(3)}
+            aria-label={t('previewSettings.brushEnlarged3')}
+            title={t('previewSettings.brushEnlarged3')}
           >
-            {t('previewSettings.brushEnlarged3')}
+            <Grid3x3 size={14} />
           </button>
         </div>
         <div className="settings-modal__actions">
           <button type="button" className="settings-modal__option" onClick={handleFillAll}>
-            {t('previewSettings.fillAll')}
+            <LayoutGrid size={14} /> {t('previewSettings.fillAll')}
           </button>
           <button type="button" className="settings-modal__option" onClick={handleClearAll}>
-            {t('previewSettings.clearAll')}
+            <Eraser size={14} /> {t('previewSettings.clearAll')}
           </button>
         </div>
       </div>
@@ -525,13 +534,25 @@ export function PreviewSettingsSection() {
         {selectedPreset && (
           <div className="settings-modal__actions">
             {!selectedPreset.is_default && (
-              <button type="button" className="settings-modal__option" onClick={() => handleSetDefault(selectedPreset)}>
-                {t('conversionProfiles.markDefault')}
+              <button
+                type="button"
+                className="settings-modal__option settings-modal__option--icon"
+                onClick={() => handleSetDefault(selectedPreset)}
+                aria-label={t('conversionProfiles.markDefault')}
+                title={t('conversionProfiles.markDefault')}
+              >
+                <Star size={14} />
               </button>
             )}
             {!selectedPreset.is_builtin && (
-              <button type="button" className="settings-modal__option" onClick={() => handleDeletePreset(selectedPreset)}>
-                {t('conversionProfiles.delete')}
+              <button
+                type="button"
+                className="settings-modal__option settings-modal__option--icon"
+                onClick={() => handleDeletePreset(selectedPreset)}
+                aria-label={t('conversionProfiles.delete')}
+                title={t('conversionProfiles.delete')}
+              >
+                <Trash2 size={14} />
               </button>
             )}
           </div>
@@ -544,11 +565,11 @@ export function PreviewSettingsSection() {
           {quickSlots.map((slot, index) => (
             <div key={QUICK_SLOT_NAMES[index]} className="preview-settings__quick-slot">
               <button type="button" className="settings-modal__option" onClick={() => void handleSaveToSlot(index)}>
-                {t('previewSettings.saveToSlot', { slot: index + 1 })}
+                <Save size={14} /> {t('previewSettings.saveToSlot', { slot: index + 1 })}
               </button>
               {slot && (
                 <button type="button" className="settings-modal__option" onClick={() => loadPreset(slot)}>
-                  {t('previewSettings.loadSlot', { slot: index + 1 })}
+                  <FolderOpen size={14} /> {t('previewSettings.loadSlot', { slot: index + 1 })}
                 </button>
               )}
             </div>
@@ -574,7 +595,7 @@ export function PreviewSettingsSection() {
           onClick={() => void handleSavePreset(false)}
           disabled={saving || !presetName || Boolean(layoutError)}
         >
-          {t('previewSettings.savePreset')}
+          <Save size={14} /> {t('previewSettings.savePreset')}
         </button>
         <button
           type="button"
@@ -582,7 +603,7 @@ export function PreviewSettingsSection() {
           onClick={() => void handleSavePreset(true)}
           disabled={saving || !presetName || Boolean(layoutError)}
         >
-          {t('previewSettings.saveAsNewPreset')}
+          <Copy size={14} /> {t('previewSettings.saveAsNewPreset')}
         </button>
       </div>
     </section>

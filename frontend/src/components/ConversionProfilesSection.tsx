@@ -1,3 +1,4 @@
+import { Copy, Pencil, Plus, Save, Star, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConversionProfiles } from '../context/ConversionProfilesContext'
@@ -73,30 +74,42 @@ export function ConversionProfilesSection() {
             {!profile.is_default && (
               <button
                 type="button"
-                className="settings-modal__option"
+                className="settings-modal__option settings-modal__option--icon"
                 onClick={() => handleSetDefault(profile)}
                 disabled={busyId === profile.id}
+                aria-label={t('conversionProfiles.markDefault')}
+                title={t('conversionProfiles.markDefault')}
               >
-                {t('conversionProfiles.markDefault')}
+                <Star size={14} />
               </button>
             )}
-            <button type="button" className="settings-modal__option" onClick={() => setEditing(profile)}>
-              {t('conversionProfiles.edit')}
-            </button>
             <button
               type="button"
-              className="settings-modal__option"
-              onClick={() => handleDuplicate(profile)}
+              className="settings-modal__option settings-modal__option--icon"
+              onClick={() => setEditing(profile)}
+              aria-label={t('conversionProfiles.edit')}
+              title={t('conversionProfiles.edit')}
             >
-              {t('conversionProfiles.duplicate')}
+              <Pencil size={14} />
             </button>
             <button
               type="button"
-              className="settings-modal__option"
+              className="settings-modal__option settings-modal__option--icon"
+              onClick={() => handleDuplicate(profile)}
+              aria-label={t('conversionProfiles.duplicate')}
+              title={t('conversionProfiles.duplicate')}
+            >
+              <Copy size={14} />
+            </button>
+            <button
+              type="button"
+              className="settings-modal__option settings-modal__option--icon"
               onClick={() => handleDelete(profile.id)}
               disabled={busyId === profile.id}
+              aria-label={t('conversionProfiles.delete')}
+              title={t('conversionProfiles.delete')}
             >
-              {t('conversionProfiles.delete')}
+              <Trash2 size={14} />
             </button>
           </div>
         </div>
@@ -105,7 +118,7 @@ export function ConversionProfilesSection() {
       {editing === null ? (
         <div className="settings-modal__actions">
           <button type="button" className="settings-modal__option" onClick={() => setEditing('new')}>
-            {t('conversionProfiles.add')}
+            <Plus size={14} /> {t('conversionProfiles.add')}
           </button>
         </div>
       ) : (
@@ -198,29 +211,31 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
         </select>
       </label>
 
-      <label className="settings-modal__label">
-        {t('conversionProfiles.maxDimension')}
-        <input
-          className="settings-modal__input"
-          type="number"
-          min={1}
-          value={maxDimension}
-          onChange={(event) => setMaxDimension(event.target.value)}
-          placeholder={t('conversionProfiles.noResize')}
-        />
-      </label>
+      <div className="settings-modal__row">
+        <label className="settings-modal__label">
+          {t('conversionProfiles.maxDimension')}
+          <input
+            className="settings-modal__input"
+            type="number"
+            min={1}
+            value={maxDimension}
+            onChange={(event) => setMaxDimension(event.target.value)}
+            placeholder={t('conversionProfiles.noResize')}
+          />
+        </label>
 
-      <label className="settings-modal__label">
-        {t('conversionProfiles.crf')}
-        <input
-          className="settings-modal__input"
-          type="number"
-          min={22}
-          max={32}
-          value={crf}
-          onChange={(event) => setCrf(event.target.value)}
-        />
-      </label>
+        <label className="settings-modal__label">
+          {t('conversionProfiles.crf')}
+          <input
+            className="settings-modal__input"
+            type="number"
+            min={22}
+            max={32}
+            value={crf}
+            onChange={(event) => setCrf(event.target.value)}
+          />
+        </label>
+      </div>
 
       <label className="settings-modal__field">
         <span className="settings-modal__field-label">{t('conversionProfiles.dropAudio')}</span>
@@ -249,10 +264,10 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
           onClick={handleSave}
           disabled={saving || !name}
         >
-          {t('conversionProfiles.save')}
+          <Save size={14} /> {t('conversionProfiles.save')}
         </button>
         <button type="button" className="settings-modal__option" onClick={onCancel}>
-          {t('settings.cancel')}
+          <X size={14} /> {t('settings.cancel')}
         </button>
       </div>
     </div>

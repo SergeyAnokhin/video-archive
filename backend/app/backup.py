@@ -47,7 +47,7 @@ _SOURCE_SCOPED_TABLES = ("directories", "files")
 # Tables restored with an upsert-by-id (global settings, not tied to a
 # source, so restoring must not wipe entries the backup didn't include).
 _GLOBAL_SINGLE_TABLES = ("preview_settings", "tagging_settings", "playback_settings", "backup_settings")
-_GLOBAL_MULTI_TABLES = ("conversion_profiles", "tag_catalog", "provider_configs", "preview_layout_presets")
+_GLOBAL_MULTI_TABLES = ("conversion_profiles", "tag_catalog", "provider_entries", "preview_layout_presets")
 
 
 class RestoreError(Exception):
@@ -128,7 +128,7 @@ def _collect_data(engine, source_id: str) -> dict:
         preview_settings = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM preview_settings"))]
         tag_catalog = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM tag_catalog"))]
         tagging_settings = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM tagging_settings"))]
-        provider_configs = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM provider_configs"))]
+        provider_entries = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM provider_entries"))]
         playback_settings = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM playback_settings"))]
         backup_settings_rows = [dict(r._mapping) for r in conn.execute(text("SELECT * FROM backup_settings"))]
 
@@ -141,7 +141,7 @@ def _collect_data(engine, source_id: str) -> dict:
         "preview_settings": preview_settings,
         "tag_catalog": tag_catalog,
         "tagging_settings": tagging_settings,
-        "provider_configs": provider_configs,
+        "provider_entries": provider_entries,
         "playback_settings": playback_settings,
         "backup_settings": backup_settings_rows,
     }

@@ -1,5 +1,5 @@
-import { X } from 'lucide-react'
-import { useEffect } from 'react'
+import { X, HardDrive, Wand2, Images, PlayCircle, Tags, Bot, Archive, Palette } from 'lucide-react'
+import { useEffect, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SourceSection } from './SourceSection'
 import { ConversionProfilesSection } from './ConversionProfilesSection'
@@ -15,8 +15,29 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
+type TabId = 'source' | 'profiles' | 'preview' | 'playback' | 'tagging' | 'providers' | 'backup' | 'interface'
+
+interface TabDef {
+  id: TabId
+  icon: ComponentType<{ size?: number }>
+  labelKey: string
+  Component: ComponentType
+}
+
+const TABS: TabDef[] = [
+  { id: 'source', icon: HardDrive, labelKey: 'settings.sourceSection', Component: SourceSection },
+  { id: 'profiles', icon: Wand2, labelKey: 'conversionProfiles.title', Component: ConversionProfilesSection },
+  { id: 'preview', icon: Images, labelKey: 'previewSettings.title', Component: PreviewSettingsSection },
+  { id: 'playback', icon: PlayCircle, labelKey: 'playbackSettings.title', Component: PlaybackSettingsSection },
+  { id: 'tagging', icon: Tags, labelKey: 'tagging.title', Component: TaggingSettingsSection },
+  { id: 'providers', icon: Bot, labelKey: 'providerSettings.title', Component: ProviderSettingsSection },
+  { id: 'backup', icon: Archive, labelKey: 'backupMaintenance.title', Component: BackupMaintenanceSection },
+  { id: 'interface', icon: Palette, labelKey: 'settings.interfaceSection', Component: InterfaceSection },
+]
+
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<TabId>('source')
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -27,6 +48,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
+
+  const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0]
+  const ActiveComponent = active.Component
 
   return (
     <div className="settings-modal-overlay" onClick={onClose}>
@@ -43,27 +67,39 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             type="button"
             className="settings-modal__close"
             aria-label={t('settings.close')}
+            title={t('settings.close')}
             onClick={onClose}
           >
             <X size={18} />
           </button>
         </div>
 
-        <SourceSection />
+        <div className="settings-modal__body">
+          <nav className="settings-modal__tabs" role="tablist" aria-label={t('settings.title')}>
+            {TABS.map((tab) => {
+              const Icon = tab.icon
+              const label = t(tab.labelKey)
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  className="settings-modal__tab"
+                  title={label}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  <Icon size={18} />
+                  <span className="settings-modal__tab-label">{label}</span>
+                </button>
+              )
+            })}
+          </nav>
 
-        <ConversionProfilesSection />
-
-        <PreviewSettingsSection />
-
-        <PlaybackSettingsSection />
-
-        <TaggingSettingsSection />
-
-        <ProviderSettingsSection />
-
-        <BackupMaintenanceSection />
-
-        <InterfaceSection />
+          <div className="settings-modal__content" role="tabpanel">
+            <ActiveComponent />
+          </div>
+        </div>
       </div>
     </div>
   )

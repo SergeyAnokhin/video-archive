@@ -1,3 +1,4 @@
+import { Settings } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TopBar } from './TopBar'
@@ -60,7 +61,7 @@ export function AppLayout() {
             <div className="app-main__empty-state">
               <p>{t('library.noSource')}</p>
               <button type="button" onClick={() => setSettingsOpen(true)}>
-                {t('topBar.settingsToggle')}
+                <Settings size={14} /> {t('topBar.settingsToggle')}
               </button>
               <BackendStatusPanel />
             </div>

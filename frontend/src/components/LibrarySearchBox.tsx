@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, X } from 'lucide-react'
+import { Search, Tag as TagIcon, X } from 'lucide-react'
 import { useTags } from '../context/TagsContext'
 import type { Tag } from '../types/api'
 import './LibrarySearchBox.css'
@@ -94,7 +94,7 @@ export function LibrarySearchBox({ onSearch, onClear }: LibrarySearchBoxProps) {
           {suggestions.map((tag) => (
             <li key={tag.id}>
               <button type="button" onClick={() => selectTag(tag)}>
-                {tag.display_name}
+                <TagIcon size={12} /> {tag.display_name}
               </button>
             </li>
           ))}

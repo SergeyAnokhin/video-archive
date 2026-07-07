@@ -77,6 +77,9 @@
 }
 
 .playback-overlay__copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   min-height: var(--touch-target-min);
   padding: 0 var(--space-3);
   background: var(--color-accent);

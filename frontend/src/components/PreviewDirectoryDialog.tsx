@@ -1,3 +1,4 @@
+import { Play, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import './ConvertDialog.css'
@@ -68,10 +69,10 @@ export function PreviewDirectoryDialog({ path, onClose, onStarted }: PreviewDire
             onClick={handleStart}
             disabled={starting}
           >
-            {t('convertDialog.start')}
+            <Play size={14} /> {t('convertDialog.start')}
           </button>
           <button type="button" className="convert-dialog__button" onClick={onClose}>
-            {t('convertDialog.cancel')}
+            <X size={14} /> {t('convertDialog.cancel')}
           </button>
         </div>
       </div>

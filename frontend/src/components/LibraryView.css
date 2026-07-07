@@ -57,6 +57,9 @@
 }
 
 .library-view__breadcrumb button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   background: transparent;
   border: none;
   min-width: 0;
@@ -279,4 +282,19 @@
 
 .library-card__dot--preview {
   background: var(--color-accent);
+}
+
+.library-card__marker {
+  display: flex;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.library-card__marker--variant {
+  color: var(--color-accent);
+}
+
+.library-card__marker--original {
+  color: var(--color-text-muted);
 }

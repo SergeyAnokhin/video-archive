@@ -1,13 +1,21 @@
-"""Provider dispatch: resolves a configured provider name to its client
-module and its stored (non-secret) model choice + secret API key.
+"""Provider dispatch: resolves a provider entry (`app/provider_entries.py`)
+to its client module and its stored (non-secret) model choice + secret API
+key, and implements the priority-ordered fallback chain the tag job
+(`app/jobs/tag.py`) uses across multiple enabled entries.
 """
 
 from __future__ import annotations
 
-from app import provider_configs, secrets_store
+from app import secrets_store
 from app.providers import fal, gemini, mistral, openrouter
 from app.providers.base import ProviderError
 
+# These dicts capture each provider module's function *by reference* at
+# import time. A test that does `monkeypatch.setattr(gemini, "score_tags",
+# fake)` will not affect calls made through `_CLIENTS["gemini"]` -- that
+# entry still points at the original function object. Patch the dict entry
+# itself instead: `monkeypatch.setitem(registry._CLIENTS, "gemini", fake)`
+# (same for `_BATCH_CLIENTS`/`_MODEL_LIST_CLIENTS`).
 _CLIENTS = {
     "openrouter": openrouter.score_tags,
     "gemini": gemini.score_tags,
@@ -17,10 +25,20 @@ _CLIENTS = {
 
 # Providers with a Batch API (Specification §12.3, Tech Stack "batch API
 # support"); OpenRouter/FAL have no equivalent, so directory-scope tagging
-# always falls back to per-file `score_tags_with_provider()` calls for those.
+# always falls back to per-file `score_tags_with_entry()` calls for those.
 _BATCH_CLIENTS = {
     "gemini": gemini.submit_batch,
     "mistral": mistral.submit_batch,
+}
+
+# Providers with a real model-listing API, for the "Load models" flow. FAL is
+# intentionally excluded -- it has no fixed vision-chat schema and its
+# model-listing API mixes every model type (image-gen, LoRA, audio, ...),
+# not a clean vision-tagging subset (see `app/providers/fal.py`).
+_MODEL_LIST_CLIENTS = {
+    "openrouter": openrouter.list_models,
+    "gemini": gemini.list_models,
+    "mistral": mistral.list_models,
 }
 
 
@@ -28,46 +46,88 @@ class ProviderNotConfiguredError(Exception):
     pass
 
 
-def _resolve_provider_config(engine, provider_name: str) -> tuple[dict, str]:
-    config = provider_configs.get_provider(engine, provider_name)
-    if config is None or not config["enabled"]:
-        raise ProviderNotConfiguredError(f"Provider is not enabled: {provider_name}")
+class ModelListingNotSupportedError(Exception):
+    pass
 
-    api_key = secrets_store.get_provider_api_key(provider_name)
+
+class AllProvidersFailedError(Exception):
+    """Raised when every enabled provider entry failed for one tagging
+    attempt. Callers (the tag job) treat this the same as any other
+    per-file failure -- it fails that job item, never invents placeholder
+    tags."""
+
+
+def _resolve_entry_api_key(entry: dict) -> str:
+    api_key = secrets_store.get_entry_api_key(entry["id"])
     if not api_key:
-        raise ProviderNotConfiguredError(f"No API key configured for provider: {provider_name}")
+        raise ProviderNotConfiguredError(f"No API key configured for provider entry: {entry['display_name']}")
+    return api_key
 
-    return config, api_key
 
-
-def score_tags_with_provider(engine, provider_name: str, images: list[bytes], tags: list[str]) -> list[int]:
-    client = _CLIENTS.get(provider_name)
+def score_tags_with_entry(engine, entry: dict, images: list[bytes], tags: list[str]) -> list[int]:
+    client = _CLIENTS.get(entry["provider_type"])
     if client is None:
-        raise ProviderNotConfiguredError(f"Unknown provider: {provider_name}")
+        raise ProviderNotConfiguredError(f"Unknown provider type: {entry['provider_type']}")
+    if not entry["enabled"]:
+        raise ProviderNotConfiguredError(f"Provider entry is not enabled: {entry['display_name']}")
 
-    config, api_key = _resolve_provider_config(engine, provider_name)
-    return client(images, tags, config["vision_model"], api_key)
-
-
-def provider_supports_batch(provider_name: str) -> bool:
-    return provider_name in _BATCH_CLIENTS
+    api_key = _resolve_entry_api_key(entry)
+    return client(images, tags, entry["vision_model"], api_key)
 
 
-def score_tags_batch_with_provider(
-    engine, provider_name: str, items: list[tuple[str, list[bytes]]], tags: list[str]
+def entry_supports_batch(entry: dict) -> bool:
+    return entry["provider_type"] in _BATCH_CLIENTS
+
+
+def score_tags_batch_with_entry(
+    engine, entry: dict, items: list[tuple[str, list[bytes]]], tags: list[str]
 ) -> dict[str, list[int] | None]:
-    client = _BATCH_CLIENTS.get(provider_name)
+    client = _BATCH_CLIENTS.get(entry["provider_type"])
     if client is None:
-        raise ProviderNotConfiguredError(f"Provider does not support batch submission: {provider_name}")
+        raise ProviderNotConfiguredError(f"Provider entry does not support batch submission: {entry['display_name']}")
 
-    config, api_key = _resolve_provider_config(engine, provider_name)
-    return client(items, tags, config["vision_model"], api_key)
+    api_key = _resolve_entry_api_key(entry)
+    return client(items, tags, entry["vision_model"], api_key)
+
+
+def list_models_for_provider_type(provider_type: str, api_key: str) -> list[str]:
+    client = _MODEL_LIST_CLIENTS.get(provider_type)
+    if client is None:
+        raise ModelListingNotSupportedError(f"Model listing is not supported for provider type: {provider_type}")
+    return client(api_key)
+
+
+def score_tags_with_fallback(
+    engine, entries: list[dict], images: list[bytes], tags: list[str], dead_entry_ids: set[str]
+) -> tuple[list[int], dict]:
+    """Tries `entries` (already filtered to enabled, ordered by priority) in
+    order, skipping any id already in `dead_entry_ids` and adding any entry
+    that fails to it -- so a broken entry (bad key, quota) is tried at most
+    once per job run, not once per remaining file. Returns the scores and
+    the entry that produced them. Raises `AllProvidersFailedError` if every
+    entry fails."""
+    failures = []
+    for entry in entries:
+        if entry["id"] in dead_entry_ids:
+            continue
+        try:
+            return score_tags_with_entry(engine, entry, images, tags), entry
+        except (ProviderError, ProviderNotConfiguredError) as exc:
+            failures.append(f"{entry['display_name']} ({entry['provider_type']}): {exc}")
+            dead_entry_ids.add(entry["id"])
+            continue
+
+    raise AllProvidersFailedError("; ".join(failures) or "No enabled provider entries configured.")
 
 
 __all__ = [
-    "score_tags_with_provider",
-    "provider_supports_batch",
-    "score_tags_batch_with_provider",
+    "score_tags_with_entry",
+    "entry_supports_batch",
+    "score_tags_batch_with_entry",
+    "list_models_for_provider_type",
+    "score_tags_with_fallback",
     "ProviderNotConfiguredError",
+    "ModelListingNotSupportedError",
+    "AllProvidersFailedError",
     "ProviderError",
 ]
