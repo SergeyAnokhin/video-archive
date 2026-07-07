@@ -152,6 +152,38 @@ class JobServiceTests(unittest.TestCase):
             self.assertIsNotNone(directory_card_preview)
             self.assertTrue(any(event["event_type"] == "preview.item.completed" for event in events))
 
+    def test_preview_job_creates_preview_assets_for_nested_directory_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, source_service, library_service, job_service, source_root = _build_services(tmp)
+            (source_root / "Foscam" / "cam-a").mkdir(parents=True)
+            (source_root / "Foscam" / "cam-b").mkdir(parents=True)
+            (source_root / "ReolinkFront" / "entry").mkdir(parents=True)
+            (source_root / "Foscam" / "cam-a" / "One.mp4").write_bytes(b"one")
+            (source_root / "Foscam" / "cam-b" / "Two.mp4").write_bytes(b"two")
+            (source_root / "ReolinkFront" / "entry" / "Three.mp4").write_bytes(b"three")
+            source = source_service.get_active_source()
+            assert source is not None
+            library_service.scan_source(source, "")
+
+            job_service.start()
+            self.addCleanup(job_service.shutdown)
+
+            job = job_service.create_preview_directory_job("")
+            completed = _wait_for_terminal_status(job_service, job["id"])
+            tree = library_service.get_tree()
+            root_node = tree[0]
+            foscam_node = next(node for node in root_node["children"] if node["path"] == "Foscam")
+            reolink_node = next(node for node in root_node["children"] if node["path"] == "ReolinkFront")
+
+            self.assertEqual(completed["status"], "completed")
+            self.assertTrue(root_node["has_preview_asset"])
+            self.assertTrue(foscam_node["has_preview_asset"])
+            self.assertTrue(reolink_node["has_preview_asset"])
+            self.assertIsNotNone(job_service._preview_service.get_directory_card_preview_path(source["id"], "Foscam"))
+            self.assertIsNotNone(job_service._preview_service.get_directory_card_preview_path(source["id"], "Foscam/cam-a"))
+            self.assertIsNotNone(job_service._preview_service.get_directory_card_preview_path(source["id"], "Foscam/cam-b"))
+            self.assertIsNotNone(job_service._preview_service.get_directory_card_preview_path(source["id"], "ReolinkFront"))
+
     def test_tag_job_stores_closed_vocabulary_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root, source_service, library_service, job_service, source_root = _build_services(tmp)
@@ -197,12 +229,16 @@ class JobServiceTests(unittest.TestCase):
             completed = _wait_for_terminal_status(job_service, job["id"])
             items = job_service.list_job_items(job["id"])
             events = job_service.list_events(job_id=job["id"], limit=100)
+            files = library_service.list_files("clips")
+            generated_files = [file for file in files if file["generated_kind"] == "tune"]
 
             self.assertEqual(completed["status"], "completed")
             self.assertEqual(len(items), 4)
             self.assertTrue(all(item["status"] == "completed" for item in items))
             self.assertTrue(source_file.exists())
             self.assertTrue(all(item["output_ref"] for item in items))
+            self.assertEqual(len(generated_files), 4)
+            self.assertTrue(all(file["generated_from_job_id"] == job["id"] for file in generated_files))
             self.assertTrue(any(event["event_type"] == "tune.item.completed" for event in events))
 
 
@@ -224,13 +260,15 @@ def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobS
         }
     )
     source_service.replace_active_source(payload)
-    library_service = LibraryService(db_path, source_service)
     profile_service = ConversionProfileService(db_path)
+    library_service = LibraryService(db_path, source_service, profile_service)
     preview_service = FakePreviewService(db_path, root / ".local")
     provider_settings_service = ProviderSettingsService(db_path, SecretStore(secrets_path))
     provider_settings_service.update_settings(
         [
             {
+                "id": "openrouter-main",
+                "label": "OpenRouter Primary",
                 "provider": "openrouter",
                 "enabled": True,
                 "vision_model": "openrouter/test-vision",
@@ -238,15 +276,15 @@ def _build_services(tmp: str) -> tuple[Path, SourceService, LibraryService, JobS
                 "prefer_batch": True,
                 "api_key": "test-openrouter-key",
             },
-            {"provider": "gemini", "enabled": False, "vision_model": "gemini-2.0-flash", "text_model": "", "prefer_batch": True},
-            {"provider": "fal", "enabled": False, "vision_model": "fal-ai/example", "text_model": "", "prefer_batch": True},
-            {"provider": "mistral", "enabled": False, "vision_model": "pixtral-large-latest", "text_model": "", "prefer_batch": True},
+            {"id": "gemini-main", "label": "Gemini", "provider": "gemini", "enabled": False, "vision_model": "gemini-2.0-flash", "text_model": "", "prefer_batch": True},
+            {"id": "fal-main", "label": "FAL", "provider": "fal", "enabled": False, "vision_model": "fal-ai/example", "text_model": "", "prefer_batch": True},
+            {"id": "mistral-main", "label": "Mistral", "provider": "mistral", "enabled": False, "vision_model": "pixtral-large-latest", "text_model": "", "prefer_batch": True},
         ]
     )
     tagging_service = FakeTaggingService(db_path, provider_settings_service)
     tagging_service.update_settings(
         {
-            "provider": "openrouter",
+            "provider_id": "openrouter-main",
             "sample_count": 9,
             "combine_frames": True,
             "prefer_batch": True,
@@ -278,7 +316,8 @@ class FakeConversionService(ConversionService):
             if final_path != source_path and source_path.exists():
                 source_path.unlink()
         else:
-            final_path = source_path.with_name(f"{source_path.stem}.__test__default-h265-mp4.{container}")
+            output_tag = profile.get("test_output_tag") or "default-h265-mp4"
+            final_path = source_path.with_name(f"{source_path.stem}.__test__{output_tag}.{container}")
             final_path.write_bytes(b"converted-test")
 
         return {

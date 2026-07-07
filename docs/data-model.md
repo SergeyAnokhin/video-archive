@@ -99,6 +99,9 @@ Represents a discovered file within the source.
 | `has_preview_assets` | boolean | Denormalized convenience flag |
 | `last_error_code` | string nullable | Latest operational error code |
 | `last_error_message` | text nullable | Latest operational error summary |
+| `generated_from_job_id` | UUID nullable | Job that produced this file when it is a generated output |
+| `generated_from_file_id` | UUID nullable | Source file that this generated output came from |
+| `generated_kind` | string nullable | `tune` or `convert_test` |
 | `created_at` | datetime | Audit |
 | `updated_at` | datetime | Audit |
 
@@ -107,6 +110,7 @@ Rules:
 - `conversion_state` and `preview_state` are independent.
 - `has_preview_assets` should agree with preview artifacts and `preview_generated_at`.
 - `tagging_updated_at` and `tagging_model_info` should be cleared when the source file changes and old tags are invalidated.
+- Generated outputs remain first-class file rows and keep their `generated_*` metadata across refreshes and moves.
 - If a source file disappears, the row may remain until cleanup/rescan removes or tombstones it.
 
 ## 4. conversion_profiles

@@ -30,19 +30,28 @@ export const defaultPlaybackSettings = {
 };
 
 export const defaultTaggingSettings = {
-  provider: "openrouter",
+  provider_id: "",
   sample_count: 9,
   combine_frames: true,
   prefer_batch: true,
   vocabulary: []
 };
 
-export const defaultProviderSettings = [
-  { provider: "openrouter", enabled: false, vision_model: "", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
-  { provider: "gemini", enabled: false, vision_model: "gemini-2.0-flash", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
-  { provider: "fal", enabled: false, vision_model: "", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false },
-  { provider: "mistral", enabled: false, vision_model: "pixtral-large-latest", text_model: "", prefer_batch: true, api_key: "", api_key_configured: false }
+export const providerOptions = [
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "gemini", label: "Google Gemini" },
+  { value: "fal", label: "FAL" },
+  { value: "mistral", label: "Mistral" }
 ];
+
+const providerDefaultsByType = {
+  openrouter: { vision_model: "", text_model: "", prefer_batch: true },
+  gemini: { vision_model: "gemini-2.0-flash", text_model: "", prefer_batch: true },
+  fal: { vision_model: "", text_model: "", prefer_batch: true },
+  mistral: { vision_model: "pixtral-large-latest", text_model: "", prefer_batch: true }
+};
+
+export const defaultProviderSettings = [];
 
 export const emptyProfileDraft = {
   name: "",
@@ -63,8 +72,16 @@ export const emptyLogFilters = {
 };
 
 export const defaultTuneDraft = {
-  dimensionsText: "1000, 900, 800",
-  qualitiesText: "20, 24, 28",
+  parameter: "quality",
+  dimensionMin: "800",
+  dimensionMax: "1000",
+  dimensionStep: "100",
+  qualityMin: "20",
+  qualityMax: "28",
+  qualityStep: "4",
+  fixedDimension: "1000",
+  fixedQuality: "24",
+  fixedCodec: "h265",
   codecs: {
     h264: false,
     h265: true,
@@ -77,10 +94,51 @@ export function toTaggingForm(settings) {
   return {
     ...defaultTaggingSettings,
     ...settings,
+    provider_id: typeof settings?.provider_id === "string" ? settings.provider_id : "",
     vocabulary: Array.isArray(settings?.vocabulary)
       ? settings.vocabulary.map((entry) => (typeof entry === "string" ? entry : entry.display_name)).filter(Boolean)
       : []
   };
+}
+
+export function buildProviderDraft(providerType = "gemini") {
+  const defaults = providerDefaultsByType[providerType] ?? providerDefaultsByType.gemini;
+  return {
+    id: `provider-${crypto.randomUUID()}`,
+    order_index: 0,
+    provider: providerType,
+    label: providerOptions.find((entry) => entry.value === providerType)?.label ?? providerType,
+    enabled: true,
+    vision_model: defaults.vision_model,
+    text_model: defaults.text_model,
+    prefer_batch: defaults.prefer_batch,
+    api_key: "",
+    api_key_configured: false,
+    available_models: [],
+    is_loading_models: false
+  };
+}
+
+export function normalizeProviderSettings(settings) {
+  if (!Array.isArray(settings)) {
+    return [];
+  }
+  return settings.map((entry, index) => ({
+    ...buildProviderDraft(entry?.provider ?? "gemini"),
+    ...entry,
+    order_index: typeof entry?.order_index === "number" ? entry.order_index : index,
+    api_key: "",
+    available_models: Array.isArray(entry?.available_models) ? entry.available_models : [],
+    is_loading_models: false
+  }));
+}
+
+export function getProviderDefaults(providerType) {
+  return providerDefaultsByType[providerType] ?? providerDefaultsByType.gemini;
+}
+
+export function getProviderLabel(providerType) {
+  return providerOptions.find((entry) => entry.value === providerType)?.label ?? providerType;
 }
 
 export function flattenTree(nodes, depth = 0) {
@@ -137,30 +195,70 @@ export function formatDirectoryLabel(path, t = null) {
   return path ? path : t ? t("app.libraryRoot") : "Library root";
 }
 
-function parseCommaNumberList(value) {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => Number(entry))
-    .filter((entry) => Number.isInteger(entry) && entry > 0);
+function parsePositiveInteger(value, label) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+  return parsed;
 }
 
-function parseCommaStringList(value) {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+function buildInclusiveRange({ minValue, maxValue, stepValue, label }) {
+  const min = parsePositiveInteger(minValue, `${label} min`);
+  const max = parsePositiveInteger(maxValue, `${label} max`);
+  const step = parsePositiveInteger(stepValue, `${label} step`);
+  if (max < min) {
+    throw new Error(`${label} max must be greater than or equal to min.`);
+  }
+  const values = [];
+  for (let current = min; current <= max; current += step) {
+    values.push(current);
+  }
+  if (values[values.length - 1] !== max) {
+    values.push(max);
+  }
+  return [...new Set(values)];
 }
 
 export function buildTuneSweep(draft) {
   const codecs = Object.entries(draft.codecs)
     .filter(([, enabled]) => enabled)
     .map(([codec]) => codec);
+  const parameter = draft.parameter ?? "quality";
+  const fixedDimension = parsePositiveInteger(draft.fixedDimension, "Fixed max side");
+  const fixedQuality = String(parsePositiveInteger(draft.fixedQuality, "Fixed CRF"));
+  let dimensions = [fixedDimension];
+  let qualityValues = [fixedQuality];
+  let selectedCodecs = [draft.fixedCodec || "h265"];
+
+  if (parameter === "dimension") {
+    dimensions = buildInclusiveRange({
+      minValue: draft.dimensionMin,
+      maxValue: draft.dimensionMax,
+      stepValue: draft.dimensionStep,
+      label: "Max side"
+    });
+  } else if (parameter === "quality") {
+    qualityValues = buildInclusiveRange({
+      minValue: draft.qualityMin,
+      maxValue: draft.qualityMax,
+      stepValue: draft.qualityStep,
+      label: "CRF"
+    }).map((value) => String(value));
+  } else if (parameter === "codec") {
+    selectedCodecs = codecs.length ? codecs : ["h265"];
+  } else {
+    throw new Error("Unsupported tuning parameter.");
+  }
+
+  const variantCount = dimensions.length * qualityValues.length * selectedCodecs.length;
+  if (variantCount > 24) {
+    throw new Error("Tuning sweep is too large. Keep it to 24 variants or fewer.");
+  }
   return {
-    dimensions: parseCommaNumberList(draft.dimensionsText),
-    quality_values: parseCommaStringList(draft.qualitiesText),
-    codecs: codecs.length ? codecs : ["h265"],
+    dimensions,
+    quality_values: qualityValues,
+    codecs: selectedCodecs,
     drop_audio: draft.dropAudio
   };
 }

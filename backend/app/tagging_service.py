@@ -20,7 +20,7 @@ from .time_utils import utc_now
 
 TAGGING_SECTION = "tagging"
 DEFAULT_TAGGING_SETTINGS = {
-    "provider": "openrouter",
+    "provider_id": "",
     "sample_count": 9,
     "combine_frames": True,
     "prefer_batch": True,
@@ -63,7 +63,10 @@ class TaggingService:
 
     def resolve_settings_snapshot(self) -> dict:
         settings = self.get_settings()
-        provider = self._provider_settings_service.get_runtime_provider(settings["provider"])
+        provider = self._provider_settings_service.get_runtime_provider(
+            provider_id=settings["provider_id"] or None,
+            provider_name=settings.get("provider"),
+        )
         return {
             **settings,
             "provider_config": provider,
@@ -145,7 +148,10 @@ class TaggingService:
 
         provider = settings.get("provider_config")
         if not isinstance(provider, dict):
-            provider = self._provider_settings_service.get_runtime_provider(settings.get("provider"))
+            provider = self._provider_settings_service.get_runtime_provider(
+                provider_id=settings.get("provider_id") or None,
+                provider_name=settings.get("provider"),
+            )
         prefer_batch = bool(settings.get("prefer_batch")) and bool(provider.get("prefer_batch", True))
 
         prepared = [self._prepare_video_request(file_row, sample_count=settings["sample_count"], combine_frames=settings["combine_frames"]) for file_row in file_rows]
@@ -465,9 +471,14 @@ class TaggingService:
     def _merge_settings_payload(self, payload: object) -> dict:
         if not isinstance(payload, dict):
             raise ApiError("invalid_request", "Tagging settings payload must be a JSON object.", status=400)
-        provider = payload.get("provider", DEFAULT_TAGGING_SETTINGS["provider"])
-        if provider not in {"openrouter", "gemini", "fal", "mistral"}:
-            raise ApiError("invalid_request", "Field 'provider' must be one of openrouter, gemini, fal, or mistral.", status=400)
+        provider_id = payload.get("provider_id", "")
+        provider_name = payload.get("provider")
+        if provider_id is None:
+            provider_id = ""
+        if not isinstance(provider_id, str):
+            raise ApiError("invalid_request", "Field 'provider_id' must be a string.", status=400)
+        if provider_name is not None and not isinstance(provider_name, str):
+            raise ApiError("invalid_request", "Field 'provider' must be a string when provided.", status=400)
         combine_frames = payload.get("combine_frames", DEFAULT_TAGGING_SETTINGS["combine_frames"])
         prefer_batch = payload.get("prefer_batch", DEFAULT_TAGGING_SETTINGS["prefer_batch"])
         if not isinstance(combine_frames, bool):
@@ -478,7 +489,8 @@ class TaggingService:
         if not isinstance(sample_count, int) or sample_count < 3 or sample_count > 24:
             raise ApiError("invalid_request", "Field 'sample_count' must be an integer between 3 and 24.", status=400)
         return {
-            "provider": provider,
+            "provider_id": provider_id.strip(),
+            "provider": provider_name.strip() if isinstance(provider_name, str) and provider_name.strip() else None,
             "sample_count": sample_count,
             "combine_frames": combine_frames,
             "prefer_batch": prefer_batch,

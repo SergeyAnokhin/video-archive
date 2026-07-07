@@ -1,4 +1,4 @@
-import { FolderCog, ImagePlus, Play, SlidersHorizontal, Tags, TextSearch, X } from "lucide-react";
+import { FolderCog, FolderInput, FlaskConical, ImagePlus, Play, SlidersHorizontal, Tags, TextSearch, Trash2, X } from "lucide-react";
 
 export default function FileDetailsModal({
   isOpen,
@@ -14,6 +14,8 @@ export default function FileDetailsModal({
   onPreviewFile,
   onTagFile,
   onOpenTune,
+  onMoveFile,
+  onDeleteFile,
   onOpenLogViewer,
   formatBytes,
   formatConfidence,
@@ -34,9 +36,90 @@ export default function FileDetailsModal({
         { key: "tag", label: t("details.tagState"), state: taggingState }
       ]
     : [];
+  const mediaInfo = selectedFileDetails?.media_info ?? null;
+  const lastProfile = selectedFileDetails?.last_conversion_profile ?? null;
+  const generatedKind = selectedFileDetails?.generated_kind ?? null;
 
   function renderStateLamp(state) {
     return <span className={`state-lamp state-lamp-${state}`} aria-hidden="true" />;
+  }
+
+  function formatCodecLabel(value) {
+    if (!value) {
+      return "-";
+    }
+    const normalized = String(value).toLowerCase();
+    return (
+      {
+        h264: "H.264",
+        avc: "H.264",
+        h265: "H.265",
+        hevc: "H.265 / HEVC",
+        av1: "AV1",
+        aac: "AAC",
+        opus: "Opus"
+      }[normalized] ?? String(value).toUpperCase()
+    );
+  }
+
+  function formatResolution(info) {
+    if (!info?.width || !info?.height) {
+      return "-";
+    }
+    return `${info.width}x${info.height}`;
+  }
+
+  function formatAspectRatio(info) {
+    if (!info) {
+      return "-";
+    }
+    if (info.display_aspect_ratio) {
+      const decimalRatio = info.width && info.height ? ` (${(info.width / info.height).toFixed(2)}:1)` : "";
+      return `${info.display_aspect_ratio}${decimalRatio}`;
+    }
+    if (!info.width || !info.height) {
+      return "-";
+    }
+    const divisor = greatestCommonDivisor(info.width, info.height);
+    return `${info.width / divisor}:${info.height / divisor} (${(info.width / info.height).toFixed(2)}:1)`;
+  }
+
+  function formatBitrate(value) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return "-";
+    }
+    if (value >= 1_000_000) {
+      return `${(value / 1_000_000).toFixed(2)} Mbps`;
+    }
+    return `${Math.round(value / 1000)} kbps`;
+  }
+
+  function formatDuration(value) {
+    if (!Number.isFinite(value) || value < 0) {
+      return "-";
+    }
+    const totalSeconds = Math.round(value);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function formatFrameRate(value) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return "-";
+    }
+    return `${value >= 10 ? value.toFixed(2) : value.toFixed(3)} fps`;
+  }
+
+  function formatQuality(profile) {
+    if (!profile?.quality_value) {
+      return "-";
+    }
+    return `${String(profile.quality_mode || "quality").toUpperCase()} ${profile.quality_value}`;
   }
 
   return (
@@ -111,8 +194,28 @@ export default function FileDetailsModal({
                     <TextSearch size={16} />
                     <span>{t("details.logs")}</span>
                   </button>
+                  <button type="button" className="mini-button icon-button" disabled={isWorking} onClick={() => onMoveFile(selectedFile)}>
+                    <FolderInput size={16} />
+                    <span>{t("details.move")}</span>
+                  </button>
+                  <button type="button" className="mini-button icon-button danger-button" disabled={isWorking} onClick={() => onDeleteFile(selectedFile)}>
+                    <Trash2 size={16} />
+                    <span>{t("details.delete")}</span>
+                  </button>
                 </div>
               </div>
+
+              {generatedKind ? (
+                <div className="note-card details-summary-card">
+                  <strong>{t("details.generatedBlock")}</strong>
+                  <div className="details-status-row">
+                    <span className="details-status-item">
+                      <FlaskConical size={16} />
+                      <span>{generatedKind === "tune" ? t("details.generatedTune") : t("details.generatedTest")}</span>
+                    </span>
+                  </div>
+                </div>
+              ) : null}
 
               {selectedFilePreview?.image_path ? (
                 <div className="note-card">
@@ -134,11 +237,25 @@ export default function FileDetailsModal({
             <div className="details-side">
               <div className="note-card details-summary-card">
                 <strong>{t("details.summary")}</strong>
-                <dl className="meta-list">
-                  <div>
-                    <dt>{t("details.size")}</dt>
-                    <dd>{formatBytes(selectedFileDetails.size_bytes)}</dd>
+                <div className="details-fact-grid">
+                  <div className="details-fact-tile">
+                    <span className="details-fact-label">{t("details.size")}</span>
+                    <strong>{formatBytes(selectedFileDetails.size_bytes)}</strong>
                   </div>
+                  <div className="details-fact-tile">
+                    <span className="details-fact-label">{t("details.resolution")}</span>
+                    <strong>{formatResolution(mediaInfo)}</strong>
+                  </div>
+                  <div className="details-fact-tile">
+                    <span className="details-fact-label">{t("details.aspectRatio")}</span>
+                    <strong>{formatAspectRatio(mediaInfo)}</strong>
+                  </div>
+                  <div className="details-fact-tile">
+                    <span className="details-fact-label">{t("details.duration")}</span>
+                    <strong>{formatDuration(mediaInfo?.duration_seconds)}</strong>
+                  </div>
+                </div>
+                <dl className="meta-list details-meta-list">
                   <div>
                     <dt>{t("details.modified")}</dt>
                     <dd>{formatDate(selectedFileDetails.modified_at)}</dd>
@@ -146,14 +263,6 @@ export default function FileDetailsModal({
                   <div>
                     <dt>{t("details.discovered")}</dt>
                     <dd>{formatDate(selectedFileDetails.discovered_at)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("details.convertState")}</dt>
-                    <dd>{formatStatusLabel(selectedFileDetails.conversion_state)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("details.previewState")}</dt>
-                    <dd>{formatStatusLabel(selectedFileDetails.preview_state)}</dd>
                   </div>
                   <div>
                     <dt>{t("details.lastConverted")}</dt>
@@ -164,6 +273,69 @@ export default function FileDetailsModal({
                     <dd>{formatDate(selectedFileDetails.preview_generated_at)}</dd>
                   </div>
                 </dl>
+              </div>
+
+              <div className="note-card details-summary-card">
+                <strong>{t("details.codecBlock")}</strong>
+                <dl className="meta-list details-meta-list">
+                  <div>
+                    <dt>{t("details.videoCodec")}</dt>
+                    <dd>{formatCodecLabel(mediaInfo?.video_codec)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("details.codecProfile")}</dt>
+                    <dd>{mediaInfo?.video_profile || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("details.audioCodec")}</dt>
+                    <dd>{formatCodecLabel(mediaInfo?.audio_codec)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("details.bitrate")}</dt>
+                    <dd>{formatBitrate(mediaInfo?.bitrate_bps)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("details.frameRate")}</dt>
+                    <dd>{formatFrameRate(mediaInfo?.frame_rate)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("details.pixelFormat")}</dt>
+                    <dd>{mediaInfo?.pixel_format || "-"}</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div className="note-card details-summary-card">
+                <strong>{t("details.profileBlock")}</strong>
+                {lastProfile ? (
+                  <>
+                    <div className="details-profile-name">{lastProfile.name}</div>
+                    <dl className="meta-list details-meta-list">
+                      <div>
+                        <dt>{t("details.videoCodec")}</dt>
+                        <dd>{formatCodecLabel(lastProfile.video_codec)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("details.container")}</dt>
+                        <dd>{String(lastProfile.container || "-").toUpperCase()}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("details.targetResolution")}</dt>
+                        <dd>{lastProfile.max_dimension ? `${lastProfile.max_dimension}px` : t("details.sourceResolution")}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("details.quality")}</dt>
+                        <dd>{formatQuality(lastProfile)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("details.audioMode")}</dt>
+                        <dd>{lastProfile.drop_audio ? t("details.audioDropped") : t("details.audioKept")}</dd>
+                      </div>
+                    </dl>
+                  </>
+                ) : (
+                  <p className="muted">{t("details.noProfile")}</p>
+                )}
               </div>
 
               <div className="note-card">
@@ -207,4 +379,15 @@ export default function FileDetailsModal({
       </section>
     </div>
   );
+}
+
+function greatestCommonDivisor(a, b) {
+  let left = Math.abs(Number(a) || 0);
+  let right = Math.abs(Number(b) || 0);
+  while (right) {
+    const next = left % right;
+    left = right;
+    right = next;
+  }
+  return left || 1;
 }

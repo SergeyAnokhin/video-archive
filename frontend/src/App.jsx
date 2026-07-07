@@ -4,6 +4,7 @@ import {
   createConversionProfile,
   createConvertDirectoryJob,
   createConvertFileJob,
+  deleteFile,
   createPreviewDirectoryJob,
   createPreviewFileJob,
   createTagDirectoryJob,
@@ -15,6 +16,7 @@ import {
   fallbackInfo,
   fetchConversionProfiles,
   fetchFileDetails,
+  fetchHealth,
   fetchFilePreview,
   fetchFileTags,
   fetchFiles,
@@ -23,8 +25,10 @@ import {
   fetchJobItems,
   fetchLocalDirectories,
   fetchLogs,
+  moveFile,
   fetchPlaybackTarget,
   fetchPreviewLayouts,
+  fetchProviderModels,
   fetchProviderSettings,
   fetchSettings,
   fetchTree,
@@ -52,6 +56,7 @@ import TuneModal from "./components/modals/TuneModal";
 import SettingsModal from "./components/settings/SettingsModal";
 import {
   buildProfilePayloadFromVariant,
+  buildProviderDraft,
   buildTuneSweep,
   defaultPlaybackSettings,
   defaultPreviewSettings,
@@ -64,7 +69,9 @@ import {
   emptySourceForm,
   flattenTree,
   formatDirectoryLabel,
+  getProviderDefaults,
   isLocalProtocol,
+  normalizeProviderSettings,
   toSourceForm,
   toSourcePayload,
   toTaggingForm
@@ -131,6 +138,7 @@ function App() {
   const [visualMode, setVisualMode] = useState(() => window.localStorage.getItem("video-archive.visual-mode") || "strict");
   const [librarySearchQuery, setLibrarySearchQuery] = useState("");
   const logConsoleRef = useRef(null);
+  const completedTuningRefreshRef = useRef(null);
   const t = useMemo(() => createTranslator(locale), [locale]);
 
   const treeItems = useMemo(() => flattenTree(tree), [tree]);
@@ -138,27 +146,43 @@ function App() {
   const deferredLibrarySearchQuery = useDeferredValue(librarySearchQuery);
   const selectedFile = visibleFiles.find((file) => file.id === selectedFileId) ?? visibleFiles[0] ?? null;
   const settingsSections = useMemo(() => getSettingsSections(t), [t]);
-  const liveSourceLabel = source?.name ?? info.active_source?.name ?? t("app.noActiveSource");
+  const taggingProviderOptions = useMemo(
+    () =>
+      providerSettings.map((entry) => ({
+        value: entry.id,
+        label: `${entry.label}${entry.enabled ? "" : ` (${t("providerSettings.disabledTag")})`}`
+      })),
+    [providerSettings, t]
+  );
   const pendingJobsCount = (info.queue.running_jobs ?? 0) + (info.queue.queued_jobs ?? 0);
   const hasActiveQueue = pendingJobsCount > 0;
-  const backendLabel =
+  const backendTooltip =
     health.state === "ready"
-      ? t("app.backendReady", { status: health.status })
+      ? t("header.backendOk")
       : health.state === "loading"
-        ? t("app.backendLoading")
-        : t("app.backendOffline");
+        ? t("header.backendChecking")
+        : t("header.backendOffline");
   const sourceFormIsLocal = isLocalProtocol(sourceForm.protocol);
   const formatDateValue = (value) => formatDate(value, locale);
   const tuningVariants = useMemo(() => {
     const variantsById = new Map((tuningJob?.parameters?.variants ?? []).map((variant) => [variant.id, variant]));
+    const filesByPath = new Map(files.map((file) => [file.path, file]));
     return tuningItems.map((item) => ({
       item,
-      variant: variantsById.get(item.item_key) ?? null
+      variant: variantsById.get(item.item_key) ?? null,
+      generatedFile: item.output_ref ? filesByPath.get(item.output_ref) ?? null : null
     }));
-  }, [tuningItems, tuningJob]);
+  }, [files, tuningItems, tuningJob]);
 
   useEffect(() => {
     loadBootstrap();
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      refreshHealthStatus();
+    }, 10000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -195,6 +219,28 @@ function App() {
       setSelectedFileId(visibleFiles[0].id);
     }
   }, [visibleFiles, selectedFileId]);
+
+  useEffect(() => {
+    if (!providerSettings.length) {
+      return;
+    }
+
+    if (taggingSettings.provider_id && providerSettings.some((entry) => entry.id === taggingSettings.provider_id)) {
+      return;
+    }
+
+    const preferred =
+      providerSettings.find((entry) => entry.enabled) ??
+      providerSettings[0];
+    if (!preferred) {
+      return;
+    }
+
+    setTaggingSettings((current) => ({
+      ...current,
+      provider_id: preferred.id
+    }));
+  }, [providerSettings, taggingSettings.provider_id]);
 
   useEffect(() => {
     if (activeOverlay !== "jobs") {
@@ -362,6 +408,15 @@ function App() {
     }
   }
 
+  async function refreshHealthStatus() {
+    try {
+      const payload = await fetchHealth();
+      setHealth({ state: "ready", status: payload.status, error: null });
+    } catch (error) {
+      setHealth({ state: "error", status: null, error: error.message });
+    }
+  }
+
   async function refreshLibrary(preferredDirectory = selectedDirectory) {
     await loadBootstrap(preferredDirectory, true);
   }
@@ -425,18 +480,17 @@ function App() {
 
       if (section === "tagging") {
         const settingsPayload = await fetchSettings();
-        setTaggingSettings(toTaggingForm(settingsPayload.settings?.tagging ?? defaultTaggingSettings));
+        const nextTaggingSettings = toTaggingForm(settingsPayload.settings?.tagging ?? defaultTaggingSettings);
+        setTaggingSettings((current) => ({
+          ...current,
+          ...nextTaggingSettings
+        }));
         return;
       }
 
       if (section === "providers") {
         const providersPayload = await fetchProviderSettings();
-        setProviderSettings(
-          defaultProviderSettings.map((base) => {
-            const current = providersPayload.providers?.find((entry) => entry.provider === base.provider);
-            return current ? { ...base, ...current, api_key: "" } : base;
-          })
-        );
+        setProviderSettings(normalizeProviderSettings(providersPayload.providers ?? defaultProviderSettings));
         return;
       }
 
@@ -485,6 +539,10 @@ function App() {
       setTuningJob(jobPayload.job);
       setTuningItems(itemsPayload.items);
       setTuningEvents(eventsPayload.events);
+      if (["completed", "failed", "cancelled"].includes(jobPayload.job.status) && completedTuningRefreshRef.current !== jobId) {
+        completedTuningRefreshRef.current = jobId;
+        await refreshLibrary(selectedDirectory);
+      }
     } catch (error) {
       setActionError(error.message);
     }
@@ -544,10 +602,88 @@ function App() {
     setTaggingSettings((current) => ({ ...current, [field]: value }));
   }
 
-  function updateProviderSetting(providerName, field, value) {
+  function updateProviderSetting(providerId, field, value) {
     setProviderSettings((current) =>
-      current.map((entry) => (entry.provider === providerName ? { ...entry, [field]: value } : entry))
+      current.map((entry) => {
+        if (entry.id !== providerId) {
+          return entry;
+        }
+        if (field === "provider") {
+          const defaults = getProviderDefaults(value);
+          return {
+            ...entry,
+            provider: value,
+            label: entry.label?.trim() ? entry.label : buildProviderDraft(value).label,
+            vision_model: defaults.vision_model,
+            text_model: defaults.text_model,
+            prefer_batch: defaults.prefer_batch,
+            available_models: [],
+            is_loading_models: false
+          };
+        }
+        return { ...entry, [field]: value };
+      })
     );
+  }
+
+  function addProviderSetting() {
+    setProviderSettings((current) => [...current, { ...buildProviderDraft(), order_index: current.length }]);
+  }
+
+  function removeProviderSetting(providerId) {
+    setProviderSettings((current) => current.filter((entry) => entry.id !== providerId).map((entry, index) => ({ ...entry, order_index: index })));
+    setTaggingSettings((current) => (current.provider_id === providerId ? { ...current, provider_id: "" } : current));
+  }
+
+  function moveProviderSetting(providerId, direction) {
+    setProviderSettings((current) => {
+      const index = current.findIndex((entry) => entry.id === providerId);
+      if (index < 0) {
+        return current;
+      }
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= current.length) {
+        return current;
+      }
+      const next = [...current];
+      const [entry] = next.splice(index, 1);
+      next.splice(targetIndex, 0, entry);
+      return next.map((item, orderIndex) => ({ ...item, order_index: orderIndex }));
+    });
+  }
+
+  async function loadProviderModels(providerId) {
+    const providerEntry = providerSettings.find((entry) => entry.id === providerId);
+    if (!providerEntry) {
+      return;
+    }
+
+    setProviderSettings((current) => current.map((entry) => (entry.id === providerId ? { ...entry, is_loading_models: true } : entry)));
+    setActionError(null);
+    try {
+      const payload = await fetchProviderModels({
+        provider: providerEntry.provider,
+        apiKey: providerEntry.api_key,
+        providerId: providerEntry.id
+      });
+      const models = Array.isArray(payload.models) ? payload.models : [];
+      setProviderSettings((current) =>
+        current.map((entry) =>
+          entry.id === providerId
+            ? {
+                ...entry,
+                available_models: models,
+                is_loading_models: false,
+                vision_model:
+                  entry.vision_model || models[0]?.id || entry.vision_model
+              }
+            : entry
+        )
+      );
+    } catch (error) {
+      setProviderSettings((current) => current.map((entry) => (entry.id === providerId ? { ...entry, is_loading_models: false } : entry)));
+      setActionError(error.message);
+    }
   }
 
   function updateProfileDraft(field, value) {
@@ -558,8 +694,26 @@ function App() {
     setTuneDraft((current) => ({ ...current, [field]: value }));
   }
 
+  function updateTuneParameter(parameter) {
+    setTuneDraft((current) => ({ ...current, parameter }));
+  }
+
   function updateTuneCodec(codec, enabled) {
     setTuneDraft((current) => ({ ...current, codecs: { ...current.codecs, [codec]: enabled } }));
+  }
+
+  function resetSelectedFileOverlays(fileId = selectedFile?.id) {
+    if (selectedFileId !== fileId) {
+      return;
+    }
+    setSelectedFileDetails(null);
+    setSelectedFilePreview(null);
+    setSelectedFileTags(null);
+    setSelectedFileLogs([]);
+    setPlaybackTarget(null);
+    if (["details", "tune", "playback"].includes(activeOverlay)) {
+      setActiveOverlay(null);
+    }
   }
 
   async function handleSourceTest() {
@@ -759,7 +913,7 @@ function App() {
     try {
       const payload = await saveSettings({
         tagging: {
-          provider: taggingSettings.provider,
+          provider_id: taggingSettings.provider_id,
           sample_count: taggingSettings.sample_count,
           combine_frames: taggingSettings.combine_frames,
           prefer_batch: taggingSettings.prefer_batch,
@@ -782,6 +936,8 @@ function App() {
     try {
       const payload = await saveProviderSettings(
         providerSettings.map((entry) => ({
+          id: entry.id,
+          label: entry.label,
           provider: entry.provider,
           enabled: entry.enabled,
           vision_model: entry.vision_model,
@@ -790,12 +946,7 @@ function App() {
           api_key: entry.api_key
         }))
       );
-      setProviderSettings(
-        defaultProviderSettings.map((base) => {
-          const current = payload.providers.find((entry) => entry.provider === base.provider);
-          return current ? { ...base, ...current, api_key: "" } : base;
-        })
-      );
+      setProviderSettings(normalizeProviderSettings(payload.providers ?? []));
       setActionMessage(t("messages.providersSaved"));
     } catch (error) {
       setActionError(error.message);
@@ -983,6 +1134,7 @@ function App() {
     setTuningJob(null);
     setTuningItems([]);
     setTuningEvents([]);
+    completedTuningRefreshRef.current = null;
     setActiveOverlay("tune");
   }
 
@@ -1068,6 +1220,7 @@ function App() {
     setActionMessage(null);
     try {
       const sweep = buildTuneSweep(tuneDraft);
+      completedTuningRefreshRef.current = null;
       const payload = await createTuneFileJob(selectedFile.id, sweep);
       setTuningJobId(payload.job.id);
       setTuningJob(payload.job);
@@ -1102,17 +1255,64 @@ function App() {
     }
   }
 
+  async function handleMoveFile(file = selectedFile) {
+    if (!file?.id) {
+      return;
+    }
+    const currentDirectory = file.relative_path.includes("/") ? file.relative_path.slice(0, file.relative_path.lastIndexOf("/")) : "";
+    const destinationDirectory = window.prompt(t("messages.movePrompt", { name: file.file_name }), currentDirectory);
+    if (destinationDirectory === null) {
+      return;
+    }
+
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      const payload = await moveFile(file.id, destinationDirectory);
+      resetSelectedFileOverlays(file.id);
+      await refreshLibrary(selectedDirectory);
+      setActionMessage(t("messages.fileMoved", { name: payload.file.file_name, path: payload.file.relative_path }));
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleDeleteFile(file = selectedFile) {
+    if (!file?.id) {
+      return;
+    }
+    if (!window.confirm(t("messages.deleteConfirm", { name: file.file_name }))) {
+      return;
+    }
+
+    setIsWorking(true);
+    setActionError(null);
+    setActionMessage(null);
+    try {
+      await deleteFile(file.id);
+      resetSelectedFileOverlays(file.id);
+      await refreshLibrary(selectedDirectory);
+      setActionMessage(t("messages.fileDeleted", { name: file.file_name }));
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <AppHeader
         healthState={health.state}
-        backendLabel={backendLabel}
+        backendTooltip={backendTooltip}
         actionError={actionError}
         actionMessage={actionMessage}
-        liveSourceLabel={liveSourceLabel}
+        hasSource={Boolean(source)}
         pendingJobsCount={pendingJobsCount}
         hasActiveQueue={hasActiveQueue}
-        source={source}
         isWorking={isWorking}
         locale={locale}
         visualMode={visualMode}
@@ -1157,11 +1357,11 @@ function App() {
             handleRescanDirectory();
           }}
           onSelectDirectory={handleSelectDirectory}
-          onSelectFile={setSelectedFileId}
-          onOpenFileDetails={openDetailsModal}
-          renderIndicatorBadges={(indicators) => renderIndicatorBadges(indicators, t)}
-          getFilePreviewImageUrl={getFilePreviewCardImageUrl}
-          getDirectoryPreviewImageUrl={getDirectoryPreviewCardImageUrl}
+        onSelectFile={setSelectedFileId}
+        onOpenFileDetails={openDetailsModal}
+        renderIndicatorBadges={(indicators) => renderIndicatorBadges(indicators, t)}
+        getFilePreviewImageUrl={getFilePreviewCardImageUrl}
+        getDirectoryPreviewImageUrl={getDirectoryPreviewCardImageUrl}
           formatDirectoryLabel={(path) => formatDirectoryLabel(path, t)}
           formatStatusLabel={(value) => formatStatusLabel(value, t)}
           t={t}
@@ -1182,6 +1382,8 @@ function App() {
         onPreviewFile={handleFilePreviewJob}
         onTagFile={handleFileTagJob}
         onOpenTune={openTuneModal}
+        onMoveFile={handleMoveFile}
+        onDeleteFile={handleDeleteFile}
         onOpenLogViewer={openLogViewer}
         formatBytes={formatBytes}
         formatConfidence={formatConfidence}
@@ -1253,8 +1455,10 @@ function App() {
         isWorking={isWorking}
         onClose={() => setActiveOverlay("details")}
         onUpdateTuneDraft={updateTuneDraft}
+        onUpdateTuneParameter={updateTuneParameter}
         onUpdateTuneCodec={updateTuneCodec}
         onRunTune={handleRunTune}
+        onOpenVariantFile={openDetailsModal}
         onPromoteVariant={(variant) =>
           setPromotionDraft({
             variant,
@@ -1315,10 +1519,15 @@ function App() {
         onUpdatePlaybackSetting={updatePlaybackSetting}
         onSavePlaybackSettings={handleSavePlaybackSettings}
         taggingSettings={taggingSettings}
+        taggingProviderOptions={taggingProviderOptions}
         onUpdateTaggingSetting={updateTaggingSetting}
         onSaveTaggingSettings={handleSaveTaggingSettings}
         providerSettings={providerSettings}
+        onAddProviderSetting={addProviderSetting}
         onUpdateProviderSetting={updateProviderSetting}
+        onMoveProviderSetting={moveProviderSetting}
+        onRemoveProviderSetting={removeProviderSetting}
+        onLoadProviderModels={loadProviderModels}
         onSaveProviderSettings={handleSaveProviderSettings}
       />
     </main>

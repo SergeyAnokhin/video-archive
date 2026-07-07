@@ -1,14 +1,13 @@
-import { Globe, HardDrive, ListTodo, LoaderCircle, ScanSearch, Search, Server, Settings2, Sparkles, SunMoon, TextSearch } from "lucide-react";
+import { Globe, ListTodo, LoaderCircle, ScanSearch, Search, Settings2, Sparkles, SunMoon, TextSearch } from "lucide-react";
 
 export default function AppHeader({
   healthState,
-  backendLabel,
+  backendTooltip,
   actionError,
   actionMessage,
-  liveSourceLabel,
+  hasSource,
   pendingJobsCount,
   hasActiveQueue,
-  source,
   isWorking,
   locale,
   visualMode,
@@ -25,43 +24,48 @@ export default function AppHeader({
   return (
     <>
       <header className="topbar panel">
-        <div className="topbar-side topbar-side-left">
-          <div className="topbar-status-cluster">
-            <span className="topbar-chip" title={t("header.source")}>
-              <HardDrive size={14} />
-              <span className="topbar-chip-text">{liveSourceLabel}</span>
-            </span>
-            <span className={`topbar-chip status-chip status-chip-${healthState}`} title={backendLabel}>
-              <Server size={14} />
-              <span className="topbar-chip-text">{backendLabel}</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="topbar-center">
+        <div className="topbar-brand-group">
           <div className="topbar-brand">
-            <span className="topbar-brand-mark" aria-hidden="true" />
+            <span className="topbar-brand-logo" aria-hidden="true">
+              <svg viewBox="0 0 48 48" focusable="false">
+                <defs>
+                  <linearGradient id="backend-logo-gradient" x1="0%" x2="100%" y1="0%" y2="100%">
+                    <stop offset="0%" stopColor="var(--accent)" />
+                    <stop offset="100%" stopColor="var(--accent-strong)" />
+                  </linearGradient>
+                </defs>
+                <rect x="4" y="6" width="40" height="36" rx="11" fill="rgba(10, 18, 30, 0.88)" stroke="rgba(143, 179, 255, 0.24)" />
+                <circle cx="15" cy="16" r="4" fill="url(#backend-logo-gradient)" />
+                <circle cx="33" cy="16" r="4" fill="url(#backend-logo-gradient)" />
+                <circle cx="24" cy="31" r="5" fill="url(#backend-logo-gradient)" />
+                <path d="M18.5 18.5L21.5 27M29.5 18.5L26.5 27M19 16H29" stroke="rgba(216, 230, 255, 0.92)" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+            </span>
             <strong>{t("app.brand")}</strong>
           </div>
+          <span
+            className={`backend-health-indicator backend-health-indicator-${healthState}`}
+            title={backendTooltip}
+            aria-label={backendTooltip}
+          />
         </div>
 
-        <div className="topbar-side topbar-side-right">
-          <label className="topbar-search-shell" aria-label={t("header.search")}>
-            <Search size={15} className="topbar-search-icon" />
-            <input
-              type="search"
-              className="topbar-search-input"
-              value={librarySearchQuery}
-              placeholder={t("header.searchPlaceholder")}
-              onChange={(event) => onLibrarySearchChange(event.target.value)}
-            />
-          </label>
+        <label className="topbar-search-shell" aria-label={t("header.search")}>
+          <Search size={15} className="topbar-search-icon" />
+          <input
+            type="search"
+            className="topbar-search-input"
+            value={librarySearchQuery}
+            placeholder={t("header.searchPlaceholder")}
+            onChange={(event) => onLibrarySearchChange(event.target.value)}
+          />
+        </label>
 
-          <div className="toolbar-actions">
+        <div className="toolbar-actions">
           <button
             type="button"
             className="ghost-button icon-only-button"
-            disabled={!source || isWorking}
+            disabled={!hasSource || isWorking}
             aria-label={t("header.scanSource")}
             title={t("header.scanSource")}
             onClick={onScanSource}
@@ -119,7 +123,6 @@ export default function AppHeader({
           >
             <Settings2 size={16} />
           </button>
-          </div>
         </div>
       </header>
 

@@ -26,7 +26,7 @@ class TaggingServiceTests(unittest.TestCase):
 
             updated = tagging_service.update_settings(
                 {
-                    "provider": "gemini",
+                    "provider_id": "gemini-main",
                     "sample_count": 7,
                     "combine_frames": False,
                     "prefer_batch": True,
@@ -34,7 +34,7 @@ class TaggingServiceTests(unittest.TestCase):
                 }
             )
 
-            self.assertEqual(updated["provider"], "gemini")
+            self.assertEqual(updated["provider_id"], "gemini-main")
             self.assertEqual(updated["sample_count"], 7)
             self.assertFalse(updated["combine_frames"])
             self.assertEqual([entry["tag_key"] for entry in updated["vocabulary"]], ["beach", "family_time", "pets"])

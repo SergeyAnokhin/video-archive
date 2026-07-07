@@ -1,4 +1,4 @@
-import { Play, Save, X } from "lucide-react";
+import { Eye, Play, Save, X } from "lucide-react";
 
 export default function TuneModal({
   isOpen,
@@ -10,8 +10,10 @@ export default function TuneModal({
   isWorking,
   onClose,
   onUpdateTuneDraft,
+  onUpdateTuneParameter,
   onUpdateTuneCodec,
   onRunTune,
+  onOpenVariantFile,
   onPromoteVariant,
   formatDate,
   t
@@ -37,28 +39,175 @@ export default function TuneModal({
         <div className="tuning-grid">
           <div className="tuning-config">
             <p>{t("tune.intro")}</p>
+            <div className="tuning-axis-grid">
+              <button
+                type="button"
+                className={`tuning-axis-card${tuneDraft.parameter === "dimension" ? " active" : ""}`}
+                onClick={() => onUpdateTuneParameter("dimension")}
+              >
+                <strong>{t("tune.dimensionAxis")}</strong>
+                <span>{t("tune.dimensionAxisHint")}</span>
+              </button>
+              <button
+                type="button"
+                className={`tuning-axis-card${tuneDraft.parameter === "quality" ? " active" : ""}`}
+                onClick={() => onUpdateTuneParameter("quality")}
+              >
+                <strong>{t("tune.qualityAxis")}</strong>
+                <span>{t("tune.qualityAxisHint")}</span>
+              </button>
+              <button
+                type="button"
+                className={`tuning-axis-card${tuneDraft.parameter === "codec" ? " active" : ""}`}
+                onClick={() => onUpdateTuneParameter("codec")}
+              >
+                <strong>{t("tune.codecAxis")}</strong>
+                <span>{t("tune.codecAxisHint")}</span>
+              </button>
+            </div>
+
             <div className="form-grid">
-              <label className="full-width">
-                <span>{t("tune.dimensions")}</span>
-                <input value={tuneDraft.dimensionsText} onChange={(event) => onUpdateTuneDraft("dimensionsText", event.target.value)} placeholder="1000, 900, 800" />
+              {tuneDraft.parameter === "dimension" ? (
+                <label className="full-width">
+                  <span>{t("tune.dimensionAxis")}</span>
+                  <div className="compact-number-row">
+                    <label className="compact-field">
+                      <span>{t("tune.rangeFrom")}</span>
+                      <input
+                        className="tuning-number-input"
+                        value={tuneDraft.dimensionMin}
+                        onChange={(event) => onUpdateTuneDraft("dimensionMin", event.target.value)}
+                        inputMode="numeric"
+                      />
+                    </label>
+                    <label className="compact-field">
+                      <span>{t("tune.rangeTo")}</span>
+                      <input
+                        className="tuning-number-input"
+                        value={tuneDraft.dimensionMax}
+                        onChange={(event) => onUpdateTuneDraft("dimensionMax", event.target.value)}
+                        inputMode="numeric"
+                      />
+                    </label>
+                    <label className="compact-field">
+                      <span>{t("tune.rangeStep")}</span>
+                      <input
+                        className="tuning-number-input"
+                        value={tuneDraft.dimensionStep}
+                        onChange={(event) => onUpdateTuneDraft("dimensionStep", event.target.value)}
+                        inputMode="numeric"
+                      />
+                    </label>
+                  </div>
+                </label>
+              ) : null}
+
+              {tuneDraft.parameter === "quality" ? (
+                <label className="full-width">
+                  <span>{t("tune.qualityAxis")}</span>
+                  <div className="compact-number-row">
+                    <label className="compact-field">
+                      <span>{t("tune.rangeFrom")}</span>
+                      <input
+                        className="tuning-number-input"
+                        value={tuneDraft.qualityMin}
+                        onChange={(event) => onUpdateTuneDraft("qualityMin", event.target.value)}
+                        inputMode="numeric"
+                      />
+                    </label>
+                    <label className="compact-field">
+                      <span>{t("tune.rangeTo")}</span>
+                      <input
+                        className="tuning-number-input"
+                        value={tuneDraft.qualityMax}
+                        onChange={(event) => onUpdateTuneDraft("qualityMax", event.target.value)}
+                        inputMode="numeric"
+                      />
+                    </label>
+                    <label className="compact-field">
+                      <span>{t("tune.rangeStep")}</span>
+                      <input
+                        className="tuning-number-input"
+                        value={tuneDraft.qualityStep}
+                        onChange={(event) => onUpdateTuneDraft("qualityStep", event.target.value)}
+                        inputMode="numeric"
+                      />
+                    </label>
+                  </div>
+                </label>
+              ) : null}
+
+              {tuneDraft.parameter === "codec" ? (
+                <label className="full-width">
+                  <span>{t("tune.codecs")}</span>
+                  <div className="checkbox-grid">
+                    <label className="toggle-chip">
+                      <input type="checkbox" checked={tuneDraft.codecs.h264} onChange={(event) => onUpdateTuneCodec("h264", event.target.checked)} />
+                      <span>H.264</span>
+                    </label>
+                    <label className="toggle-chip">
+                      <input type="checkbox" checked={tuneDraft.codecs.h265} onChange={(event) => onUpdateTuneCodec("h265", event.target.checked)} />
+                      <span>H.265</span>
+                    </label>
+                    <label className="toggle-chip">
+                      <input type="checkbox" checked={tuneDraft.codecs.av1} onChange={(event) => onUpdateTuneCodec("av1", event.target.checked)} />
+                      <span>AV1</span>
+                    </label>
+                  </div>
+                </label>
+              ) : null}
+
+              <label>
+                <span>{t("tune.fixedDimension")}</span>
+                <input
+                  className="tuning-number-input"
+                  value={tuneDraft.fixedDimension}
+                  onChange={(event) => onUpdateTuneDraft("fixedDimension", event.target.value)}
+                  inputMode="numeric"
+                  disabled={tuneDraft.parameter === "dimension"}
+                />
+              </label>
+              <label>
+                <span>{t("tune.fixedQuality")}</span>
+                <input
+                  className="tuning-number-input"
+                  value={tuneDraft.fixedQuality}
+                  onChange={(event) => onUpdateTuneDraft("fixedQuality", event.target.value)}
+                  inputMode="numeric"
+                  disabled={tuneDraft.parameter === "quality"}
+                />
               </label>
               <label className="full-width">
-                <span>{t("tune.qualities")}</span>
-                <input value={tuneDraft.qualitiesText} onChange={(event) => onUpdateTuneDraft("qualitiesText", event.target.value)} placeholder="20, 24, 28" />
-              </label>
-              <label className="full-width">
-                <span>{t("tune.codecs")}</span>
+                <span>{t("tune.fixedCodec")}</span>
                 <div className="checkbox-grid">
-                  <label className="toggle-chip">
-                    <input type="checkbox" checked={tuneDraft.codecs.h264} onChange={(event) => onUpdateTuneCodec("h264", event.target.checked)} />
+                  <label className={`toggle-chip${tuneDraft.fixedCodec === "h264" ? " active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="tune-fixed-codec"
+                      checked={tuneDraft.fixedCodec === "h264"}
+                      disabled={tuneDraft.parameter === "codec"}
+                      onChange={() => onUpdateTuneDraft("fixedCodec", "h264")}
+                    />
                     <span>H.264</span>
                   </label>
-                  <label className="toggle-chip">
-                    <input type="checkbox" checked={tuneDraft.codecs.h265} onChange={(event) => onUpdateTuneCodec("h265", event.target.checked)} />
+                  <label className={`toggle-chip${tuneDraft.fixedCodec === "h265" ? " active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="tune-fixed-codec"
+                      checked={tuneDraft.fixedCodec === "h265"}
+                      disabled={tuneDraft.parameter === "codec"}
+                      onChange={() => onUpdateTuneDraft("fixedCodec", "h265")}
+                    />
                     <span>H.265</span>
                   </label>
-                  <label className="toggle-chip">
-                    <input type="checkbox" checked={tuneDraft.codecs.av1} onChange={(event) => onUpdateTuneCodec("av1", event.target.checked)} />
+                  <label className={`toggle-chip${tuneDraft.fixedCodec === "av1" ? " active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="tune-fixed-codec"
+                      checked={tuneDraft.fixedCodec === "av1"}
+                      disabled={tuneDraft.parameter === "codec"}
+                      onChange={() => onUpdateTuneDraft("fixedCodec", "av1")}
+                    />
                     <span>AV1</span>
                   </label>
                 </div>
@@ -85,7 +234,7 @@ export default function TuneModal({
             </div>
             {tuningVariants.length ? (
               <div className="tuning-result-list">
-                {tuningVariants.map(({ item, variant }) => (
+                {tuningVariants.map(({ item, variant, generatedFile }) => (
                   <article key={item.id} className="job-item-row tuning-result-row">
                     <div>
                       <strong>{variant?.label ?? item.item_key}</strong>
@@ -93,6 +242,15 @@ export default function TuneModal({
                     </div>
                     <div className="inline-actions">
                       <span className={`state-pill state-${item.status}`}>{item.status}</span>
+                      <button
+                        type="button"
+                        className="mini-button icon-button"
+                        disabled={!generatedFile}
+                        onClick={() => generatedFile && onOpenVariantFile(generatedFile.id)}
+                      >
+                        <Eye size={16} />
+                        <span>{t("tune.openResult")}</span>
+                      </button>
                       <button
                         type="button"
                         className="mini-button icon-button"

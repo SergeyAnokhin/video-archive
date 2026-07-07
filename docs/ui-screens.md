@@ -84,9 +84,15 @@ Actions:
 - preview file
 - tag file
 - tune file
+- move file
+- delete file
 
 Possible content:
 
+- compact multi-row summary tiles for size, resolution, aspect ratio, and duration
+- codec block for current media facts such as video codec, codec profile, bitrate, frame rate, pixel format, and audio codec when available
+- last conversion profile block so the user can compare a small output against the recorded conversion settings
+- generated-file marker when the current file was produced by tuning or test conversion
 - metadata summary without promoting full absolute paths into the main layout
 - preview collage
 - assigned tags with confidence
@@ -232,13 +238,22 @@ Purpose:
 
 - configure OpenRouter, Gemini, FAL, and Mistral integrations
 
-Per-provider controls:
+Provider-list behavior:
 
+- add a new provider entry
+- reorder entries to define fallback priority
+- remove entries
+- give each entry a user-visible label
+
+Per-entry controls:
+
+- provider type
 - enabled flag
 - API key
 - vision model
 - optional text model
 - batch preferences if available
+- load models from the provider when supported
 
 ## 11. Backup and Maintenance Screen
 
@@ -266,8 +281,9 @@ Tuning should be initiated from a file, not from the main folder toolbar.
 
 The tuning UI should support:
 
-- parameter sweeps over dimensions
-- parameter sweeps over quality values
+- min/max/step controls for max-side sweeps
+- min/max/step controls for CRF sweeps
 - parameter sweeps over codec variants
 - comparison of generated outputs
+- generated outputs appearing beside the source file in the same folder with a visible generated marker
 - promotion of a successful tuning result into a reusable conversion profile

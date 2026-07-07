@@ -29,8 +29,8 @@ class SecretStore:
             return None
         return self._read().get(ref)
 
-    def upsert_provider_api_key(self, provider_name: str, api_key: str | None) -> str | None:
-        ref = f"provider:{provider_name}:api_key"
+    def upsert_provider_api_key(self, provider_id: str, api_key: str | None) -> str | None:
+        ref = f"provider:{provider_id}:api_key"
         secrets = self._read()
         if api_key is None:
             return ref if ref in secrets else None
@@ -41,8 +41,11 @@ class SecretStore:
         self._write(secrets)
         return ref
 
-    def get_provider_api_key(self, provider_name: str) -> str | None:
-        return self.get(f"provider:{provider_name}:api_key")
+    def get_provider_api_key(self, provider_id: str, legacy_provider_name: str | None = None) -> str | None:
+        value = self.get(f"provider:{provider_id}:api_key")
+        if value or not legacy_provider_name or legacy_provider_name == provider_id:
+            return value
+        return self.get(f"provider:{legacy_provider_name}:api_key")
 
     def _read(self) -> dict[str, str]:
         if not self._path.exists():

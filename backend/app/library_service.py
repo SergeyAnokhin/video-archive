@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import uuid
 from pathlib import Path, PurePosixPath
 
@@ -14,9 +16,11 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".wmv"}
 
 
 class LibraryService:
-    def __init__(self, database_path: Path, source_service) -> None:
+    def __init__(self, database_path: Path, source_service, conversion_profile_service=None, *, ffprobe_binary: str = "ffprobe") -> None:
         self._database_path = database_path
         self._source_service = source_service
+        self._conversion_profile_service = conversion_profile_service
+        self._ffprobe_binary = ffprobe_binary
 
     def get_queue_summary(self) -> dict:
         with connection(self._database_path) as conn:
@@ -184,7 +188,8 @@ class LibraryService:
                     """
                     SELECT id, relative_path, path, file_name, extension, size_bytes, modified_at,
                            last_scanned_at, is_video_supported, conversion_state, preview_state,
-                           has_preview_assets, last_error_code, last_error_message
+                           has_preview_assets, last_error_code, last_error_message,
+                           generated_from_job_id, generated_from_file_id, generated_kind
                     FROM files
                     WHERE source_id = ? AND directory_id = ?
                     ORDER BY file_name COLLATE NOCASE
@@ -196,7 +201,8 @@ class LibraryService:
                     """
                     SELECT id, relative_path, path, file_name, extension, size_bytes, modified_at,
                            last_scanned_at, is_video_supported, conversion_state, preview_state,
-                           has_preview_assets, last_error_code, last_error_message
+                           has_preview_assets, last_error_code, last_error_message,
+                           generated_from_job_id, generated_from_file_id, generated_kind
                     FROM files
                     WHERE source_id = ? AND relative_path NOT LIKE '%/%'
                     ORDER BY file_name COLLATE NOCASE
@@ -220,6 +226,10 @@ class LibraryService:
                 "has_preview_assets": bool(row["has_preview_assets"]),
                 "last_error_code": row["last_error_code"],
                 "last_error_message": row["last_error_message"],
+                "generated_from_job_id": row["generated_from_job_id"],
+                "generated_from_file_id": row["generated_from_file_id"],
+                "generated_kind": row["generated_kind"],
+                "is_generated": bool(row["generated_kind"]),
             }
             for row in rows
         ]
@@ -230,7 +240,9 @@ class LibraryService:
                 """
                 SELECT id, relative_path, path, file_name, extension, size_bytes, modified_at,
                        discovered_at, last_scanned_at, is_video_supported, conversion_state, preview_state,
-                       has_preview_assets, last_converted_at, preview_generated_at, last_error_code, last_error_message
+                       has_preview_assets, last_conversion_profile_id, last_converted_at, preview_generated_at,
+                       last_error_code, last_error_message, generated_from_job_id,
+                       generated_from_file_id, generated_kind
                 FROM files
                 WHERE id = ?
                 """,
@@ -238,6 +250,8 @@ class LibraryService:
             ).fetchone()
         if row is None:
             raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+        media_info = self._probe_media_info(Path(row["path"]))
+        last_conversion_profile = self._resolve_last_conversion_profile(row["last_conversion_profile_id"])
         return {
             "id": row["id"],
             "relative_path": row["relative_path"],
@@ -252,11 +266,203 @@ class LibraryService:
             "conversion_state": row["conversion_state"],
             "preview_state": row["preview_state"],
             "has_preview_assets": bool(row["has_preview_assets"]),
+            "last_conversion_profile_id": row["last_conversion_profile_id"],
+            "last_conversion_profile": last_conversion_profile,
             "last_converted_at": row["last_converted_at"],
             "preview_generated_at": row["preview_generated_at"],
             "last_error_code": row["last_error_code"],
             "last_error_message": row["last_error_message"],
+            "generated_from_job_id": row["generated_from_job_id"],
+            "generated_from_file_id": row["generated_from_file_id"],
+            "generated_kind": row["generated_kind"],
+            "is_generated": bool(row["generated_kind"]),
+            "media_info": media_info,
         }
+
+    def register_generated_file(
+        self,
+        *,
+        result: dict,
+        source_file_id: str,
+        generated_from_job_id: str,
+        generated_kind: str,
+        profile_id: str | None = None,
+    ) -> dict:
+        source = self._require_active_source()
+        root_path = self._assert_root_directory_available(source["root_path"])
+        relative_path = normalize_relative_path(result["relative_path"])
+        file_path = Path(result["path"])
+        if not file_path.exists() or not file_path.is_file():
+            raise ApiError("generated_file_missing", "Generated output file is no longer available on disk.", status=404)
+
+        now = utc_now()
+        directory_relative_path = _parent_path(relative_path)
+        stat_result = file_path.stat()
+        with connection(self._database_path) as conn, conn:
+            directory_id = self._ensure_directory_row(
+                conn,
+                source_id=source["id"],
+                source_name=source["name"],
+                root_path=root_path,
+                directory_relative_path=directory_relative_path,
+                now=now,
+            )
+            existing = conn.execute(
+                """
+                SELECT id
+                FROM files
+                WHERE source_id = ? AND relative_path = ?
+                """,
+                (source["id"], relative_path),
+            ).fetchone()
+            file_id = existing["id"] if existing is not None else str(uuid.uuid4())
+            if existing is None:
+                conn.execute(
+                    """
+                    INSERT INTO files (
+                        id, source_id, directory_id, relative_path, path, file_name, extension,
+                        size_bytes, modified_at, discovered_at, last_scanned_at, is_video_supported,
+                        conversion_state, preview_state, last_conversion_profile_id, last_converted_at,
+                        preview_generated_at, has_preview_assets, last_error_code, last_error_message,
+                        generated_from_job_id, generated_from_file_id, generated_kind,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'done', 'not_started', ?, ?, NULL, 0, NULL, NULL, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        file_id,
+                        source["id"],
+                        directory_id,
+                        relative_path,
+                        str(file_path),
+                        file_path.name,
+                        file_path.suffix.lower(),
+                        int(stat_result.st_size),
+                        _timestamp_from_stat(stat_result),
+                        now,
+                        now,
+                        int(file_path.suffix.lower() in VIDEO_EXTENSIONS),
+                        profile_id,
+                        now,
+                        generated_from_job_id,
+                        source_file_id,
+                        generated_kind,
+                        now,
+                        now,
+                    ),
+                )
+            else:
+                self._delete_preview_assets_for_file(conn, file_id)
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET directory_id = ?, relative_path = ?, path = ?, file_name = ?, extension = ?,
+                        size_bytes = ?, modified_at = ?, last_scanned_at = ?, is_video_supported = ?,
+                        conversion_state = 'done', preview_state = 'not_started', last_conversion_profile_id = ?,
+                        last_converted_at = ?, preview_generated_at = NULL, has_preview_assets = 0,
+                        keyframe_timestamps = NULL, large_tile_timestamps = NULL, face_detection_summary = NULL,
+                        body_detection_summary = NULL, preview_asset_path = NULL, last_error_code = NULL,
+                        last_error_message = NULL, generated_from_job_id = ?, generated_from_file_id = ?,
+                        generated_kind = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        directory_id,
+                        relative_path,
+                        str(file_path),
+                        file_path.name,
+                        file_path.suffix.lower(),
+                        int(stat_result.st_size),
+                        _timestamp_from_stat(stat_result),
+                        now,
+                        int(file_path.suffix.lower() in VIDEO_EXTENSIONS),
+                        profile_id,
+                        now,
+                        generated_from_job_id,
+                        source_file_id,
+                        generated_kind,
+                        now,
+                        file_id,
+                    ),
+                )
+
+        return self.get_file(file_id)
+
+    def move_file(self, file_id: str, destination_directory: str) -> dict:
+        source = self._require_active_source()
+        root_path = self._assert_root_directory_available(source["root_path"])
+        normalized_directory = normalize_relative_path(destination_directory)
+        with connection(self._database_path) as conn, conn:
+            row = conn.execute(
+                """
+                SELECT id, source_id, relative_path, path, file_name, generated_from_job_id,
+                       generated_from_file_id, generated_kind
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            if row is None:
+                raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+            source_path = Path(row["path"])
+            if not source_path.exists() or not source_path.is_file():
+                raise ApiError("file_missing", "Requested file is no longer available on disk.", status=404)
+            target_directory = root_path / Path(normalized_directory) if normalized_directory else root_path
+            target_directory.mkdir(parents=True, exist_ok=True)
+            target_path = target_directory / row["file_name"]
+            if target_path.exists() and target_path.resolve() != source_path.resolve():
+                raise ApiError("file_conflict", "A file with the same name already exists in the destination folder.", status=409)
+
+            os.replace(source_path, target_path)
+            self._delete_preview_assets_for_file(conn, file_id)
+
+            directory_id = self._ensure_directory_row(
+                conn,
+                source_id=source["id"],
+                source_name=source["name"],
+                root_path=root_path,
+                directory_relative_path=normalized_directory,
+                now=utc_now(),
+            )
+            stat_result = target_path.stat()
+            conn.execute(
+                """
+                UPDATE files
+                SET directory_id = ?, relative_path = ?, path = ?, modified_at = ?, last_scanned_at = ?,
+                    preview_state = 'not_started', preview_generated_at = NULL, has_preview_assets = 0,
+                    keyframe_timestamps = NULL, large_tile_timestamps = NULL, face_detection_summary = NULL,
+                    body_detection_summary = NULL, preview_asset_path = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    directory_id,
+                    _to_relative_path(root_path, target_path),
+                    str(target_path),
+                    _timestamp_from_stat(stat_result),
+                    utc_now(),
+                    utc_now(),
+                    file_id,
+                ),
+            )
+        return self.get_file(file_id)
+
+    def delete_file(self, file_id: str) -> None:
+        with connection(self._database_path) as conn, conn:
+            row = conn.execute(
+                """
+                SELECT id, path
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            if row is None:
+                raise ApiError("file_not_found", "Requested file does not exist.", status=404)
+
+            file_path = Path(row["path"])
+            if file_path.exists() and file_path.is_file():
+                file_path.unlink()
+            self._delete_preview_assets_for_file(conn, file_id)
+            conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
 
     def create_scan_job(self) -> dict:
         source = self._require_active_source()
@@ -435,7 +641,8 @@ class LibraryService:
                     """
                     SELECT id, directory_id, relative_path, path, size_bytes, modified_at,
                            conversion_state, preview_state, has_preview_assets,
-                           last_converted_at, preview_generated_at, preview_asset_path
+                           last_converted_at, preview_generated_at, preview_asset_path,
+                           generated_from_job_id, generated_from_file_id, generated_kind
                     FROM files
                     WHERE source_id = ? AND (
                         relative_path = ? OR
@@ -502,9 +709,10 @@ class LibraryService:
                             size_bytes, modified_at, discovered_at, last_scanned_at, is_video_supported,
                             conversion_state, preview_state, last_conversion_profile_id, last_converted_at,
                             preview_generated_at, has_preview_assets, last_error_code, last_error_message,
+                            generated_from_job_id, generated_from_file_id, generated_kind,
                             created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_started', 'not_started',
-                                  NULL, NULL, NULL, 0, NULL, NULL, ?, ?)
+                                  NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, ?, ?)
                         """,
                         (
                             str(uuid.uuid4()),
@@ -531,6 +739,9 @@ class LibraryService:
                 last_converted_at = existing["last_converted_at"]
                 preview_generated_at = existing["preview_generated_at"]
                 preview_asset_path = existing["preview_asset_path"]
+                generated_from_job_id = existing["generated_from_job_id"]
+                generated_from_file_id = existing["generated_from_file_id"]
+                generated_kind = existing["generated_kind"]
                 if changed:
                     conversion_state = "not_started"
                     preview_state = "not_started"
@@ -553,7 +764,8 @@ class LibraryService:
                         body_detection_summary = CASE WHEN ? THEN NULL ELSE body_detection_summary END,
                         preview_asset_path = ?, tagging_updated_at = CASE WHEN ? THEN NULL ELSE tagging_updated_at END,
                         tagging_model_info = CASE WHEN ? THEN NULL ELSE tagging_model_info END, last_error_code = NULL,
-                        last_error_message = NULL, updated_at = ?
+                        last_error_message = NULL, generated_from_job_id = ?, generated_from_file_id = ?,
+                        generated_kind = ?, updated_at = ?
                     WHERE id = ?
                     """,
                     (
@@ -577,6 +789,9 @@ class LibraryService:
                         preview_asset_path,
                         int(changed),
                         int(changed),
+                        generated_from_job_id,
+                        generated_from_file_id,
+                        generated_kind,
                         now,
                         existing["id"],
                     ),
@@ -623,6 +838,62 @@ class LibraryService:
             "files_scanned": len(discovered_files),
         }
 
+    def _ensure_directory_row(self, conn, *, source_id: str, source_name: str, root_path: Path, directory_relative_path: str, now: str) -> str:
+        directory_ids: dict[str, str] = {}
+        rows = conn.execute("SELECT id, relative_path FROM directories WHERE source_id = ?", (source_id,)).fetchall()
+        for row in rows:
+            directory_ids[row["relative_path"]] = row["id"]
+
+        for relative_path in _ancestor_paths(directory_relative_path):
+            if relative_path in directory_ids:
+                continue
+            directory_path = root_path / Path(relative_path) if relative_path else root_path
+            directory_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO directories (
+                    id, source_id, relative_path, name, parent_relative_path,
+                    last_scanned_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    directory_id,
+                    source_id,
+                    relative_path,
+                    _directory_display_name(directory_path, source_name, relative_path),
+                    None if relative_path == "" else _parent_path(relative_path),
+                    now,
+                    now,
+                    now,
+                ),
+            )
+            directory_ids[relative_path] = directory_id
+        return directory_ids[directory_relative_path]
+
+    def _delete_preview_assets_for_file(self, conn, file_id: str) -> None:
+        rows = conn.execute(
+            """
+            SELECT image_path, metadata
+            FROM preview_assets
+            WHERE asset_kind = 'file' AND file_id = ?
+            """,
+            (file_id,),
+        ).fetchall()
+        for row in rows:
+            image_path = row["image_path"]
+            if image_path:
+                path = Path(image_path)
+                if path.exists() and path.is_file():
+                    path.unlink()
+            metadata = json.loads(row["metadata"] or "{}")
+            card_gif_path = metadata.get("card_gif_path")
+            if isinstance(card_gif_path, str) and card_gif_path:
+                path = Path(card_gif_path)
+                if path.exists() and path.is_file():
+                    path.unlink()
+        conn.execute("DELETE FROM preview_assets WHERE asset_kind = 'file' AND file_id = ?", (file_id,))
+
+
     def _require_active_source(self) -> dict:
         source = self._source_service.get_active_source()
         if source is None:
@@ -652,6 +923,71 @@ class LibraryService:
             "summary_message": row["summary_message"],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
+        }
+
+    def _resolve_last_conversion_profile(self, profile_id: str | None) -> dict | None:
+        if not profile_id or self._conversion_profile_service is None:
+            return None
+        try:
+            return self._conversion_profile_service.get_profile(profile_id)
+        except ApiError:
+            return None
+
+    def _probe_media_info(self, file_path: Path) -> dict | None:
+        if shutil.which(self._ffprobe_binary) is None or not file_path.exists():
+            return None
+
+        command = [
+            self._ffprobe_binary,
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_entries",
+            "format=duration,bit_rate,size:stream=index,codec_type,codec_name,profile,width,height,display_aspect_ratio,bit_rate,avg_frame_rate,pix_fmt",
+            str(file_path),
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+        except OSError:
+            return None
+
+        if result.returncode != 0:
+            return None
+
+        try:
+            payload = json.loads(result.stdout or "{}")
+        except json.JSONDecodeError:
+            return None
+
+        streams = payload.get("streams")
+        format_info = payload.get("format")
+        if not isinstance(streams, list) or not isinstance(format_info, dict):
+            return None
+
+        video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+        audio_stream = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
+        if not isinstance(video_stream, dict):
+            return None
+
+        width = _safe_int(video_stream.get("width"))
+        height = _safe_int(video_stream.get("height"))
+        stream_bitrate = _safe_int(video_stream.get("bit_rate"))
+        format_bitrate = _safe_int(format_info.get("bit_rate"))
+        size_bytes = _safe_int(format_info.get("size"))
+
+        return {
+            "video_codec": _safe_string(video_stream.get("codec_name")),
+            "video_profile": _safe_string(video_stream.get("profile")),
+            "audio_codec": _safe_string(audio_stream.get("codec_name")) if isinstance(audio_stream, dict) else None,
+            "width": width,
+            "height": height,
+            "display_aspect_ratio": _safe_string(video_stream.get("display_aspect_ratio")),
+            "frame_rate": _parse_frame_rate(video_stream.get("avg_frame_rate")),
+            "pixel_format": _safe_string(video_stream.get("pix_fmt")),
+            "duration_seconds": _safe_float(format_info.get("duration")),
+            "bitrate_bps": stream_bitrate or format_bitrate,
+            "size_bytes": size_bytes,
         }
 
 
@@ -741,3 +1077,43 @@ def _timestamp_from_epoch(value: float) -> str:
 def _to_relative_path(root_path: Path, path: Path) -> str:
     relative = path.relative_to(root_path).as_posix()
     return "" if relative == "." else relative
+
+
+def _safe_string(value) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _safe_int(value) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _safe_float(value) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _parse_frame_rate(value) -> float | None:
+    if value in (None, "", "0/0"):
+        return None
+    text = str(value)
+    if "/" in text:
+        numerator_text, denominator_text = text.split("/", 1)
+        try:
+            numerator = float(numerator_text)
+            denominator = float(denominator_text)
+        except ValueError:
+            return None
+        if denominator == 0:
+            return None
+        return round(numerator / denominator, 3)
+    return _safe_float(text)

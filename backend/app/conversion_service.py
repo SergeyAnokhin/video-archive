@@ -190,8 +190,10 @@ class ConversionService:
         return target_path
 
     def _write_test_output(self, source_path: Path, temp_output: Path, profile: dict, container: str) -> Path:
-        profile_slug = _slugify(profile["name"])
-        target_path = source_path.with_name(f"{source_path.stem}.__test__{profile_slug}.{container}")
+        output_tag = profile.get("test_output_tag")
+        if not isinstance(output_tag, str) or not output_tag.strip():
+            output_tag = _slugify(profile["name"])
+        target_path = source_path.with_name(f"{source_path.stem}.__test__{output_tag}.{container}")
         os.replace(temp_output, target_path)
         return target_path
 

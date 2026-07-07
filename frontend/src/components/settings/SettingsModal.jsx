@@ -21,6 +21,7 @@ export default function SettingsModal(props) {
 
   const selectedSectionLabel =
     settingsSections.find((section) => section.id === selectedSettingsSection)?.label ?? props.t("settings.title");
+  const selectedPanelId = `settings-panel-${selectedSettingsSection}`;
 
   return (
     <div className="overlay-backdrop" onClick={onClose}>
@@ -35,14 +36,20 @@ export default function SettingsModal(props) {
           </button>
         </div>
         <div className="settings-layout">
-          <nav className="settings-nav">
+          <nav className="settings-nav" aria-label={props.t("settings.title")} role="tablist">
             {settingsSections.map((section) => {
               const Icon = sectionIcons[section.icon] ?? Database;
+              const isActive = selectedSettingsSection === section.id;
               return (
                 <button
                   key={section.id}
                   type="button"
-                  className={`settings-link ${selectedSettingsSection === section.id ? "active" : ""}`}
+                  role="tab"
+                  id={`settings-tab-${section.id}`}
+                  aria-selected={isActive}
+                  aria-controls={`settings-panel-${section.id}`}
+                  tabIndex={isActive ? 0 : -1}
+                  className={`settings-link ${isActive ? "active" : ""}`}
                   onClick={() => onSelectSection(section.id)}
                 >
                   <span className="settings-link-icon" aria-hidden="true">
@@ -53,7 +60,12 @@ export default function SettingsModal(props) {
               );
             })}
           </nav>
-          <section className="settings-detail">
+          <section
+            className="settings-detail"
+            role="tabpanel"
+            id={selectedPanelId}
+            aria-labelledby={`settings-tab-${selectedSettingsSection}`}
+          >
             <h3>{selectedSectionLabel}</h3>
             {renderSettingsDetail(props)}
           </section>

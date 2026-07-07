@@ -127,11 +127,21 @@ Supported providers:
 
 Each provider entry may include:
 
+- stable entry id
+- user-defined label
+- provider type
 - enabled flag
 - API key
 - default vision model
 - optional default text model
 - batch mode preference if available
+
+Rules:
+
+- Provider entries are ordered. The first enabled working entry is the default fallback target.
+- Multiple entries may point at the same provider type with different keys or models.
+- Tagging settings should point to a provider entry id rather than a provider type enum.
+- The UI may load provider-native model lists after the user enters or reuses an API key, but manual model entry should still remain possible when model listing is unavailable.
 
 Implementation note:
 

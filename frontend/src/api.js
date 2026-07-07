@@ -103,6 +103,10 @@ export async function loadAppShellData() {
   };
 }
 
+export function fetchHealth() {
+  return requestJson("/api/health", undefined, "Health check");
+}
+
 export function fetchTree() {
   return requestJson("/api/tree", undefined, "Tree load");
 }
@@ -168,6 +172,24 @@ export function saveProviderSettings(providers) {
       body: JSON.stringify({ providers })
     },
     "Save provider settings"
+  );
+}
+
+export function fetchProviderModels({ provider, apiKey, providerId }) {
+  return requestJson(
+    "/api/settings/providers/models",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        provider,
+        api_key: apiKey ?? null,
+        provider_id: providerId ?? null
+      })
+    },
+    "Load provider models"
   );
 }
 
@@ -388,6 +410,30 @@ export function createTuneFileJob(fileId, sweep) {
       body: JSON.stringify({ file_id: fileId, sweep })
     },
     "Tune file"
+  );
+}
+
+export function moveFile(fileId, destinationDirectory) {
+  return requestJson(
+    `/api/files/${encodeURIComponent(fileId)}/move`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ destination_directory: destinationDirectory ?? "" })
+    },
+    "Move file"
+  );
+}
+
+export function deleteFile(fileId) {
+  return requestJson(
+    `/api/files/${encodeURIComponent(fileId)}`,
+    {
+      method: "DELETE"
+    },
+    "Delete file"
   );
 }
 

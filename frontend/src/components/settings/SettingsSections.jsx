@@ -1,4 +1,4 @@
-import { Download, Play, Save, ShieldCheck, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Play, Plus, RefreshCw, Save, ShieldCheck, Trash2, Upload } from "lucide-react";
 import SourceSettingsSection from "../../features/source/SourceSettingsSection";
 
 function ProfilesSettingsSection({
@@ -207,18 +207,23 @@ function PlaybackSettingsSection({ playbackSettings, onUpdatePlaybackSetting, on
   );
 }
 
-function TaggingSettingsSection({ taggingSettings, onUpdateTaggingSetting, onSaveTaggingSettings, isWorking, t }) {
+function TaggingSettingsSection({ taggingSettings, taggingProviderOptions, onUpdateTaggingSetting, onSaveTaggingSettings, isWorking, t }) {
   return (
     <div className="source-settings">
       <p>{t("taggingSettings.intro")}</p>
       <div className="form-grid">
         <label>
           <span>{t("taggingSettings.provider")}</span>
-          <select value={taggingSettings.provider} onChange={(event) => onUpdateTaggingSetting("provider", event.target.value)}>
-            <option value="openrouter">OpenRouter</option>
-            <option value="gemini">Google Gemini</option>
-            <option value="fal">FAL</option>
-            <option value="mistral">Mistral</option>
+          <select value={taggingSettings.provider_id} onChange={(event) => onUpdateTaggingSetting("provider_id", event.target.value)}>
+            {taggingProviderOptions.length ? (
+              taggingProviderOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))
+            ) : (
+              <option value="">{t("taggingSettings.noProviders")}</option>
+            )}
           </select>
         </label>
         <label>
@@ -265,50 +270,105 @@ function TaggingSettingsSection({ taggingSettings, onUpdateTaggingSetting, onSav
   );
 }
 
-function ProviderSettingsSection({ providerSettings, onUpdateProviderSetting, onSaveProviderSettings, isWorking, t }) {
+function ProviderSettingsSection({
+  providerSettings,
+  onAddProviderSetting,
+  onUpdateProviderSetting,
+  onMoveProviderSetting,
+  onRemoveProviderSetting,
+  onLoadProviderModels,
+  onSaveProviderSettings,
+  isWorking,
+  t
+}) {
   return (
     <div className="source-settings">
       <p>{t("providerSettings.intro")}</p>
       <div className="provider-settings-list">
         {providerSettings.map((provider) => (
-          <div key={provider.provider} className="note-card">
+          <div key={provider.id} className="note-card provider-entry-card">
             <div className="panel-header compact-header">
-              <div>
-                <strong>{provider.provider === "gemini" ? "Google Gemini" : provider.provider.toUpperCase()}</strong>
+              <div className="provider-entry-heading">
+                <strong>{provider.label || t("providerSettings.unnamed")}</strong>
+                <p className="muted">{t(`providerSettings.providerNames.${provider.provider}`)}</p>
                 <p className="muted">{provider.api_key_configured ? t("providerSettings.keyStored") : t("providerSettings.keyMissing")}</p>
               </div>
-              <label className="toggle-row">
-                <span>{t("providerSettings.enabled")}</span>
-                <input type="checkbox" checked={provider.enabled} onChange={(event) => onUpdateProviderSetting(provider.provider, "enabled", event.target.checked)} />
-              </label>
+              <div className="provider-entry-actions">
+                <button type="button" className="ghost-button icon-button" onClick={() => onMoveProviderSetting(provider.id, "up")} disabled={isWorking || provider.order_index === 0}>
+                  <ArrowUp size={16} />
+                  <span>{t("providerSettings.moveUp")}</span>
+                </button>
+                <button type="button" className="ghost-button icon-button" onClick={() => onMoveProviderSetting(provider.id, "down")} disabled={isWorking || provider.order_index === providerSettings.length - 1}>
+                  <ArrowDown size={16} />
+                  <span>{t("providerSettings.moveDown")}</span>
+                </button>
+                <button type="button" className="ghost-button icon-button" onClick={() => onRemoveProviderSetting(provider.id)} disabled={isWorking}>
+                  <Trash2 size={16} />
+                  <span>{t("providerSettings.remove")}</span>
+                </button>
+              </div>
             </div>
             <div className="form-grid">
               <label>
+                <span>{t("providerSettings.providerType")}</span>
+                <select value={provider.provider} onChange={(event) => onUpdateProviderSetting(provider.id, "provider", event.target.value)}>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="fal">FAL</option>
+                  <option value="mistral">Mistral</option>
+                </select>
+              </label>
+              <label>
+                <span>{t("providerSettings.entryName")}</span>
+                <input value={provider.label} onChange={(event) => onUpdateProviderSetting(provider.id, "label", event.target.value)} placeholder={t("providerSettings.entryPlaceholder")} />
+              </label>
+              <label>
                 <span>{t("providerSettings.visionModel")}</span>
-                <input value={provider.vision_model} onChange={(event) => onUpdateProviderSetting(provider.provider, "vision_model", event.target.value)} />
+                <input list={`provider-models-${provider.id}`} value={provider.vision_model} onChange={(event) => onUpdateProviderSetting(provider.id, "vision_model", event.target.value)} />
+                <datalist id={`provider-models-${provider.id}`}>
+                  {(provider.available_models ?? []).map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </datalist>
               </label>
               <label>
                 <span>{t("providerSettings.textModel")}</span>
-                <input value={provider.text_model} onChange={(event) => onUpdateProviderSetting(provider.provider, "text_model", event.target.value)} placeholder={t("providerSettings.textPlaceholder")} />
+                <input value={provider.text_model} onChange={(event) => onUpdateProviderSetting(provider.id, "text_model", event.target.value)} placeholder={t("providerSettings.textPlaceholder")} />
               </label>
               <label>
                 <span>{t("providerSettings.apiKey")}</span>
                 <input
                   type="password"
                   value={provider.api_key}
-                  onChange={(event) => onUpdateProviderSetting(provider.provider, "api_key", event.target.value)}
+                  onChange={(event) => onUpdateProviderSetting(provider.id, "api_key", event.target.value)}
                   placeholder={provider.api_key_configured ? "Leave blank to keep stored key" : ""}
                 />
               </label>
               <label className="toggle-row">
                 <span>{t("providerSettings.preferBatch")}</span>
-                <input type="checkbox" checked={provider.prefer_batch} onChange={(event) => onUpdateProviderSetting(provider.provider, "prefer_batch", event.target.checked)} />
+                <input type="checkbox" checked={provider.prefer_batch} onChange={(event) => onUpdateProviderSetting(provider.id, "prefer_batch", event.target.checked)} />
               </label>
+              <label className="toggle-row">
+                <span>{t("providerSettings.enabled")}</span>
+                <input type="checkbox" checked={provider.enabled} onChange={(event) => onUpdateProviderSetting(provider.id, "enabled", event.target.checked)} />
+              </label>
+            </div>
+            <div className="inline-actions">
+              <button type="button" className="ghost-button icon-button" disabled={isWorking || provider.is_loading_models} onClick={() => onLoadProviderModels(provider.id)}>
+                <RefreshCw size={16} />
+                <span>{provider.is_loading_models ? t("providerSettings.loadingModels") : t("providerSettings.loadModels")}</span>
+              </button>
             </div>
           </div>
         ))}
       </div>
       <div className="inline-actions">
+        <button type="button" className="ghost-button icon-button" disabled={isWorking} onClick={onAddProviderSetting}>
+          <Plus size={16} />
+          <span>{t("providerSettings.add")}</span>
+        </button>
         <button type="button" className="primary-button icon-button" disabled={isWorking} onClick={onSaveProviderSettings}>
           <ShieldCheck size={16} />
           <span>{t("providerSettings.save")}</span>
@@ -391,6 +451,7 @@ export function renderSettingsDetail(props) {
     return (
       <TaggingSettingsSection
         taggingSettings={props.taggingSettings}
+        taggingProviderOptions={props.taggingProviderOptions}
         onUpdateTaggingSetting={props.onUpdateTaggingSetting}
         onSaveTaggingSettings={props.onSaveTaggingSettings}
         isWorking={props.isWorking}
@@ -403,7 +464,11 @@ export function renderSettingsDetail(props) {
     return (
       <ProviderSettingsSection
         providerSettings={props.providerSettings}
+        onAddProviderSetting={props.onAddProviderSetting}
         onUpdateProviderSetting={props.onUpdateProviderSetting}
+        onMoveProviderSetting={props.onMoveProviderSetting}
+        onRemoveProviderSetting={props.onRemoveProviderSetting}
+        onLoadProviderModels={props.onLoadProviderModels}
         onSaveProviderSettings={props.onSaveProviderSettings}
         isWorking={props.isWorking}
         t={props.t}

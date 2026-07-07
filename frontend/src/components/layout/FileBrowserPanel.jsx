@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowUpLeft, Folder, ImageIcon, Info, Play, RefreshCcw } from "lucide-react";
+import { ArrowUpLeft, FlaskConical, Folder, ImageIcon, Info, Play, RefreshCcw } from "lucide-react";
 
 export default function FileBrowserPanel({
   treeItems,
@@ -169,6 +169,12 @@ export default function FileBrowserPanel({
                   <div className="file-card-indicators">
                     {renderStateLamp("convert", file.conversion_state)}
                     {renderStateLamp("preview", file.preview_state)}
+                    {file.generated_kind ? (
+                      <span className="tree-badge tree-badge-in_progress" title={file.generated_kind === "tune" ? t("files.generatedTune") : t("files.generatedTest")}>
+                        <FlaskConical size={12} />
+                        <span>{file.generated_kind === "tune" ? t("files.generatedTuneShort") : t("files.generatedTestShort")}</span>
+                      </span>
+                    ) : null}
                   </div>
                   <div className="file-card-actions">
                     <button

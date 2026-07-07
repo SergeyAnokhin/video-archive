@@ -26,6 +26,7 @@ from .tagging_service import TaggingService
 
 
 APP_STATE: AppState | None = None
+CLIENT_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
 
 
 class VideoArchiveHandler(BaseHTTPRequestHandler):
@@ -215,7 +216,7 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_DISCONNECT_ERRORS:
             return
         except Exception as exc:  # pragma: no cover - defensive server logging
             self._handle_unexpected_exception("GET", self.path, exc)
@@ -270,7 +271,7 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_DISCONNECT_ERRORS:
             return
         except Exception as exc:  # pragma: no cover - defensive server logging
             self._handle_unexpected_exception("PUT", self.path, exc)
@@ -287,6 +288,20 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             if path == "/api/source/reconnect":
                 result = _require_app_state().source_service.reconnect_active_source()
                 self._write_json(HTTPStatus.OK, result)
+                return
+
+            if path == "/api/settings/providers/models":
+                payload = self._read_json_body()
+                provider_name = _read_required_string(payload, "provider")
+                api_key = _read_optional_string(payload, "api_key")
+                provider_id = _read_optional_string(payload, "provider_id")
+                if not api_key and provider_id:
+                    runtime_provider = _require_app_state().provider_settings_service.get_runtime_provider(provider_id=provider_id)
+                    api_key = runtime_provider["api_key"]
+                if not api_key:
+                    raise ApiError("provider_api_key_missing", "Field 'api_key' is required when the provider entry has no stored key.", status=400)
+                models = _require_app_state().provider_settings_service.list_models(provider_name=provider_name, api_key=api_key)
+                self._write_json(HTTPStatus.OK, {"models": models})
                 return
 
             if path == "/api/jobs/scan-source":
@@ -364,6 +379,13 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.OK, {"job": job})
                 return
 
+            if path.startswith("/api/files/") and path.endswith("/move"):
+                file_id = path.removeprefix("/api/files/").removesuffix("/move")
+                payload = self._read_json_body()
+                moved_file = _require_app_state().library_service.move_file(file_id, payload.get("destination_directory"))
+                self._write_json(HTTPStatus.OK, {"file": moved_file})
+                return
+
             if path.startswith("/api/jobs/"):
                 job_tail = path.removeprefix("/api/jobs/")
                 if job_tail.endswith("/cancel"):
@@ -388,7 +410,7 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_DISCONNECT_ERRORS:
             return
         except Exception as exc:  # pragma: no cover - defensive server logging
             self._handle_unexpected_exception("POST", self.path, exc)
@@ -396,6 +418,11 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         try:
             path = urlparse(self.path).path
+            if path.startswith("/api/files/"):
+                file_id = path.removeprefix("/api/files/")
+                _require_app_state().library_service.delete_file(file_id)
+                self._write_json(HTTPStatus.OK, {"ok": True})
+                return
             if path.startswith("/api/preview-layouts/"):
                 preset_id = path.removeprefix("/api/preview-layouts/")
                 _require_app_state().preview_service.delete_layout_preset(preset_id)
@@ -404,7 +431,7 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
             self._not_found()
         except ApiError as exc:
             self._write_error(exc)
-        except (BrokenPipeError, ConnectionResetError):
+        except CLIENT_DISCONNECT_ERRORS:
             return
         except Exception as exc:  # pragma: no cover - defensive server logging
             self._handle_unexpected_exception("DELETE", self.path, exc)
@@ -459,10 +486,13 @@ class VideoArchiveHandler(BaseHTTPRequestHandler):
 
     def _handle_unexpected_exception(self, method: str, path: str, error: Exception) -> None:
         self._log_exception(method, path, error)
-        self._write_json(
-            HTTPStatus.INTERNAL_SERVER_ERROR,
-            {"error": {"code": "internal_server_error", "message": f"{type(error).__name__}: {error}"}},
-        )
+        try:
+            self._write_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": {"code": "internal_server_error", "message": f"{type(error).__name__}: {error}"}},
+            )
+        except CLIENT_DISCONNECT_ERRORS:
+            return
 
     def _log_exception(self, method: str, path: str, error: Exception) -> None:
         print(f"[backend-error] {method} {path}", file=sys.stderr, flush=True)
@@ -550,8 +580,8 @@ def create_app_state() -> AppState:
     initialize_database(config.database_path)
     secret_store = SecretStore(config.secrets_path)
     source_service = SourceService(config.database_path, secret_store)
-    library_service = LibraryService(config.database_path, source_service)
     conversion_profile_service = ConversionProfileService(config.database_path)
+    library_service = LibraryService(config.database_path, source_service, conversion_profile_service)
     playback_settings_service = PlaybackSettingsService(config.database_path)
     preview_service = PreviewService(config.database_path, config.data_dir)
     provider_settings_service = ProviderSettingsService(config.database_path, secret_store)

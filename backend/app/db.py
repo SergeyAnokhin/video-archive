@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 
 MIGRATIONS: list[tuple[int, list[str]]] = [
@@ -353,6 +353,27 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    (
+        6,
+        [
+            """
+            ALTER TABLE files ADD COLUMN generated_from_job_id TEXT NULL
+            """,
+            """
+            ALTER TABLE files ADD COLUMN generated_from_file_id TEXT NULL
+            """,
+            """
+            ALTER TABLE files ADD COLUMN generated_kind TEXT NULL
+            """,
+        ],
+    ),
+]
+
+
+FILES_COMPATIBILITY_COLUMNS: list[tuple[str, str]] = [
+    ("generated_from_job_id", "ALTER TABLE files ADD COLUMN generated_from_job_id TEXT NULL"),
+    ("generated_from_file_id", "ALTER TABLE files ADD COLUMN generated_from_file_id TEXT NULL"),
+    ("generated_kind", "ALTER TABLE files ADD COLUMN generated_kind TEXT NULL"),
 ]
 
 
@@ -408,8 +429,28 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
                 (version,),
             )
 
+    _repair_schema_compatibility(conn)
+
 
 def _current_version(conn: sqlite3.Connection) -> int:
     cursor = conn.execute("SELECT MAX(version) AS version FROM schema_migrations")
     row = cursor.fetchone()
     return int(row["version"] or 0)
+
+
+def _repair_schema_compatibility(conn: sqlite3.Connection) -> None:
+    file_columns = {row["name"] for row in conn.execute("PRAGMA table_info(files)").fetchall()}
+    missing_statements = [statement for column, statement in FILES_COMPATIBILITY_COLUMNS if column not in file_columns]
+    current_version = _current_version(conn)
+
+    if not missing_statements and current_version >= SCHEMA_VERSION:
+        return
+
+    with conn:
+        for statement in missing_statements:
+            conn.execute(statement)
+        if current_version < SCHEMA_VERSION:
+            conn.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, datetime('now'))",
+                (SCHEMA_VERSION,),
+            )

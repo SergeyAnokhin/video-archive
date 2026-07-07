@@ -129,6 +129,30 @@ Query parameters:
 
 Returns full file metadata and cached processing details.
 
+Current implementation also enriches the payload with:
+
+- `media_info` when `ffprobe` is available on the backend machine and the file can be probed
+  - includes video codec, codec profile, audio codec, width, height, display aspect ratio, frame rate, pixel format, duration, and bitrate when available
+- `last_conversion_profile_id`
+- `last_conversion_profile` for the saved profile that last converted the file, when one is recorded and still exists
+- `generated_kind`, `generated_from_job_id`, and `generated_from_file_id` for generated tuning or test-conversion outputs
+
+### `POST /api/files/{file_id}/move`
+
+Moves one file into another folder under the active source root.
+
+Request body:
+
+```json
+{
+  "destination_directory": "family/archive"
+}
+```
+
+### `DELETE /api/files/{file_id}`
+
+Deletes one file from disk and removes its metadata row.
+
 ## 4. Conversion Profiles
 
 ### `GET /api/conversion-profiles`
@@ -288,9 +312,9 @@ Request body:
 {
   "file_id": "uuid",
   "sweep": {
-    "dimension_values": [1000, 900, 800],
-    "quality_values": ["q1", "q2"],
-    "codec_values": ["h265"]
+    "dimensions": [800, 900, 1000],
+    "quality_values": ["20", "24", "28"],
+    "codecs": ["h265"]
   }
 }
 ```
@@ -299,6 +323,7 @@ Rules:
 
 - tuning must never replace the source
 - tuning generates separate outputs
+- tuning output filenames should encode the tested codec, max side, and CRF
 
 ## 9. Preview Jobs
 
@@ -402,17 +427,28 @@ Updates non-secret settings payload.
 
 Returns provider configuration summary.
 
-Current implementation returns one entry each for `openrouter`, `gemini`, `fal`, and `mistral`, including:
+Current implementation returns an ordered array of provider entries, including:
 
+- `id`
+- `label`
 - `enabled`
+- `provider`
 - `vision_model`
 - optional `text_model`
 - `prefer_batch`
+- `order_index`
 - `api_key_configured`
 
 ### `PUT /api/settings/providers`
 
 Updates provider settings, including explicit secret changes.
+
+### `POST /api/settings/providers/models`
+
+Loads models for one provider type using either:
+
+- an explicit `api_key`, or
+- a saved provider entry referenced by `provider_id`
 
 ### `GET /api/settings/export`
 

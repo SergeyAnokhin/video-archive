@@ -622,11 +622,20 @@ class JobService:
                 )
                 continue
 
-            self._record_successful_conversion(
-                file_id=file_row["id"],
-                result=result,
-                profile_id=profile["id"],
-            )
+            if mode == "production":
+                self._record_successful_conversion(
+                    file_id=file_row["id"],
+                    result=result,
+                    profile_id=profile["id"],
+                )
+            else:
+                self._library_service.register_generated_file(
+                    result=result,
+                    source_file_id=file_row["id"],
+                    generated_from_job_id=job["id"],
+                    generated_kind="convert_test",
+                    profile_id=profile["id"],
+                )
             self._set_job_item_status(
                 item["id"],
                 "completed",
@@ -726,13 +735,20 @@ class JobService:
             completed += 1
 
         if job["scope_type"] == "directory" and successful_files:
-            self._preview_service.generate_directory_preview(
-                source_id=source["id"],
-                source_root=source["root_path"],
-                relative_path=normalize_relative_path(job["parameters"].get("relative_path")),
-                settings=preview_settings,
-                file_rows=successful_files,
-            )
+            preview_scope = normalize_relative_path(job["parameters"].get("relative_path"))
+            directory_file_rows: dict[str, list[dict]] = {}
+            for file_row in successful_files:
+                for directory_path in _directory_preview_paths_for_file(preview_scope, file_row["relative_path"]):
+                    directory_file_rows.setdefault(directory_path, []).append(file_row)
+
+            for directory_path, scoped_rows in sorted(directory_file_rows.items(), key=lambda item: (item[0].count("/"), item[0])):
+                self._preview_service.generate_directory_preview(
+                    source_id=source["id"],
+                    source_root=source["root_path"],
+                    relative_path=directory_path,
+                    settings=preview_settings,
+                    file_rows=scoped_rows,
+                )
 
         if failed:
             raise ApiError("preview_job_failed", f"Preview generation failed for {failed} item(s); {completed} completed successfully.", status=500)
@@ -873,6 +889,12 @@ class JobService:
                 )
                 continue
 
+            self._library_service.register_generated_file(
+                result=result,
+                source_file_id=file_row["id"],
+                generated_from_job_id=job["id"],
+                generated_kind="tune",
+            )
             self._set_job_item_status(
                 item["id"],
                 "completed",
@@ -1347,6 +1369,7 @@ def _build_tuning_variants(sweep: dict | None) -> tuple[dict, list[dict]]:
                             "quality_value": quality,
                             "drop_audio": drop_audio,
                             "extra_encoder_args": None,
+                            "test_output_tag": _build_tuning_output_tag(codec=codec, dimension=dimension, quality=quality),
                         },
                     }
                 )
@@ -1413,3 +1436,42 @@ def _format_tuning_codec(codec: str) -> str:
         "h265": "H.265",
         "av1": "AV1",
     }.get(codec, codec.upper())
+
+
+def _build_tuning_output_tag(*, codec: str, dimension: int | None, quality: str | None) -> str:
+    parts = ["tune", codec.lower()]
+    parts.append(f"side-{dimension}" if dimension is not None else "side-source")
+    parts.append(f"crf-{quality}" if quality is not None else "crf-default")
+    return "-".join(parts)
+
+
+def _directory_preview_paths_for_file(scope_path: str, file_relative_path: str) -> list[str]:
+    normalized_scope = normalize_relative_path(scope_path)
+    normalized_file = normalize_relative_path(file_relative_path)
+    parts = [part for part in normalized_file.split("/") if part]
+    directory_parts = parts[:-1]
+
+    if not normalized_scope:
+        results = [""]
+        current = ""
+        for part in directory_parts:
+            current = f"{current}/{part}" if current else part
+            results.append(current)
+        return results
+
+    if not directory_parts:
+        return [normalized_scope]
+
+    directory_path = "/".join(directory_parts)
+    if directory_path == normalized_scope:
+        return [normalized_scope]
+    if not directory_path.startswith(f"{normalized_scope}/"):
+        return []
+
+    remainder_parts = directory_path.removeprefix(f"{normalized_scope}/").split("/")
+    results = [normalized_scope]
+    current = normalized_scope
+    for part in remainder_parts:
+        current = f"{current}/{part}" if current else part
+        results.append(current)
+    return results
