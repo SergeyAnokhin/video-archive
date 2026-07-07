@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Copy, Film, Images, Tags, Wand2 } from 'lucide-react'
+import { Copy, Film, Images, Tags, Wand2, X } from 'lucide-react'
 import { formatSize } from '../utils/format'
 import type { FileEntry } from '../types/api'
 import './ConvertDialog.css'
@@ -40,6 +40,16 @@ export function FileInfoPanel({
         aria-label={file.file_name}
         onClick={(event) => event.stopPropagation()}
       >
+        <button
+          type="button"
+          className="file-info-panel__close"
+          aria-label={t('playbackModal.close')}
+          title={t('playbackModal.close')}
+          onClick={onClose}
+        >
+          <X size={20} />
+        </button>
+
         <h2 className="convert-dialog__title">{file.file_name}</h2>
 
         <div className="file-info-panel__thumb">
@@ -53,9 +63,30 @@ export function FileInfoPanel({
         <p className="convert-dialog__hint">{formatSize(file.size_bytes)}</p>
 
         <ul className="file-info-panel__status">
-          <li>{t(file.converted_at ? 'library.statusConvertedYes' : 'library.statusConvertedNo')}</li>
-          <li>{t(file.has_preview_asset ? 'library.statusPreviewYes' : 'library.statusPreviewNo')}</li>
-          <li>{t(file.tagged_at ? 'library.statusTaggedYes' : 'library.statusTaggedNo')}</li>
+          <li className="file-info-panel__status-item">
+            <span
+              className={`file-info-panel__dot ${
+                file.converted_at ? 'file-info-panel__dot--done' : 'file-info-panel__dot--conversion'
+              }`}
+            />
+            {t(file.converted_at ? 'library.statusConvertedYes' : 'library.statusConvertedNo')}
+          </li>
+          <li className="file-info-panel__status-item">
+            <span
+              className={`file-info-panel__dot ${
+                file.has_preview_asset ? 'file-info-panel__dot--done' : 'file-info-panel__dot--preview'
+              }`}
+            />
+            {t(file.has_preview_asset ? 'library.statusPreviewYes' : 'library.statusPreviewNo')}
+          </li>
+          <li className="file-info-panel__status-item">
+            <span
+              className={`file-info-panel__dot ${
+                file.tagged_at ? 'file-info-panel__dot--done' : 'file-info-panel__dot--tag'
+              }`}
+            />
+            {t(file.tagged_at ? 'library.statusTaggedYes' : 'library.statusTaggedNo')}
+          </li>
         </ul>
 
         <div className="convert-dialog__actions">
@@ -70,12 +101,6 @@ export function FileInfoPanel({
           </button>
           <button type="button" className="convert-dialog__button" onClick={onSimilar}>
             <Copy size={14} /> {t('library.similar')}
-          </button>
-        </div>
-
-        <div className="convert-dialog__actions">
-          <button type="button" className="convert-dialog__button" onClick={onClose}>
-            {t('playbackModal.close')}
           </button>
         </div>
       </div>

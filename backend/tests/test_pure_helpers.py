@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.conversion import build_ffmpeg_command, effective_max_dimension, encode_variant_suffix
-from app.media import is_test_artifact, sibling_relative_path
-from app.preview import select_frames_for_tiles
+from app.media import PREVIEW_GIF_DIR, is_test_artifact, preview_gif_relative_path, sibling_relative_path
+from app.preview import diverse_video_frame_plan, select_frames_for_tiles
 from app.preview_layouts import compute_layout_tiles
 from app.preview_settings import effective_aspect_ratio
 
@@ -34,6 +34,18 @@ def test_sibling_relative_path():
     assert sibling_relative_path("clip.mp4", "clip.jpg") == "clip.jpg"
     # Never produces backslashes, even on Windows (SMB-safe posix paths).
     assert "\\" not in sibling_relative_path("a/b/clip.mp4", "clip.jpg")
+
+
+def test_preview_gif_relative_path():
+    # Flattened into PREVIEW_GIF_DIR, directory separators encoded so the
+    # name alone still shows the source folder/file it belongs to.
+    assert (
+        preview_gif_relative_path("Foscam/2026/05/06/alarm.mp4")
+        == f"{PREVIEW_GIF_DIR}/Foscam__2026__05__06__alarm.gif"
+    )
+    assert preview_gif_relative_path("clip.mp4") == f"{PREVIEW_GIF_DIR}/clip.gif"
+    # Two different source files never collide.
+    assert preview_gif_relative_path("a/clip.mp4") != preview_gif_relative_path("b/clip.mp4")
 
 
 # --- conversion: resize decision, variant naming, command construction ---
@@ -100,6 +112,7 @@ def test_build_ffmpeg_command_scale_audio_and_extra_args():
 
 def test_effective_aspect_ratio():
     assert effective_aspect_ratio({"aspect_ratio": "standard"}) == 4 / 3
+    assert effective_aspect_ratio({"aspect_ratio": "phone-landscape"}) == 19.5 / 9
     assert effective_aspect_ratio({"aspect_ratio": "ultra-wide"}) == 21 / 9
     assert effective_aspect_ratio(
         {"aspect_ratio": "custom", "aspect_ratio_custom_width": 16, "aspect_ratio_custom_height": 10}
@@ -180,3 +193,40 @@ def test_select_frames_for_tiles_column_flow_orders_by_column():
     by_pos = {(t["row"], t["col"]): assignment[i] for i, t in enumerate(tiles)}
     # Column flow: frames run down each column before moving right.
     assert [by_pos[(0, 0)], by_pos[(1, 0)], by_pos[(0, 1)], by_pos[(1, 1)]] == [0, 1, 2, 3]
+
+
+# --- preview: folder GIF diversity plan -----------------------------------
+
+
+def test_diverse_video_frame_plan_alternates_two_videos():
+    # Two videos, 4 frames requested: 2 from each, alternating (not blocked)
+    # so the GIF visibly cycles between sources (user request).
+    plan = diverse_video_frame_plan(["a.mp4", "b.mp4"], 4)
+    assert plan == ["a.mp4", "b.mp4", "a.mp4", "b.mp4"]
+
+
+def test_diverse_video_frame_plan_spreads_across_four_or_more_videos():
+    plan = diverse_video_frame_plan(["a.mp4", "b.mp4", "c.mp4", "d.mp4", "e.mp4"], 4)
+    assert len(plan) == 4
+    assert len(set(plan)) == 4  # four distinct videos, no repeats needed
+
+
+def test_diverse_video_frame_plan_splits_evenly_across_subfolders():
+    paths = ["sub1/a.mp4", "sub1/b.mp4", "sub2/c.mp4", "sub2/d.mp4"]
+    plan = diverse_video_frame_plan(paths, 4)
+    assert sum(1 for p in plan if p.startswith("sub1/")) == 2
+    assert sum(1 for p in plan if p.startswith("sub2/")) == 2
+
+
+def test_diverse_video_frame_plan_recurses_into_nested_subfolders():
+    # sub2 has only one video: it must repeat to fill its 2-frame share.
+    paths = ["sub1/a.mp4", "sub1/b.mp4", "sub2/only.mp4"]
+    plan = diverse_video_frame_plan(paths, 3)
+    assert sum(1 for p in plan if p.startswith("sub1/")) == 2
+    assert plan.count("sub2/only.mp4") == 1
+
+
+def test_diverse_video_frame_plan_edge_cases():
+    assert diverse_video_frame_plan([], 4) == []
+    assert diverse_video_frame_plan(["a.mp4"], 3) == ["a.mp4", "a.mp4", "a.mp4"]
+    assert diverse_video_frame_plan(["a.mp4", "b.mp4"], 0) == []

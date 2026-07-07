@@ -68,15 +68,14 @@ def discover_filesystem(
             if entry.is_dir:
                 continue
             filename = entry.name
+            if filename.lower() == FOLDER_PREVIEW_FILENAME:
+                continue
             ext = _extension_of(filename)
             stem = _stem_of(filename)
 
-            if ext in ("jpg", "jpeg"):
-                if filename.lower() == FOLDER_PREVIEW_FILENAME:
-                    continue
-                if stem.lower() in video_stems_lower:
-                    # Matched video's own preview asset, not an independent item.
-                    continue
+            if ext in ("jpg", "jpeg") and stem.lower() in video_stems_lower:
+                # Matched video's own preview asset, not an independent item.
+                continue
 
             rel_file = f"{rel_dir}/{filename}" if rel_dir else filename
             is_video = ext in SUPPORTED_VIDEO_EXTENSIONS

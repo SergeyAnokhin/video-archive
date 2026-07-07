@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 import app.db as db_module
 from app.main import app
+from app.media import preview_gif_relative_path
 
 
 def _insert_source_and_folder(engine, root):
@@ -126,17 +127,21 @@ def test_preview_settings_get_and_put(tmp_path, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/api/preview-settings")
         assert r.status_code == 200
-        assert r.json()["aspect_ratio"] == "standard"
+        assert r.json()["aspect_ratio"] == "phone-landscape"
         assert r.json()["folder_preview_frame_count"] == 4
+        assert r.json()["gif_max_width"] == 640
+        assert r.json()["gif_colors"] == 64
 
         r = client.put(
             "/api/preview-settings",
             json={"aspect_ratio": "custom", "aspect_ratio_custom_width": 16, "aspect_ratio_custom_height": 10,
-                  "folder_preview_frame_count": 6},
+                  "folder_preview_frame_count": 6, "gif_max_width": 320, "gif_colors": 32},
         )
         assert r.status_code == 200
         assert r.json()["aspect_ratio"] == "custom"
         assert r.json()["folder_preview_frame_count"] == 6
+        assert r.json()["gif_max_width"] == 320
+        assert r.json()["gif_colors"] == 32
 
         r = client.put("/api/preview-settings", json={"aspect_ratio": "not-a-real-ratio"})
         assert r.status_code == 422
@@ -209,6 +214,28 @@ def test_file_preview_image_serving(tmp_path, monkeypatch):
         assert r.json()["has_preview_asset"] is True
 
 
+def test_file_preview_gif_serving(tmp_path, monkeypatch):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        engine = db_module.get_engine()
+        source_root = tmp_path / "source"
+        _source_id, file_id = _insert_source_and_folder(engine, source_root)
+
+        r = client.get(f"/api/files/{file_id}/preview.gif")
+        assert r.status_code == 404
+
+        gif_rel = preview_gif_relative_path("clip_0.mp4")
+        gif_path = source_root / gif_rel
+        gif_path.parent.mkdir(parents=True, exist_ok=True)
+        gif_path.write_bytes(b"GIF89a")
+
+        r = client.get(f"/api/files/{file_id}/preview.gif")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/gif"
+
+
 def test_directory_preview_image_serving(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
     monkeypatch.setattr(db_module, "_engine", None)
@@ -218,10 +245,10 @@ def test_directory_preview_image_serving(tmp_path, monkeypatch):
         source_root = tmp_path / "source"
         _insert_source_and_folder(engine, source_root)
 
-        r = client.get("/api/directories/preview.jpg", params={"path": ""})
+        r = client.get("/api/directories/preview.gif", params={"path": ""})
         assert r.status_code == 404
 
-        (source_root / "folder-preview.jpg").write_bytes(b"\xff\xd8\xff\xd9")
-        r = client.get("/api/directories/preview.jpg", params={"path": ""})
+        (source_root / "folder-preview.gif").write_bytes(b"GIF89a")
+        r = client.get("/api/directories/preview.gif", params={"path": ""})
         assert r.status_code == 200
-        assert r.headers["content-type"] == "image/jpeg"
+        assert r.headers["content-type"] == "image/gif"

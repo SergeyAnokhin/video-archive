@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from app import similarity
 from app.db import get_engine
+from app.media import preview_gif_relative_path
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 
@@ -207,6 +208,28 @@ def get_file_preview_image(file_id: str):
     # this endpoint simple instead of needing a streamed-download-then-serve
     # dance for an asset that's typically a few hundred KB.
     return Response(content=access.read_bytes(preview_rel), media_type="image/jpeg")
+
+
+@router.get("/files/{file_id}/preview.gif")
+def get_file_preview_gif(file_id: str):
+    """Animated GIF companion to the JPEG collage (user request), used for
+    grid/list-view hover previews. Stored in `.video-archive/previews/`
+    rather than next to the video (`media.preview_gif_relative_path()`)."""
+    with get_engine().connect() as conn:
+        row = _preview_lookup(conn, file_id)
+    if row is None:
+        raise _file_not_found_error(file_id)
+
+    access = get_source_access(row)
+    gif_rel = preview_gif_relative_path(row.relative_path)
+    if not access.exists(gif_rel):
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "preview_not_found", "message": "No GIF preview for this file."}},
+        )
+    if access.protocol == "local":
+        return FileResponse(access.direct_path(gif_rel), media_type="image/gif")
+    return Response(content=access.read_bytes(gif_rel), media_type="image/gif")
 
 
 @router.get("/files/{file_id}/similar")

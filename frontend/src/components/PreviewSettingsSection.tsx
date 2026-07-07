@@ -10,13 +10,15 @@ import type {
 } from '../types/api'
 import './PreviewSettingsSection.css'
 
-const ASPECT_RATIOS: AspectRatioMode[] = ['standard', 'phone-portrait', 'ultra-wide', 'custom']
+const ASPECT_RATIOS: AspectRatioMode[] = ['standard', 'phone-portrait', 'phone-landscape', 'ultra-wide', 'custom']
 const QUICK_SLOT_NAMES = ['Quick 1', 'Quick 2', 'Quick 3']
 
 function effectiveAspectRatio(settings: PreviewSettings): number {
   switch (settings.aspect_ratio) {
     case 'phone-portrait':
       return 9 / 19.5
+    case 'phone-landscape':
+      return 19.5 / 9
     case 'ultra-wide':
       return 21 / 9
     case 'custom':
@@ -370,6 +372,31 @@ export function PreviewSettingsSection() {
               className="settings-modal__input"
               value={settings.folder_preview_frame_count}
               onChange={(event) => void updateSettings({ folder_preview_frame_count: Number(event.target.value) })}
+            />
+          </label>
+
+          <label className="settings-modal__label">
+            {t('previewSettings.gifMaxWidth')}
+            <input
+              type="number"
+              min={120}
+              max={1920}
+              step={20}
+              className="settings-modal__input"
+              value={settings.gif_max_width}
+              onChange={(event) => void updateSettings({ gif_max_width: Number(event.target.value) })}
+            />
+          </label>
+
+          <label className="settings-modal__label">
+            {t('previewSettings.gifColors')}
+            <input
+              type="number"
+              min={8}
+              max={256}
+              className="settings-modal__input"
+              value={settings.gif_colors}
+              onChange={(event) => void updateSettings({ gif_colors: Number(event.target.value) })}
             />
           </label>
         </>

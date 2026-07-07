@@ -21,8 +21,25 @@ SUPPORTED_VIDEO_EXTENSIONS = frozenset(
 # Technical folder excluded from scanning (Specification §5.3).
 TECHNICAL_FOLDER_NAME = ".video-archive"
 
-# Fixed folder-preview file name (Specification §9.5).
-FOLDER_PREVIEW_FILENAME = "folder-preview.jpg"
+# Fixed folder-preview file name (Specification §9.5). An animated GIF
+# (user request) rather than a static collage, so it can cycle through
+# frames sampled from different videos/subfolders for diversity.
+FOLDER_PREVIEW_FILENAME = "folder-preview.gif"
+
+# Sub-folder of the technical folder holding animated GIF preview loops
+# (grid/list-view hover animation, user request). Kept off to the side
+# instead of next to the video like `<name>.jpg`, since a GIF is a UI asset
+# rather than archived library content.
+PREVIEW_GIF_DIR = f"{TECHNICAL_FOLDER_NAME}/previews"
+
+
+def preview_gif_relative_path(rel_path: str) -> str:
+    """Deterministic path for `rel_path`'s animated GIF preview, flattened
+    into `PREVIEW_GIF_DIR`: the full relative path (directories included)
+    with `/` replaced by `__`, so the file name alone still shows which
+    folder/video it belongs to, while staying unique across the source."""
+    encoded = PurePosixPath(rel_path).with_suffix(".gif").as_posix().replace("/", "__")
+    return f"{PREVIEW_GIF_DIR}/{encoded}"
 
 
 def is_test_artifact(file_name: str) -> bool:

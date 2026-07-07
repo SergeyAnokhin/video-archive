@@ -16,7 +16,7 @@ import pytest
 from PIL import Image
 from sqlalchemy import text
 
-from app import preview, preview_layouts, preview_settings
+from app import media, preview, preview_layouts, preview_settings
 from app.jobs import preview as preview_job
 from app.jobs import service
 from app.sampling import sample_interior_timestamps
@@ -141,6 +141,43 @@ def test_generate_file_preview_writes_jpeg_next_to_video(tmp_path):
         assert abs(img.size[0] / img.size[1] - 4 / 3) < 0.01
 
 
+def test_generate_file_preview_also_writes_gif_when_requested(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    layout = _layout_from_preset(preview_layouts._BUILTIN_PRESETS[0])
+    dest_path = tmp_path / "movie.jpg"
+    gif_path = tmp_path / "movie.preview.gif"
+    preview.generate_file_preview(
+        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, gif_dest_path=gif_path
+    )
+
+    assert dest_path.exists()
+    assert gif_path.exists()
+    with Image.open(gif_path) as img:
+        assert img.format == "GIF"
+        assert img.is_animated
+        assert img.width <= preview.GIF_MAX_WIDTH
+
+
+def test_generate_file_preview_honors_custom_gif_max_width(tmp_path):
+    # User request: GIF size/quality is configurable (Preview Settings),
+    # independent of the JPEG collage's own fixed CANVAS_WIDTH.
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    layout = _layout_from_preset(preview_layouts._BUILTIN_PRESETS[0])
+    dest_path = tmp_path / "movie.jpg"
+    gif_path = tmp_path / "movie.preview.gif"
+    preview.generate_file_preview(
+        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, gif_dest_path=gif_path,
+        gif_max_width=240, gif_colors=16,
+    )
+
+    with Image.open(gif_path) as img:
+        assert img.width == 240
+
+
 def test_generate_file_preview_rejects_non_video(tmp_path):
     not_a_video = tmp_path / "notes.txt"
     not_a_video.write_text("hello")
@@ -174,18 +211,34 @@ def test_generate_file_preview_degrades_to_blur_ranking_without_models(tmp_path,
         assert img.format == "JPEG"
 
 
-def test_generate_folder_preview_writes_jpeg(tmp_path):
-    video_a = tmp_path / "a.mp4"
-    video_b = tmp_path / "b.mp4"
-    make_video(video_a, duration=2.0, size="320x240")
-    make_video(video_b, duration=2.0, size="320x240")
+def test_pick_representative_frames_single_uses_best_of_three(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
 
-    dest_path = tmp_path / "folder-preview.jpg"
-    preview.generate_folder_preview([video_a, video_b], 4, dest_path, "My Folder", 4 / 3)
+    frames = preview.pick_representative_frames(video_path, 1)
+    assert len(frames) == 1
+
+
+def test_pick_representative_frames_multi_spreads_across_interior(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    frames = preview.pick_representative_frames(video_path, 3)
+    assert len(frames) == 3
+
+
+def test_render_gif_crops_frames_to_aspect_ratio(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+    images = [img for img in (preview.extract_frame_image(video_path, 1.0),) if img is not None]
+
+    dest_path = tmp_path / "folder-preview.gif"
+    preview.render_gif(images, dest_path, 19.5 / 9)
 
     assert dest_path.exists()
     with Image.open(dest_path) as img:
-        assert img.format == "JPEG"
+        assert img.format == "GIF"
+        assert abs(img.size[0] / img.size[1] - 19.5 / 9) < 0.02
 
 
 # --- preview job: file scope -----------------------------------------------
@@ -204,6 +257,10 @@ def test_preview_job_file_scope_marks_file_previewed(engine, source):
 
     assert status == "completed"
     assert (source["root"] / "clips" / "movie.jpg").exists()
+    # The GIF companion lands in the technical folder, not next to the video.
+    gif_rel = media.preview_gif_relative_path("clips/movie.mp4")
+    assert (source["root"] / gif_rel).exists()
+    assert not (source["root"] / "clips" / "movie.preview.gif").exists()
 
     with engine.connect() as conn:
         updated = conn.execute(text("SELECT * FROM files WHERE id = :id"), {"id": file_row.id}).fetchone()
@@ -226,9 +283,9 @@ def test_preview_job_directory_scope_recursive_with_folder_previews(engine, sour
     assert status == "completed"
     assert (source["root"] / "clips" / "a.jpg").exists()
     assert (source["root"] / "clips" / "nested" / "b.jpg").exists()
-    assert (source["root"] / "folder-preview.jpg").exists()
-    assert (source["root"] / "clips" / "folder-preview.jpg").exists()
-    assert (source["root"] / "clips" / "nested" / "folder-preview.jpg").exists()
+    assert (source["root"] / "folder-preview.gif").exists()
+    assert (source["root"] / "clips" / "folder-preview.gif").exists()
+    assert (source["root"] / "clips" / "nested" / "folder-preview.gif").exists()
 
     with engine.connect() as conn:
         directories = {
@@ -276,9 +333,21 @@ def test_preview_job_excludes_test_artifacts(engine, source):
 
 
 def test_preview_settings_singleton_roundtrip(engine):
+    defaults = preview_settings.get_settings(engine)
+    assert defaults["gif_max_width"] == preview_settings.DEFAULT_GIF_MAX_WIDTH
+    assert defaults["gif_colors"] == preview_settings.DEFAULT_GIF_COLORS
+
     updated = preview_settings.update_settings(
-        engine, {"aspect_ratio": "ultra-wide", "folder_preview_frame_count": 6}
+        engine,
+        {
+            "aspect_ratio": "ultra-wide",
+            "folder_preview_frame_count": 6,
+            "gif_max_width": 320,
+            "gif_colors": 32,
+        },
     )
     assert updated["aspect_ratio"] == "ultra-wide"
     assert updated["folder_preview_frame_count"] == 6
+    assert updated["gif_max_width"] == 320
+    assert updated["gif_colors"] == 32
     assert preview_settings.get_settings(engine) == updated

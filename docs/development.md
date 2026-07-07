@@ -33,6 +33,8 @@ Test conventions (per-suite details in [`code-map-tests.md`](code-map-tests.md))
 
 Use the git-ignored local sample archive `test-data/VideoArchive/` as the source — see [README § Local Test Data](../README.md#local-test-data) for layout and safety rules (never modify the samples in place; use test mode for conversion; prefer scratch subfolders over replacing the active source).
 
+Before running any real (non-test-mode) job — convert, preview, tag — against "the active source" during verification, check `GET /api/source`'s `root_path` first. Source config persists in the SQLite db across sessions, so whatever was last connected stays active; it may point somewhere other than this repo's `test-data/VideoArchive` (e.g. a different checkout on disk), and a real preview/convert job run against it mutates files there for real, not just this repo's ignored sample folder.
+
 ## Housekeeping
 
 - Update the matching part of the [code map](code-map.md) whenever files are added, moved, or removed.

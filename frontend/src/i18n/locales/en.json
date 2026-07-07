@@ -175,10 +175,13 @@
     "aspectRatioOption": {
       "standard": "Standard",
       "phone-portrait": "Phone portrait (~19.5:9)",
+      "phone-landscape": "Phone landscape (19.5:9, default)",
       "ultra-wide": "Ultra-wide (21:9+)",
       "custom": "Custom"
     },
     "folderFrameCount": "Folder-preview frame count",
+    "gifMaxWidth": "GIF preview max width (px)",
+    "gifColors": "GIF preview quality (colors)",
     "brush": "Tile brush",
     "brushSmall": "Small tile",
     "brushEnlarged2": "Enlarged 2×2",

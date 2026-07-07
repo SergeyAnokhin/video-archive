@@ -321,6 +321,16 @@ MIGRATIONS: dict[int, list[str]] = {
         """,
         "CREATE INDEX IF NOT EXISTS idx_file_similarity_file ON file_similarity_signatures (file_id)",
     ],
+    # Post-V1: configurable animated-GIF preview size/quality (user request —
+    # GIFs were previously a fixed 480px/full-256-color render, too large for
+    # the small grid/list-view thumbnail slot they're actually shown in).
+    # ALTER TABLE ... ADD COLUMN with a literal DEFAULT backfills existing
+    # rows (just the one `preview_settings` singleton row) automatically, so
+    # no extra seeding step is needed here.
+    11: [
+        "ALTER TABLE preview_settings ADD COLUMN gif_max_width INTEGER NOT NULL DEFAULT 640",
+        "ALTER TABLE preview_settings ADD COLUMN gif_colors INTEGER NOT NULL DEFAULT 64",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

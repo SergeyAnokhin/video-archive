@@ -85,8 +85,8 @@ def get_directory_children(
     return {"path": path, "directories": directories, "files": files}
 
 
-@router.get("/directories/preview.jpg")
-def get_directory_preview_image(path: str = Query(default="")):
+@router.get("/directories/preview.gif")
+def get_directory_preview_gif(path: str = Query(default="")):
     engine = get_engine()
     with engine.connect() as conn:
         source = get_active_source_or_404(conn)
@@ -99,5 +99,5 @@ def get_directory_preview_image(path: str = Query(default="")):
             detail={"error": {"code": "preview_not_found", "message": "No folder preview for this directory."}},
         )
     if access.protocol == "local":
-        return FileResponse(access.direct_path(preview_rel), media_type="image/jpeg")
-    return Response(content=access.read_bytes(preview_rel), media_type="image/jpeg")
+        return FileResponse(access.direct_path(preview_rel), media_type="image/gif")
+    return Response(content=access.read_bytes(preview_rel), media_type="image/gif")

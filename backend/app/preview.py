@@ -1,7 +1,8 @@
 """Preview collage generation (Specification §9): frame sampling + local
 detection-based tile selection + PIL collage rendering, used by the
 `preview` job handler (`app/jobs/preview.py`) for both video previews and
-folder previews.
+folder previews. Also renders a lightweight animated GIF loop from the same
+sampled frames (`render_gif()`) for grid/list-view hover previews.
 
 Frame extraction shells out to ffmpeg per sampled timestamp (small frame
 counts per video, so this stays cheap); detection is always best-effort via
@@ -11,7 +12,6 @@ is picked by blur score alone when no face/person model is available.
 
 from __future__ import annotations
 
-import math
 import random
 import subprocess
 import uuid
@@ -30,6 +30,10 @@ MARGIN_PX = 6
 GAP_PX = 4
 CAPTION_HEIGHT_PX = 40
 CAPTION_COLOR = (230, 230, 230)
+
+GIF_MAX_WIDTH = 640
+GIF_DEFAULT_COLORS = 64
+GIF_FRAME_DURATION_MS = 450
 
 
 class PreviewError(Exception):
@@ -235,10 +239,64 @@ def render_collage(
     canvas.convert("RGB").save(dest_path, format="JPEG", quality=quality)
 
 
+# --- animated GIF preview ---------------------------------------------------
+
+
+def render_gif(
+    images: list,
+    dest_path: Path,
+    aspect_ratio: float,
+    *,
+    max_width: int = GIF_MAX_WIDTH,
+    colors: int = GIF_DEFAULT_COLORS,
+) -> None:
+    """Compose frames into a small looping GIF for grid/list-view hover
+    previews — a lighter, lower-fidelity companion to the JPEG collage.
+    Each frame is cover-cropped to `aspect_ratio` (user request), same as
+    the collage's tiles, so a native-ratio source video never appears
+    letterboxed inside the fixed-ratio preview slot. `max_width`/`colors`
+    (user request — GIFs previously matched the collage's fidelity despite
+    only ever being shown in a small hover thumbnail) are configurable via
+    `preview_settings.py`'s `gif_max_width`/`gif_colors`; a smaller palette
+    shrinks file size at the cost of banding, which is an acceptable
+    trade-off at this size."""
+    target_w = max_width
+    target_h = max(1, round(target_w / aspect_ratio))
+    frames = []
+    for image_bgr in images:
+        if image_bgr is None:
+            continue
+        pil_image = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
+        fitted = _cover_resize(pil_image, target_w, target_h)
+        frames.append(fitted.convert("P", palette=Image.ADAPTIVE, colors=colors))
+    if not frames:
+        return
+
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    frames[0].save(
+        dest_path,
+        format="GIF",
+        save_all=True,
+        append_images=frames[1:],
+        duration=GIF_FRAME_DURATION_MS,
+        loop=0,
+        optimize=True,
+    )
+
+
 # --- file (video) preview ----------------------------------------------------
 
 
-def generate_file_preview(video_path: Path, dest_path: Path, *, layout: dict, aspect_ratio: float) -> None:
+def generate_file_preview(
+    video_path: Path,
+    dest_path: Path,
+    *,
+    layout: dict,
+    aspect_ratio: float,
+    gif_dest_path: Path | None = None,
+    gif_max_width: int = GIF_MAX_WIDTH,
+    gif_colors: int = GIF_DEFAULT_COLORS,
+) -> None:
     tiles = compute_layout_tiles(layout["grid_rows"], layout["grid_cols"], layout["layout_definition"])
 
     info = conversion.probe_media(video_path)
@@ -249,6 +307,9 @@ def generate_file_preview(video_path: Path, dest_path: Path, *, layout: dict, as
     images = fill_missing_frames([extract_frame_image(video_path, ts) for ts in timestamps])
     if not any(img is not None for img in images):
         raise PreviewError("Could not extract any frames from the source video.")
+
+    if gif_dest_path is not None:
+        render_gif(images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors)
 
     frame_infos = [_score_frame(img) for img in images]
     assignment = select_frames_for_tiles(
@@ -262,13 +323,7 @@ def generate_file_preview(video_path: Path, dest_path: Path, *, layout: dict, as
     )
 
 
-# --- folder preview -----------------------------------------------------
-
-
-def _grid_dims_for_count(count: int) -> tuple[int, int]:
-    cols = max(1, math.ceil(math.sqrt(count)))
-    rows = max(1, math.ceil(count / cols))
-    return rows, cols
+# --- folder preview (animated GIF, diverse across videos/subfolders) ------
 
 
 def evenly_spaced_sample(items: list, count: int) -> list:
@@ -278,6 +333,61 @@ def evenly_spaced_sample(items: list, count: int) -> list:
         return [items[len(items) // 2]]
     step = (len(items) - 1) / (count - 1)
     return [items[round(i * step)] for i in range(count)]
+
+
+def _spread_with_repeats(items: list, count: int) -> list:
+    """Like `evenly_spaced_sample`, but when `count` exceeds `len(items)` it
+    round-robins through `items` instead of returning fewer than `count`
+    entries — used to fill a folder GIF's frame budget when a folder (or
+    subfolder share of it) has fewer distinct videos than frames needed."""
+    if not items:
+        return []
+    if count <= len(items):
+        return evenly_spaced_sample(items, count)
+    return [items[i % len(items)] for i in range(count)]
+
+
+def _group_by_next_path_segment(rel_paths: list[str]) -> dict[str, list[str]]:
+    """Group POSIX-style relative paths by their first path segment
+    (immediate subfolder), stripping that segment from the grouped values.
+    Paths with no further subdirectory (direct children) are grouped under
+    the empty-string key."""
+    groups: dict[str, list[str]] = {}
+    for rel in rel_paths:
+        head, sep, rest = rel.partition("/")
+        key, value = (head, rest) if sep else ("", head)
+        groups.setdefault(key, []).append(value)
+    return groups
+
+
+def diverse_video_frame_plan(video_paths: list[str], frame_count: int) -> list[str]:
+    """Choose `frame_count` videos (relative paths, repeats allowed) for a
+    folder's animated GIF preview (user request): recursively split the
+    frame budget evenly across sibling subfolders before splitting across
+    sibling videos, so the animation mixes frames from different
+    subfolders/videos instead of clustering on one source. `video_paths`
+    must be relative to the folder being previewed (not the source root)."""
+    if frame_count <= 0 or not video_paths:
+        return []
+
+    unique_paths = sorted(set(video_paths))
+    if len(unique_paths) == 1:
+        return unique_paths * frame_count
+
+    groups = _group_by_next_path_segment(video_paths)
+    if len(groups) <= 1:
+        return _spread_with_repeats(unique_paths, frame_count)
+
+    ordered_keys = sorted(groups)
+    base_share, extra = divmod(frame_count, len(ordered_keys))
+    plan: list[str] = []
+    for index, key in enumerate(ordered_keys):
+        share = base_share + (1 if index < extra else 0)
+        if share == 0:
+            continue
+        prefix = f"{key}/" if key else ""
+        plan.extend(f"{prefix}{rel}" for rel in diverse_video_frame_plan(groups[key], share))
+    return plan
 
 
 def _pick_representative_frame(video_path: Path, candidate_count: int = 3):
@@ -301,23 +411,22 @@ def _pick_representative_frame(video_path: Path, candidate_count: int = 3):
     return candidates[best_idx]
 
 
-def generate_folder_preview(
-    video_paths: list[Path], frame_count: int, dest_path: Path, caption: str, aspect_ratio: float
-) -> None:
-    if not video_paths:
-        raise PreviewError("No videos available to build a folder preview.")
+def pick_representative_frames(video_path: Path, count: int) -> list:
+    """Extract `count` frames from the interior of `video_path` (never the
+    very first frame, Specification §9.4 sampling rule). For `count == 1`
+    this reuses `_pick_representative_frame`'s face/person/blur best-of-3
+    selection; for `count > 1` (a video repeated across a folder GIF's
+    frame plan, Specification §9.5) it instead spreads `count` interior
+    timestamps evenly, since the goal is temporal variety, not a single
+    "best" frame repeated with itself."""
+    if count <= 0:
+        return []
+    if count == 1:
+        frame = _pick_representative_frame(video_path)
+        return [frame] if frame is not None else []
 
-    chosen_paths = evenly_spaced_sample(video_paths, frame_count)
-    images = [img for img in (_pick_representative_frame(p) for p in chosen_paths) if img is not None]
-    if not images:
-        raise PreviewError("Could not extract any frames for the folder preview.")
-
-    rows, cols = _grid_dims_for_count(frame_count)
-    cell_count = rows * cols
-    base_images = list(images)
-    while len(images) < cell_count:
-        images.append(base_images[len(images) % len(base_images)])
-    images = images[:cell_count]
-
-    tiles = compute_layout_tiles(rows, cols, [])
-    render_collage(images, tiles, caption, aspect_ratio, dest_path, grid_rows=rows, grid_cols=cols)
+    info = conversion.probe_media(video_path)
+    if info is None or not info.get("duration"):
+        return []
+    timestamps = sample_interior_timestamps(info["duration"], count)
+    return [img for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]

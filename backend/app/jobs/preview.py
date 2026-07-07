@@ -2,22 +2,28 @@
 
 Handles both scopes:
 
-- **directory** (recursive): generates a `<name>.jpg` collage for every
-  supported video under the subtree (skip-processed rule, always excluding
-  test-mode artifacts), then refreshes `folder-preview.jpg` for the target
-  directory and every descendant directory that contains at least one
-  supported video (Specification §9.5).
-- **file**: generates a `<name>.jpg` collage for one video; always
+- **directory** (recursive): generates a `<name>.jpg` collage (plus a
+  companion animated GIF stored in `.video-archive/previews/`, user request)
+  for every supported video under the subtree (skip-processed rule, always
+  excluding test-mode artifacts), then refreshes `folder-preview.gif` for
+  the target directory and every descendant directory that contains at
+  least one supported video (Specification §9.5) — an animated GIF cycling
+  through frames drawn from different videos/subfolders for diversity
+  (`preview.diverse_video_frame_plan()`, user request), not a static
+  collage.
+- **file**: generates a `<name>.jpg` collage plus GIF for one video; always
   regenerates (no skip-processed toggle — this is an explicit single-file
   action, not a bulk job).
 
 The layout preset and global settings (aspect ratio, folder-preview frame
-count) are resolved once at launch and reused for the whole job (Job Model
-"Preview Jobs" — "use preview settings snapshot at launch time").
+count, GIF max width/color count — user request) are resolved once at
+launch and reused for the whole job (Job Model "Preview Jobs" — "use
+preview settings snapshot at launch time").
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from contextlib import ExitStack
 from datetime import datetime, timezone
 
@@ -25,7 +31,7 @@ from sqlalchemy import text
 
 from app import preview, preview_layouts, preview_settings, similarity
 from app.jobs import service
-from app.media import is_test_artifact, sibling_relative_path
+from app.media import is_test_artifact, preview_gif_relative_path, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
 
 
@@ -76,15 +82,21 @@ def _try_store_similarity_signature(engine, job_id: str, file_id: str, video_pat
 
 
 def _generate_one_file(
-    engine, job_id: str, access: SourceAccess, file_row, layout: dict, aspect_ratio: float
+    engine, job_id: str, access: SourceAccess, file_row, layout: dict, aspect_ratio: float, settings: dict
 ) -> str:
     if not access.exists(file_row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
     with access.local_copy(file_row.relative_path) as video_path:
         local_dest = video_path.with_suffix(".jpg")
-        preview.generate_file_preview(video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio)
+        local_gif = video_path.parent / f"{video_path.stem}.preview.gif"
+        preview.generate_file_preview(
+            video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
+            gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
+        )
         dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
         access.commit_new_file(local_dest, dest_rel)
+        if local_gif.exists():
+            access.commit_new_file(local_gif, preview_gif_relative_path(file_row.relative_path))
         _try_store_similarity_signature(engine, job_id, file_row.id, video_path)
     return dest_rel
 
@@ -102,11 +114,13 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, access, params, layout, aspect_ratio)
+        return _run_file_scope(engine, job, access, params, layout, aspect_ratio, settings)
     return _run_directory_scope(engine, job, access, params, layout, aspect_ratio, settings)
 
 
-def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, layout: dict, aspect_ratio: float) -> tuple[str, str]:
+def _run_file_scope(
+    engine, job: dict, access: SourceAccess, params: dict, layout: dict, aspect_ratio: float, settings: dict
+) -> tuple[str, str]:
     file_id = params.get("file_id")
     with engine.connect() as conn:
         row = conn.execute(text("SELECT * FROM files WHERE id = :id"), {"id": file_id}).fetchone()
@@ -116,7 +130,7 @@ def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, layou
     item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
     service.start_job_item(engine, item_id)
     try:
-        output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio)
+        output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio, settings)
         _mark_file_previewed(engine, row.id)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
@@ -179,7 +193,7 @@ def _run_directory_scope(
 
         service.start_job_item(engine, item_id)
         try:
-            output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio)
+            output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio, settings)
             _mark_file_previewed(engine, row.id)
             service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
             service.log_event(
@@ -217,7 +231,7 @@ def _run_directory_scope(
 def _generate_folder_previews(
     engine, job: dict, source_id: str, access: SourceAccess, relative_path: str, settings: dict
 ) -> tuple[int, bool]:
-    """Refresh folder-preview.jpg for the target directory and every
+    """Refresh folder-preview.gif for the target directory and every
     descendant directory that contains at least one supported video
     (Specification §9.5). Returns `(updated_count, cancelled)`."""
     with engine.connect() as conn:
@@ -264,20 +278,47 @@ def _generate_folder_previews(
         if not candidate_rels:
             continue
 
-        # Only materialize the videos actually used by the collage (Specification
+        # Frame plan is computed on paths relative to *this* directory (not
+        # the source root) so `diverse_video_frame_plan()` groups by the
+        # directory's own immediate subfolders rather than collapsing every
+        # candidate into one "group" sharing the directory's own ancestry.
+        prefix = f"{directory.relative_path}/" if directory.relative_path else ""
+        local_rels = [rel[len(prefix):] for rel in candidate_rels]
+        plan = [f"{prefix}{rel}" for rel in preview.diverse_video_frame_plan(local_rels, frame_count)]
+        if not plan:
+            continue
+
+        # Only materialize the videos actually used by the GIF (Specification
         # §9.1 "representative frames", default 4) — matters for SMB sources,
         # where materializing means a network download per video.
-        chosen_rels = preview.evenly_spaced_sample(candidate_rels, frame_count)
-        dest_name = "folder-preview.jpg"
+        path_counts = Counter(plan)
+        dest_name = "folder-preview.gif"
         dest_rel = f"{directory.relative_path}/{dest_name}" if directory.relative_path else dest_name
-        caption = directory.name or access.root_name()
 
         try:
             with ExitStack() as stack:
-                local_paths = [stack.enter_context(access.local_copy(rel)) for rel in chosen_rels]
+                local_paths = {rel: stack.enter_context(access.local_copy(rel)) for rel in path_counts}
+                frames_by_rel = {
+                    rel: preview.pick_representative_frames(local_paths[rel], count)
+                    for rel, count in path_counts.items()
+                }
+                cursors: dict[str, int] = {rel: 0 for rel in path_counts}
+                images = []
+                for rel in plan:
+                    frames = frames_by_rel[rel]
+                    idx = cursors[rel]
+                    cursors[rel] += 1
+                    if idx < len(frames):
+                        images.append(frames[idx])
+
                 stage_dir = stack.enter_context(access.stage_output_dir(directory.relative_path))
                 local_dest = stage_dir / dest_name
-                preview.generate_folder_preview(local_paths, frame_count, local_dest, caption, aspect_ratio)
+                preview.render_gif(
+                    images, local_dest, aspect_ratio,
+                    max_width=settings["gif_max_width"], colors=settings["gif_colors"],
+                )
+                if not local_dest.exists():
+                    raise preview.PreviewError("Could not extract any frames for the folder preview.")
                 access.commit_new_file(local_dest, dest_rel)
             _mark_folder_previewed(engine, directory.id)
             service.log_event(

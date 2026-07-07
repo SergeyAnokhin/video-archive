@@ -175,10 +175,13 @@
     "aspectRatioOption": {
       "standard": "Стандартное",
       "phone-portrait": "Портрет телефона (~19,5:9)",
+      "phone-landscape": "Широкий телефон (19,5:9, по умолчанию)",
       "ultra-wide": "Широкоформатное (21:9 и шире)",
       "custom": "Свой вариант"
     },
     "folderFrameCount": "Число кадров для превью папки",
+    "gifMaxWidth": "Макс. ширина GIF-превью (px)",
+    "gifColors": "Качество GIF-превью (цветов)",
     "brush": "Кисть тайла",
     "brushSmall": "Маленький тайл",
     "brushEnlarged2": "Укрупнённый 2×2",

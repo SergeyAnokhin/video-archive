@@ -419,7 +419,7 @@ function FolderCard({
       <div className="library-card__thumb">
         {showThumbnail ? (
           <img
-            src={`/api/directories/preview.jpg?path=${encodeURIComponent(dir.path)}`}
+            src={`/api/directories/preview.gif?path=${encodeURIComponent(dir.path)}`}
             alt=""
             className="library-card__thumb-img"
           />
@@ -463,6 +463,7 @@ interface FileCardProps {
 
 function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProps) {
   const { t } = useTranslation()
+  const [gifFailed, setGifFailed] = useState(false)
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
   const showThumbnail = previewsVisible && file.is_video_supported && file.has_preview_asset
@@ -472,7 +473,12 @@ function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProps) {
       <div className="library-card__thumb-frame">
         <button type="button" className="library-card__thumb" aria-label={t('library.play')} title={t('library.play')} onClick={onPlay}>
           {showThumbnail ? (
-            <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="library-card__thumb-img" />
+            <img
+              src={gifFailed ? `/api/files/${file.id}/preview.jpg` : `/api/files/${file.id}/preview.gif`}
+              alt=""
+              className="library-card__thumb-img"
+              onError={() => setGifFailed(true)}
+            />
           ) : file.is_video_supported ? (
             <Film size={28} />
           ) : (

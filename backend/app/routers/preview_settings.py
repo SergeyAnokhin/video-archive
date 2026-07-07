@@ -14,10 +14,14 @@ router = APIRouter()
 
 
 class PreviewSettingsRequest(BaseModel):
-    aspect_ratio: Literal["standard", "phone-portrait", "ultra-wide", "custom"] = "standard"
+    aspect_ratio: Literal["standard", "phone-portrait", "phone-landscape", "ultra-wide", "custom"] = (
+        service.DEFAULT_ASPECT_RATIO
+    )
     aspect_ratio_custom_width: int | None = None
     aspect_ratio_custom_height: int | None = None
     folder_preview_frame_count: int = service.DEFAULT_FOLDER_PREVIEW_FRAME_COUNT
+    gif_max_width: int = service.DEFAULT_GIF_MAX_WIDTH
+    gif_colors: int = service.DEFAULT_GIF_COLORS
 
 
 @router.get("/preview-settings")

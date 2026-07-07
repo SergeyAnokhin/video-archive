@@ -159,7 +159,7 @@ export interface VariantOverride {
 }
 
 export type TimelineFlow = 'row' | 'column' | 'shuffle'
-export type AspectRatioMode = 'standard' | 'phone-portrait' | 'ultra-wide' | 'custom'
+export type AspectRatioMode = 'standard' | 'phone-portrait' | 'phone-landscape' | 'ultra-wide' | 'custom'
 
 export interface EnlargedTile {
   row: number
@@ -193,6 +193,8 @@ export interface PreviewSettings {
   aspect_ratio_custom_width: number | null
   aspect_ratio_custom_height: number | null
   folder_preview_frame_count: number
+  gif_max_width: number
+  gif_colors: number
   updated_at: string
 }
 

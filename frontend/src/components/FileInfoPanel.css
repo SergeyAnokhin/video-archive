@@ -1,8 +1,45 @@
+.file-info-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* Account for the overlay's own padding (var(--space-4) on every side)
+     so the dialog never overflows the viewport. */
+  width: min(1400px, calc(100vw - 2 * var(--space-4) - 4px));
+  height: min(1000px, calc(100vh - 2 * var(--space-4) - 4px));
+  max-height: calc(100vh - 2 * var(--space-4) - 4px);
+}
+
+.file-info-panel .convert-dialog__title {
+  padding-right: var(--space-6, 48px);
+}
+
+.file-info-panel__close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.file-info-panel__close:hover {
+  color: var(--color-text);
+}
+
 .file-info-panel__thumb {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 160px;
+  flex: 1;
+  min-height: 0;
   margin-bottom: var(--space-2);
   color: var(--color-text-muted);
   background: var(--color-bg);
@@ -18,11 +55,41 @@
 
 .file-info-panel__status {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
   margin: 0 0 var(--space-3);
   padding: 0;
   list-style: none;
   font-size: 13px;
   color: var(--color-text-muted);
+}
+
+.file-info-panel__status-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.file-info-panel__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.file-info-panel__dot--done {
+  background: var(--color-success);
+}
+
+.file-info-panel__dot--conversion {
+  background: var(--color-warning);
+}
+
+.file-info-panel__dot--preview {
+  background: var(--color-accent);
+}
+
+.file-info-panel__dot--tag {
+  background: var(--color-danger);
 }
