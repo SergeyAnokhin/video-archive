@@ -93,3 +93,48 @@ def test_rescan_directory_job_lifecycle_over_http(tmp_path, monkeypatch):
 
         r = client.get(f"/api/jobs/{job['id']}")
         assert r.status_code == 404
+
+
+def test_pause_and_resume_endpoints_over_http(tmp_path, monkeypatch):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        engine = db_module.get_engine()
+        _insert_source_and_folder(engine, tmp_path / "source")
+
+        r = client.post("/api/jobs/does-not-exist/pause")
+        assert r.status_code == 404
+        r = client.post("/api/jobs/does-not-exist/resume")
+        assert r.status_code == 404
+
+        r = client.post("/api/jobs/rescan-directory", json={"path": ""})
+        job = r.json()
+
+        deadline_statuses = {"completed", "failed", "cancelled"}
+        import time
+
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            r = client.get(f"/api/jobs/{job['id']}")
+            if r.json()["status"] in deadline_statuses:
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("job did not finish via HTTP in time")
+        assert r.json()["status"] == "completed"
+
+        # Finished jobs can't be paused or resumed.
+        r = client.post(f"/api/jobs/{job['id']}/pause")
+        assert r.status_code == 409
+        r = client.post(f"/api/jobs/{job['id']}/resume")
+        assert r.status_code == 409
+
+        # optimize_db has no per-item loop, so it's never pausable, even
+        # while still queued -- checked before status, so no race with the
+        # live worker thread here.
+        r = client.post("/api/jobs/optimize-database")
+        opt_job = r.json()
+        r = client.post(f"/api/jobs/{opt_job['id']}/pause")
+        assert r.status_code == 409
+        assert r.json()["detail"]["error"]["code"] == "job_not_pausable"

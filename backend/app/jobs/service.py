@@ -61,6 +61,52 @@ def clear_cancel_request(job_id: str) -> None:
         _cancel_requested.discard(job_id)
 
 
+# --- cooperative pause registry ---------------------------------------------
+# Same pattern as cancellation above, but resumable: pausing a *running* job
+# is a cooperative request the worker notices between items (job handlers
+# check both at every checkpoint via `check_stop_requested`); pausing a
+# *queued* job (not picked up by a worker yet) can just flip its status
+# directly, same as cancel_job's queued branch.
+
+_pause_requested: set[str] = set()
+_pause_lock = threading.Lock()
+
+# Job types whose handlers process a list of items with cooperative
+# checkpoints between them (see `check_stop_requested` call sites in
+# `app/jobs/*.py`). `optimize_db`/`backup`/`restore` run one atomic action
+# with no per-item loop, so pausing them wouldn't do anything until that
+# single action finishes anyway -- excluded here so `pause_job` rejects them
+# with a clear error instead of silently no-op'ing.
+PAUSABLE_JOB_TYPES = frozenset({"rescan", "convert", "preview", "tag", "cleanup"})
+
+
+def request_pause(job_id: str) -> None:
+    with _pause_lock:
+        _pause_requested.add(job_id)
+
+
+def is_pause_requested(job_id: str) -> bool:
+    with _pause_lock:
+        return job_id in _pause_requested
+
+
+def clear_pause_request(job_id: str) -> None:
+    with _pause_lock:
+        _pause_requested.discard(job_id)
+
+
+def check_stop_requested(job_id: str) -> str | None:
+    """Returns `"cancel"`/`"pause"` if either was requested for this job, or
+    `None` -- the single check every job-handler loop checkpoint uses instead
+    of calling `is_cancel_requested`/`is_pause_requested` separately. Cancel
+    wins if somehow both are set, since it's the more final of the two."""
+    if is_cancel_requested(job_id):
+        return "cancel"
+    if is_pause_requested(job_id):
+        return "pause"
+    return None
+
+
 # --- row <-> dict mapping ----------------------------------------------------
 
 
@@ -203,10 +249,19 @@ def get_current_job_summary(engine) -> dict | None:
     return _job_row_to_dict(row) if row else None
 
 
-def claim_next_queued_job(engine) -> dict | None:
+def claim_next_queued_job(engine, job_types: frozenset[str] | None = None) -> dict | None:
+    """`job_types`, when given, restricts the claim to that set (the
+    concurrency-lane worker calls this once per lane, each with its own
+    fixed set of job types, so at most one job per lane runs at a time)."""
+    params: dict = {}
+    where = "status = 'queued'"
+    if job_types is not None:
+        placeholders = ", ".join(f":jt{i}" for i in range(len(job_types)))
+        where += f" AND job_type IN ({placeholders})"
+        params.update({f"jt{i}": jt for i, jt in enumerate(job_types)})
     with engine.connect() as conn:
         row = conn.execute(
-            text("SELECT * FROM jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1")
+            text(f"SELECT * FROM jobs WHERE {where} ORDER BY created_at LIMIT 1"), params
         ).fetchone()
     return _job_row_to_dict(row) if row else None
 
@@ -253,6 +308,10 @@ def cancel_job(engine, job_id: str) -> dict | None:
 
     if job["status"] == "queued":
         finish_job(engine, job_id, "cancelled", "Cancelled before starting.")
+    elif job["status"] == "paused":
+        # No worker owns a paused job (it already released its lane), so it
+        # can be finished directly, same as a not-yet-started queued job.
+        finish_job(engine, job_id, "cancelled", "Cancelled while paused.")
     elif job["status"] == "running":
         # Log before flagging: once the worker can see the cancel request it
         # may finish and log job_cancel_honored/job_cancelled within
@@ -263,6 +322,61 @@ def cancel_job(engine, job_id: str) -> dict | None:
     else:
         raise JobConflictError("job_not_cancellable", f"Job is already {job['status']}.")
 
+    return get_job(engine, job_id)
+
+
+def mark_job_paused(engine, job_id: str, message: str | None = None) -> None:
+    """Called by the worker once a running job's handler honors a pause
+    request and returns the `"paused"` status -- unlike `finish_job`, this
+    leaves `finished_at` unset since a paused job isn't done, just parked."""
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE jobs SET status = 'paused', updated_at = :now, summary_message = :msg WHERE id = :id"),
+            {"now": now, "msg": message, "id": job_id},
+        )
+    log_event(engine, job_id, None, "info", "job_paused", message or "Job paused.")
+
+
+def pause_job(engine, job_id: str) -> dict | None:
+    job = get_job(engine, job_id)
+    if job is None:
+        return None
+
+    if job["job_type"] not in PAUSABLE_JOB_TYPES:
+        raise JobConflictError(
+            "job_not_pausable", f"Jobs of type '{job['job_type']}' cannot be paused."
+        )
+
+    if job["status"] == "queued":
+        mark_job_paused(engine, job_id, "Paused before starting.")
+    elif job["status"] == "running":
+        # Same before/after-request logging order concern as cancel_job.
+        log_event(engine, job_id, None, "info", "job_pause_requested", "Pause requested.")
+        request_pause(job_id)
+    else:
+        raise JobConflictError("job_not_pausable", f"Job is already {job['status']}.")
+
+    return get_job(engine, job_id)
+
+
+def resume_job(engine, job_id: str) -> dict | None:
+    job = get_job(engine, job_id)
+    if job is None:
+        return None
+
+    if job["status"] != "paused":
+        raise JobConflictError(
+            "job_not_resumable", f"Only paused jobs can be resumed (status: {job['status']})."
+        )
+
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE jobs SET status = 'queued', updated_at = :now WHERE id = :id"),
+            {"now": now, "id": job_id},
+        )
+    log_event(engine, job_id, None, "info", "job_resumed", "Job resumed.")
     return get_job(engine, job_id)
 
 

@@ -1,8 +1,10 @@
-"""Job endpoints (API §6-9): CRUD, cancellation, restart, and the trigger
-endpoints for every job type — `rescan`, `convert` (directory/file scope,
-including the file-scope variant-comparison sweep), `preview`, `tag`, and the
-Stage 8 maintenance actions `cleanup`/`optimize_db`. Backup/restore triggers
-live in `app/routers/backups.py` instead, alongside backup listing/deletion.
+"""Job endpoints (API §6-9): CRUD, cancellation, pause/resume (post-V1 user
+request — see `app/jobs/service.py`'s `PAUSABLE_JOB_TYPES`), restart, and the
+trigger endpoints for every job type — `rescan`, `convert` (directory/file
+scope, including the file-scope variant-comparison sweep), `preview`, `tag`,
+and the Stage 8 maintenance actions `cleanup`/`optimize_db`. Backup/restore
+triggers live in `app/routers/backups.py` instead, alongside backup
+listing/deletion.
 """
 
 from __future__ import annotations
@@ -65,6 +67,30 @@ def cancel_job(job_id: str):
     engine = get_engine()
     try:
         job = service.cancel_job(engine, job_id)
+    except service.JobConflictError as exc:
+        raise _conflict_error(exc)
+    if job is None:
+        raise _not_found_error(job_id)
+    return job
+
+
+@router.post("/jobs/{job_id}/pause")
+def pause_job(job_id: str):
+    engine = get_engine()
+    try:
+        job = service.pause_job(engine, job_id)
+    except service.JobConflictError as exc:
+        raise _conflict_error(exc)
+    if job is None:
+        raise _not_found_error(job_id)
+    return job
+
+
+@router.post("/jobs/{job_id}/resume")
+def resume_job(job_id: str):
+    engine = get_engine()
+    try:
+        job = service.resume_job(engine, job_id)
     except service.JobConflictError as exc:
         raise _conflict_error(exc)
     if job is None:

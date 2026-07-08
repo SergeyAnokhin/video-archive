@@ -40,10 +40,13 @@ def run_cleanup_job(engine, job: dict) -> tuple[str, str]:
 
     removed_files = 0
     for row in file_rows:
-        if service.is_cancel_requested(job["id"]):
-            message = f"Cancelled after removing {removed_files} stale file record(s)."
-            service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-            return "cancelled", message
+        stop = service.check_stop_requested(job["id"])
+        if stop:
+            verb = "Cancelled" if stop == "cancel" else "Paused"
+            status = "cancelled" if stop == "cancel" else "paused"
+            message = f"{verb} after removing {removed_files} stale file record(s)."
+            service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
+            return status, message
 
         if access.exists(row.relative_path):
             continue
@@ -59,12 +62,15 @@ def run_cleanup_job(engine, job: dict) -> tuple[str, str]:
 
     removed_dirs = 0
     for row in dir_rows:
-        if service.is_cancel_requested(job["id"]):
+        stop = service.check_stop_requested(job["id"])
+        if stop:
+            verb = "Cancelled" if stop == "cancel" else "Paused"
+            status = "cancelled" if stop == "cancel" else "paused"
             message = (
-                f"Cancelled after removing {removed_files} stale file(s) and {removed_dirs} stale folder(s)."
+                f"{verb} after removing {removed_files} stale file(s) and {removed_dirs} stale folder(s)."
             )
-            service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-            return "cancelled", message
+            service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
+            return status, message
 
         if not row.relative_path or access.is_dir(row.relative_path):
             continue

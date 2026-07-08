@@ -173,12 +173,13 @@ def _run_directory_scope(
     skipped = 0
     failed = 0
     total = len(candidates)
-    cancelled = False
+    stop_status: str | None = None
     service.set_job_total_items(engine, job["id"], total)
 
     for row in candidates:
-        if service.is_cancel_requested(job["id"]):
-            cancelled = True
+        stop = service.check_stop_requested(job["id"])
+        if stop:
+            stop_status = "cancelled" if stop == "cancel" else "paused"
             break
 
         item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
@@ -210,13 +211,17 @@ def _run_directory_scope(
             )
 
     folder_count = 0
-    if not cancelled:
-        folder_count, cancelled = _generate_folder_previews(engine, job, source_id, access, relative_path, settings)
+    if stop_status is None:
+        folder_count, stop_status = _generate_folder_previews(
+            engine, job, source_id, access, relative_path, settings
+        )
 
-    if cancelled:
-        message = f"Cancelled after {processed} of {total} file(s)."
-        service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-        return "cancelled", message
+    if stop_status is not None:
+        verb = "Cancelled" if stop_status == "cancelled" else "Paused"
+        event = "job_cancel_honored" if stop_status == "cancelled" else "job_pause_honored"
+        message = f"{verb} after {processed} of {total} file(s)."
+        service.log_event(engine, job["id"], None, "info", event, message)
+        return stop_status, message
 
     summary = f"Generated previews for {processed} of {total} file(s)"
     if skipped:
@@ -231,10 +236,11 @@ def _run_directory_scope(
 
 def _generate_folder_previews(
     engine, job: dict, source_id: str, access: SourceAccess, relative_path: str, settings: dict
-) -> tuple[int, bool]:
+) -> tuple[int, str | None]:
     """Refresh folder-preview.gif for the target directory and every
     descendant directory that contains at least one supported video
-    (Specification §9.5). Returns `(updated_count, cancelled)`."""
+    (Specification §9.5). Returns `(updated_count, stop_status)`, where
+    `stop_status` is `None`/`"cancelled"`/`"paused"`."""
     with engine.connect() as conn:
         dir_clauses = ["source_id = :sid"]
         dir_params: dict = {"sid": source_id}
@@ -251,8 +257,9 @@ def _generate_folder_previews(
     updated = 0
 
     for directory in directories:
-        if service.is_cancel_requested(job["id"]):
-            return updated, True
+        stop = service.check_stop_requested(job["id"])
+        if stop:
+            return updated, ("cancelled" if stop == "cancel" else "paused")
 
         with engine.connect() as conn:
             if directory.relative_path:
@@ -333,4 +340,4 @@ def _generate_folder_previews(
                 f"Failed folder preview for {directory.relative_path or '(root)'}: {exc}",
             )
 
-    return updated, False
+    return updated, None

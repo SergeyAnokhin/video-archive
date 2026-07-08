@@ -326,10 +326,13 @@ def _run_directory_scope(engine, job: dict, access: SourceAccess, params: dict, 
     service.set_job_total_items(engine, job["id"], total)
 
     for row in candidates:
-        if service.is_cancel_requested(job["id"]):
-            message = f"Cancelled after {processed} of {total} file(s)."
-            service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-            return "cancelled", message
+        stop = service.check_stop_requested(job["id"])
+        if stop:
+            verb = "Cancelled" if stop == "cancel" else "Paused"
+            status = "cancelled" if stop == "cancel" else "paused"
+            message = f"{verb} after {processed} of {total} file(s)."
+            service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
+            return status, message
 
         item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="convert_file")
 
@@ -415,10 +418,13 @@ def _run_variant_sweep(engine, job: dict, access: SourceAccess, row, profile: di
 
     with access.local_copy(row.relative_path) as old_path:
         for overrides in variants:
-            if service.is_cancel_requested(job["id"]):
-                message = f"Cancelled after {processed} of {total} variant(s)."
-                service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-                return "cancelled", message
+            stop = service.check_stop_requested(job["id"])
+            if stop:
+                verb = "Cancelled" if stop == "cancel" else "Paused"
+                status = "cancelled" if stop == "cancel" else "paused"
+                message = f"{verb} after {processed} of {total} variant(s)."
+                service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
+                return status, message
 
             suffix = conversion.encode_variant_suffix(profile, overrides)
             item_id = service.create_job_item(

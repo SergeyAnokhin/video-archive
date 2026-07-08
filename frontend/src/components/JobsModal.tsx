@@ -1,4 +1,4 @@
-import { Eraser, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
+import { Eraser, Pause, Play, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
@@ -12,14 +12,19 @@ interface JobsModalProps {
   onClose: () => void
 }
 
-const SECTION_ORDER: JobStatus[] = ['running', 'queued', 'failed', 'cancelled', 'completed']
+const SECTION_ORDER: JobStatus[] = ['running', 'paused', 'queued', 'failed', 'cancelled', 'completed']
 const EMPTY_ITEMS: JobItem[] = []
 const DONE_ITEM_STATUSES = new Set(['completed', 'failed', 'skipped', 'cancelled'])
 const ETA_WINDOW_MS = 5 * 60 * 1000
 
+// Mirrors `PAUSABLE_JOB_TYPES` in `backend/app/jobs/service.py`: only job
+// types with a per-item loop can honor a pause request between items --
+// `optimize_db`/`backup`/`restore` run one atomic action with no checkpoint.
+const PAUSABLE_JOB_TYPES = new Set(['rescan', 'convert', 'preview', 'tag', 'cleanup'])
+
 export function JobsModal({ onClose }: JobsModalProps) {
   const { t } = useTranslation()
-  const { jobs, activeJob, activeJobItems, refresh } = useJobs()
+  const { jobs, jobItemsById, refresh } = useJobs()
   const [logJobId, setLogJobId] = useState<string | null>(null)
   const [busyJobId, setBusyJobId] = useState<string | null>(null)
 
@@ -27,6 +32,26 @@ export function JobsModal({ onClose }: JobsModalProps) {
     setBusyJobId(jobId)
     try {
       await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
+      await refresh()
+    } finally {
+      setBusyJobId(null)
+    }
+  }
+
+  async function handlePause(jobId: string) {
+    setBusyJobId(jobId)
+    try {
+      await fetch(`/api/jobs/${jobId}/pause`, { method: 'POST' })
+      await refresh()
+    } finally {
+      setBusyJobId(null)
+    }
+  }
+
+  async function handleResume(jobId: string) {
+    setBusyJobId(jobId)
+    try {
+      await fetch(`/api/jobs/${jobId}/resume`, { method: 'POST' })
       await refresh()
     } finally {
       setBusyJobId(null)
@@ -106,18 +131,22 @@ export function JobsModal({ onClose }: JobsModalProps) {
               <h3 className="jobs-modal__section-title">
                 {t(`jobs.section.${status}`)} ({sectionJobs.length})
               </h3>
-              {sectionJobs.map((job) => (
-                <JobRow
-                  key={job.id}
-                  job={job}
-                  items={job.id === activeJob?.id ? activeJobItems : EMPTY_ITEMS}
-                  busy={busyJobId === job.id}
-                  onCancel={() => handleCancel(job.id)}
-                  onRestart={() => handleRestart(job.id)}
-                  onRemove={() => handleRemove(job.id)}
-                  onViewLog={() => setLogJobId(job.id)}
-                />
-              ))}
+              <div className="jobs-modal__section-cards">
+                {sectionJobs.map((job) => (
+                  <JobRow
+                    key={job.id}
+                    job={job}
+                    items={jobItemsById[job.id] ?? EMPTY_ITEMS}
+                    busy={busyJobId === job.id}
+                    onCancel={() => handleCancel(job.id)}
+                    onPause={() => handlePause(job.id)}
+                    onResume={() => handleResume(job.id)}
+                    onRestart={() => handleRestart(job.id)}
+                    onRemove={() => handleRemove(job.id)}
+                    onViewLog={() => setLogJobId(job.id)}
+                  />
+                ))}
+              </div>
             </section>
           )
         })}
@@ -190,14 +219,19 @@ interface JobRowProps {
   items: JobItem[]
   busy: boolean
   onCancel: () => void
+  onPause: () => void
+  onResume: () => void
   onRestart: () => void
   onRemove: () => void
   onViewLog: () => void
 }
 
-function JobRow({ job, items, busy, onCancel, onRestart, onRemove, onViewLog }: JobRowProps) {
+function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRemove, onViewLog }: JobRowProps) {
   const { t } = useTranslation()
-  const canCancel = job.status === 'queued' || job.status === 'running'
+  const canCancel = job.status === 'queued' || job.status === 'running' || job.status === 'paused'
+  const canPause =
+    (job.status === 'queued' || job.status === 'running') && PAUSABLE_JOB_TYPES.has(job.job_type)
+  const canResume = job.status === 'paused'
   const canRestart = job.status === 'failed' || job.status === 'cancelled'
   const canRemove = job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled'
   const isRunning = job.status === 'running'
@@ -228,7 +262,7 @@ function JobRow({ job, items, busy, onCancel, onRestart, onRemove, onViewLog }: 
     ? new Date(job.finished_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : null
 
-  const clickableForLog = job.status === 'running' || job.status === 'queued'
+  const clickableForLog = job.status === 'running' || job.status === 'queued' || job.status === 'paused'
 
   return (
     <div
@@ -253,6 +287,30 @@ function JobRow({ job, items, busy, onCancel, onRestart, onRemove, onViewLog }: 
           >
             <ScrollText size={16} />
           </button>
+          {canPause && (
+            <button
+              type="button"
+              className="jobs-modal__icon-btn"
+              aria-label={t('jobs.pause')}
+              title={t('jobs.pause')}
+              onClick={onPause}
+              disabled={busy}
+            >
+              <Pause size={16} />
+            </button>
+          )}
+          {canResume && (
+            <button
+              type="button"
+              className="jobs-modal__icon-btn"
+              aria-label={t('jobs.resume')}
+              title={t('jobs.resume')}
+              onClick={onResume}
+              disabled={busy}
+            >
+              <Play size={16} />
+            </button>
+          )}
           {canCancel && (
             <button
               type="button"
@@ -302,7 +360,7 @@ function JobRow({ job, items, busy, onCancel, onRestart, onRemove, onViewLog }: 
         </div>
       )}
 
-      {progressPct !== null && isRunning && (
+      {progressPct !== null && (isRunning || job.status === 'paused') && (
         <div className="jobs-modal__progress">
           <div className="jobs-modal__progress-track">
             <div className="jobs-modal__progress-fill" style={{ width: `${progressPct}%` }} />

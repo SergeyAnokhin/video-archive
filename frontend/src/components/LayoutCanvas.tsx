@@ -24,20 +24,21 @@ export function LayoutCanvas({ tiles, gridRows, gridCols, aspectRatio, caption, 
         className="preview-canvas__grid"
         style={{ gridTemplateColumns: `repeat(${gridCols}, 1fr)`, gridTemplateRows: `repeat(${gridRows}, 1fr)` }}
       >
-        {tiles.map((tile) => (
-          <button
-            key={`${tile.row}-${tile.col}`}
-            type="button"
-            className={`preview-canvas__tile preview-canvas__tile--${tile.type}`}
-            style={{
-              gridColumn: `${tile.col + 1} / span ${tile.span}`,
-              gridRow: `${tile.row + 1} / span ${tile.span}`,
-            }}
-            onClick={onCellClick ? () => onCellClick(tile.row, tile.col) : undefined}
-            disabled={!onCellClick}
-            tabIndex={onCellClick ? 0 : -1}
-          />
-        ))}
+        {tiles.map((tile) => {
+          const key = `${tile.row}-${tile.col}`
+          const className = `preview-canvas__tile preview-canvas__tile--${tile.type}`
+          const style = {
+            gridColumn: `${tile.col + 1} / span ${tile.span}`,
+            gridRow: `${tile.row + 1} / span ${tile.span}`,
+          }
+          // Non-interactive tiles render as <div> — a <button> here would nest
+          // inside the preset-card <button> in the gallery, which is invalid HTML.
+          return onCellClick ? (
+            <button key={key} type="button" className={className} style={style} onClick={() => onCellClick(tile.row, tile.col)} />
+          ) : (
+            <div key={key} className={className} style={style} />
+          )
+        })}
       </div>
       {caption !== undefined && <div className="preview-canvas__caption">{caption}</div>}
     </div>

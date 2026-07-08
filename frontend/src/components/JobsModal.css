@@ -10,7 +10,7 @@
 }
 
 .jobs-modal {
-  width: min(720px, 100%);
+  width: min(1200px, 95vw);
   max-height: 85vh;
   overflow-y: auto;
   background: var(--color-surface);
@@ -81,33 +81,40 @@
   color: var(--color-text-muted);
 }
 
+.jobs-modal__section-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
 .jobs-modal__card {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   padding: var(--space-3);
-  margin-bottom: var(--space-2);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
-.jobs-modal__card:last-child {
-  margin-bottom: 0;
-}
-
 .jobs-modal__card--running,
-.jobs-modal__card--queued {
+.jobs-modal__card--queued,
+.jobs-modal__card--paused {
   cursor: pointer;
 }
 
 .jobs-modal__card--running:hover,
-.jobs-modal__card--queued:hover {
+.jobs-modal__card--queued:hover,
+.jobs-modal__card--paused:hover {
   border-color: var(--color-accent);
 }
 
 .jobs-modal__card--running {
   border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+}
+
+.jobs-modal__card--paused {
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
 }
 
 .jobs-modal__card--failed {
@@ -151,6 +158,11 @@
 
 .jobs-modal__status-dot--queued {
   background: var(--color-warning);
+}
+
+.jobs-modal__status-dot--paused {
+  background: var(--color-warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-warning) 25%, transparent);
 }
 
 .jobs-modal__row-type {

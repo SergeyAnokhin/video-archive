@@ -59,10 +59,13 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
     service.set_job_total_items(engine, job["id"], total)
 
     for rel_file, attrs in touched_files.items():
-        if service.is_cancel_requested(job["id"]):
-            message = f"Cancelled after {processed} of {total} file(s)."
-            service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-            return "cancelled", message
+        stop = service.check_stop_requested(job["id"])
+        if stop:
+            verb = "Cancelled" if stop == "cancel" else "Paused"
+            status = "cancelled" if stop == "cancel" else "paused"
+            message = f"{verb} after {processed} of {total} file(s)."
+            service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
+            return status, message
 
         item_id = service.create_job_item(engine, job["id"], item_key=rel_file, step_name="rescan_file")
         service.start_job_item(engine, item_id)

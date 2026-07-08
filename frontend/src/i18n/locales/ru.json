@@ -316,6 +316,8 @@
     "empty": "Заданий пока нет.",
     "clearFinished": "Очистить завершённые",
     "cancel": "Отменить",
+    "pause": "Пауза",
+    "resume": "Продолжить",
     "restart": "Перезапустить",
     "remove": "Удалить",
     "scopeWholeSource": "Весь источник",
@@ -335,8 +337,9 @@
       "finishedAt": "Завершено: {{time}}"
     },
     "section": {
-      "queued": "В очереди",
       "running": "Выполняется",
+      "paused": "На паузе",
+      "queued": "В очереди",
       "completed": "Завершено",
       "failed": "Ошибка",
       "cancelled": "Отменено"

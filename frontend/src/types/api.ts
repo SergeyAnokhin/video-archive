@@ -13,7 +13,7 @@ export interface DatabaseInfo {
   schema_version: number | null
 }
 
-export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type JobStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
 export type JobItemStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped'
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 

@@ -182,7 +182,7 @@ def _run_directory_scope(
     skipped = 0
     failed = 0
     total = len(candidates)
-    cancelled = False
+    stop_status: str | None = None
     service.set_job_total_items(engine, job["id"], total)
 
     # Batch tagging (Specification §12.3, Stage 9) needs the whole pending
@@ -203,8 +203,9 @@ def _run_directory_scope(
     if batch_entry is not None:
         pending: list[tuple] = []
         for row in candidates:
-            if service.is_cancel_requested(job["id"]):
-                cancelled = True
+            stop = service.check_stop_requested(job["id"])
+            if stop:
+                stop_status = "cancelled" if stop == "cancel" else "paused"
                 break
 
             item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="tag_file")
@@ -220,7 +221,7 @@ def _run_directory_scope(
 
             pending.append((row, item_id))
 
-        if not cancelled and pending:
+        if stop_status is None and pending:
             batch_processed, pending = _run_batch(
                 engine, job, access, pending, vocabulary, settings, batch_entry, dead_entries
             )
@@ -230,8 +231,9 @@ def _run_directory_scope(
 
     if remaining is not None:
         for row, item_id in remaining:
-            if service.is_cancel_requested(job["id"]):
-                cancelled = True
+            stop = service.check_stop_requested(job["id"])
+            if stop:
+                stop_status = "cancelled" if stop == "cancel" else "paused"
                 break
             if _process_pending_file(engine, job, access, row, item_id, vocabulary, settings, entries, dead_entries):
                 processed += 1
@@ -239,8 +241,9 @@ def _run_directory_scope(
                 failed += 1
     else:
         for row in candidates:
-            if service.is_cancel_requested(job["id"]):
-                cancelled = True
+            stop = service.check_stop_requested(job["id"])
+            if stop:
+                stop_status = "cancelled" if stop == "cancel" else "paused"
                 break
 
             item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="tag_file")
@@ -259,10 +262,12 @@ def _run_directory_scope(
             else:
                 failed += 1
 
-    if cancelled:
-        message = f"Cancelled after {processed} of {total} file(s)."
-        service.log_event(engine, job["id"], None, "info", "job_cancel_honored", message)
-        return "cancelled", message
+    if stop_status is not None:
+        verb = "Cancelled" if stop_status == "cancelled" else "Paused"
+        event = "job_cancel_honored" if stop_status == "cancelled" else "job_pause_honored"
+        message = f"{verb} after {processed} of {total} file(s)."
+        service.log_event(engine, job["id"], None, "info", event, message)
+        return stop_status, message
 
     summary = f"Tagged {processed} of {total} file(s)"
     if skipped:
@@ -293,7 +298,7 @@ def _run_batch(
     unresolved: list[tuple] = []
 
     for row, item_id in pending:
-        if service.is_cancel_requested(job["id"]):
+        if service.check_stop_requested(job["id"]):
             unresolved.append((row, item_id))
             continue
 

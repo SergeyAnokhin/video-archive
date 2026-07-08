@@ -316,6 +316,8 @@
     "empty": "No jobs yet.",
     "clearFinished": "Clear finished",
     "cancel": "Cancel",
+    "pause": "Pause",
+    "resume": "Resume",
     "restart": "Restart",
     "remove": "Remove",
     "scopeWholeSource": "Whole source",
@@ -335,8 +337,9 @@
       "finishedAt": "Finished: {{time}}"
     },
     "section": {
-      "queued": "Queued",
       "running": "Running",
+      "paused": "Paused",
+      "queued": "Queued",
       "completed": "Completed",
       "failed": "Failed",
       "cancelled": "Cancelled"
