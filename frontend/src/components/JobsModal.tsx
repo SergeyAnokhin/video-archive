@@ -1,8 +1,9 @@
 import { Eraser, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
-import type { JobStatus, JobSummary } from '../types/api'
+import type { JobItem, JobStatus, JobSummary } from '../types/api'
+import { formatElapsed, type DurationUnitLabels } from '../utils/format'
 import { LogViewerModal } from './LogViewerModal'
 import './JobsModal.css'
 
@@ -11,10 +12,13 @@ interface JobsModalProps {
 }
 
 const SECTION_ORDER: JobStatus[] = ['running', 'queued', 'failed', 'cancelled', 'completed']
+const EMPTY_ITEMS: JobItem[] = []
+const DONE_ITEM_STATUSES = new Set(['completed', 'failed', 'skipped', 'cancelled'])
+const ETA_WINDOW_MS = 5 * 60 * 1000
 
 export function JobsModal({ onClose }: JobsModalProps) {
   const { t } = useTranslation()
-  const { jobs, refresh } = useJobs()
+  const { jobs, activeJob, activeJobItems, refresh } = useJobs()
   const [logJobId, setLogJobId] = useState<string | null>(null)
   const [busyJobId, setBusyJobId] = useState<string | null>(null)
 
@@ -105,6 +109,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
                 <JobRow
                   key={job.id}
                   job={job}
+                  items={job.id === activeJob?.id ? activeJobItems : EMPTY_ITEMS}
                   busy={busyJobId === job.id}
                   onCancel={() => handleCancel(job.id)}
                   onRestart={() => handleRestart(job.id)}
@@ -135,8 +140,65 @@ export function JobsModal({ onClose }: JobsModalProps) {
   )
 }
 
+/** Tracks (time, doneCount) samples for the last `ETA_WINDOW_MS` while a job
+ * is running, so the remaining time can be estimated from the recent
+ * completion rate instead of the average over the job's whole lifetime. */
+function useEtaSeconds(jobId: string, isRunning: boolean, done: number, total: number | null): number | null {
+  const historyRef = useRef<{ time: number; done: number }[]>([])
+  const jobIdRef = useRef(jobId)
+
+  if (jobIdRef.current !== jobId) {
+    jobIdRef.current = jobId
+    historyRef.current = []
+  }
+
+  useEffect(() => {
+    if (!isRunning) return
+    const now = Date.now()
+    const history = historyRef.current
+    const lastEntry = history[history.length - 1]
+    if (!lastEntry || lastEntry.done !== done) {
+      history.push({ time: now, done })
+    }
+    const cutoff = now - ETA_WINDOW_MS
+    while (history.length > 1 && history[0].time < cutoff) {
+      history.shift()
+    }
+  }, [isRunning, done])
+
+  if (!isRunning || total === null || total <= 0) return null
+  const history = historyRef.current
+  if (history.length < 2) return null
+
+  const first = history[0]
+  const last = history[history.length - 1]
+  const elapsedMs = last.time - first.time
+  const deltaDone = last.done - first.done
+  if (deltaDone <= 0 || elapsedMs <= 0) return null
+
+  const remaining = total - done
+  if (remaining <= 0) return 0
+  const rate = deltaDone / (elapsedMs / 1000)
+  return remaining / rate
+}
+
+/** Elapsed time since `startedAt`, refreshed every second while `live` is true. */
+function useElapsedSeconds(startedAt: string | null, live: boolean): number | null {
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!live) return
+    const timer = window.setInterval(() => setTick((tick) => tick + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [live])
+
+  if (!startedAt) return null
+  return (Date.now() - new Date(startedAt).getTime()) / 1000
+}
+
 interface JobRowProps {
   job: JobSummary
+  items: JobItem[]
   busy: boolean
   onCancel: () => void
   onRestart: () => void
@@ -144,68 +206,141 @@ interface JobRowProps {
   onViewLog: () => void
 }
 
-function JobRow({ job, busy, onCancel, onRestart, onRemove, onViewLog }: JobRowProps) {
+function JobRow({ job, items, busy, onCancel, onRestart, onRemove, onViewLog }: JobRowProps) {
   const { t } = useTranslation()
   const canCancel = job.status === 'queued' || job.status === 'running'
   const canRestart = job.status === 'failed' || job.status === 'cancelled'
   const canRemove = job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled'
+  const isRunning = job.status === 'running'
+
+  const units: DurationUnitLabels = {
+    day: t('jobs.unit.day'),
+    hour: t('jobs.unit.hour'),
+    minute: t('jobs.unit.minute'),
+    second: t('jobs.unit.second'),
+  }
+
+  const done = items.filter((item) => DONE_ITEM_STATUSES.has(item.status)).length
+  const total = job.total_items
+  const currentItem = isRunning
+    ? [...items].reverse().find((item) => item.status === 'running')
+    : undefined
+  const progressPct = total && total > 0 ? Math.min(100, Math.round((done / total) * 100)) : null
+
+  const etaSeconds = useEtaSeconds(job.id, isRunning, done, total)
+  const runningElapsedSeconds = useElapsedSeconds(job.started_at, isRunning)
+
+  const finishedElapsedSeconds =
+    job.started_at && job.finished_at
+      ? (new Date(job.finished_at).getTime() - new Date(job.started_at).getTime()) / 1000
+      : null
+
+  const finishedAtLabel = job.finished_at
+    ? new Date(job.finished_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    : null
+
+  const clickableForLog = job.status === 'running' || job.status === 'queued'
 
   return (
-    <div className="jobs-modal__row">
-      <div className="jobs-modal__row-info">
-        <span className="jobs-modal__row-type">{t(`jobs.type.${job.job_type}`, job.job_type)}</span>
-        <span className="jobs-modal__row-scope">{job.scope_ref ?? t('jobs.scopeWholeSource')}</span>
-        {job.summary_message && (
-          <span className="jobs-modal__row-message">{job.summary_message}</span>
-        )}
-      </div>
-      <div className="jobs-modal__row-actions">
-        <button
-          type="button"
-          className="jobs-modal__icon-btn"
-          aria-label={t('logs.title')}
-          title={t('logs.title')}
-          onClick={onViewLog}
-        >
-          <ScrollText size={16} />
-        </button>
-        {canCancel && (
+    <div
+      className={`jobs-modal__card jobs-modal__card--${job.status}`}
+      onClick={clickableForLog ? onViewLog : undefined}
+      role={clickableForLog ? 'button' : undefined}
+      tabIndex={clickableForLog ? 0 : undefined}
+    >
+      <div className="jobs-modal__card-header">
+        <div className="jobs-modal__card-heading">
+          <span className={`jobs-modal__status-dot jobs-modal__status-dot--${job.status}`} />
+          <span className="jobs-modal__row-type">{t(`jobs.type.${job.job_type}`, job.job_type)}</span>
+          <span className="jobs-modal__status-label">{t(`jobs.section.${job.status}`)}</span>
+        </div>
+        <div className="jobs-modal__row-actions" onClick={(event) => event.stopPropagation()}>
           <button
             type="button"
             className="jobs-modal__icon-btn"
-            aria-label={t('jobs.cancel')}
-            title={t('jobs.cancel')}
-            onClick={onCancel}
-            disabled={busy}
+            aria-label={t('logs.title')}
+            title={t('logs.title')}
+            onClick={onViewLog}
           >
-            <X size={16} />
+            <ScrollText size={16} />
           </button>
-        )}
-        {canRestart && (
-          <button
-            type="button"
-            className="jobs-modal__icon-btn"
-            aria-label={t('jobs.restart')}
-            title={t('jobs.restart')}
-            onClick={onRestart}
-            disabled={busy}
-          >
-            <RotateCcw size={16} />
-          </button>
-        )}
-        {canRemove && (
-          <button
-            type="button"
-            className="jobs-modal__icon-btn jobs-modal__icon-btn--danger"
-            aria-label={t('jobs.remove')}
-            title={t('jobs.remove')}
-            onClick={onRemove}
-            disabled={busy}
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
+          {canCancel && (
+            <button
+              type="button"
+              className="jobs-modal__icon-btn"
+              aria-label={t('jobs.cancel')}
+              title={t('jobs.cancel')}
+              onClick={onCancel}
+              disabled={busy}
+            >
+              <X size={16} />
+            </button>
+          )}
+          {canRestart && (
+            <button
+              type="button"
+              className="jobs-modal__icon-btn"
+              aria-label={t('jobs.restart')}
+              title={t('jobs.restart')}
+              onClick={onRestart}
+              disabled={busy}
+            >
+              <RotateCcw size={16} />
+            </button>
+          )}
+          {canRemove && (
+            <button
+              type="button"
+              className="jobs-modal__icon-btn jobs-modal__icon-btn--danger"
+              aria-label={t('jobs.remove')}
+              title={t('jobs.remove')}
+              onClick={onRemove}
+              disabled={busy}
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="jobs-modal__row-scope">{job.scope_ref ?? t('jobs.scopeWholeSource')}</div>
+
+      {job.summary_message && <div className="jobs-modal__row-message">{job.summary_message}</div>}
+
+      {currentItem && (
+        <div className="jobs-modal__row-message">
+          {t('jobs.progress.current', { name: currentItem.item_key ?? currentItem.file_id ?? '…' })}
+        </div>
+      )}
+
+      {progressPct !== null && isRunning && (
+        <div className="jobs-modal__progress">
+          <div className="jobs-modal__progress-track">
+            <div className="jobs-modal__progress-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+          <span className="jobs-modal__progress-count">{t('jobs.progress.count', { done, total })}</span>
+        </div>
+      )}
+
+      {isRunning && (
+        <div className="jobs-modal__meta">
+          {runningElapsedSeconds !== null && (
+            <span>{t('jobs.progress.elapsed', { time: formatElapsed(runningElapsedSeconds, units) })}</span>
+          )}
+          {etaSeconds !== null && (
+            <span>{t('jobs.progress.eta', { time: formatElapsed(etaSeconds, units) })}</span>
+          )}
+        </div>
+      )}
+
+      {!isRunning && (finishedElapsedSeconds !== null || finishedAtLabel) && (
+        <div className="jobs-modal__meta">
+          {finishedElapsedSeconds !== null && (
+            <span>{t('jobs.progress.took', { time: formatElapsed(finishedElapsedSeconds, units) })}</span>
+          )}
+          {finishedAtLabel && <span>{t('jobs.progress.finishedAt', { time: finishedAtLabel })}</span>}
+        </div>
+      )}
     </div>
   )
 }

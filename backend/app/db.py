@@ -364,6 +364,14 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE tagging_settings DROP COLUMN default_provider",
         "ALTER TABLE tagging_settings DROP COLUMN default_vision_model",
     ],
+    # Post-V1: `jobs.total_items` (user request) -- the bulk job runners
+    # (preview/convert/tag directory scope, convert variant sweep, rescan)
+    # already compute the candidate count before their per-item loop; storing
+    # it lets the Jobs modal show a done/total progress bar and estimate time
+    # remaining while a job is running, instead of only a final summary line.
+    13: [
+        "ALTER TABLE jobs ADD COLUMN total_items INTEGER",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

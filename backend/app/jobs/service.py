@@ -75,6 +75,7 @@ def _job_row_to_dict(row) -> dict:
         "started_at": row.started_at,
         "finished_at": row.finished_at,
         "summary_message": row.summary_message,
+        "total_items": row.total_items,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -235,6 +236,14 @@ def finish_job(engine, job_id: str, status: str, summary_message: str | None = N
         )
     level = "error" if status == "failed" else "info"
     log_event(engine, job_id, None, level, _FINISH_EVENT_TYPES[status], summary_message or status)
+
+
+def set_job_total_items(engine, job_id: str, total: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE jobs SET total_items = :total, updated_at = :now WHERE id = :id"),
+            {"total": total, "now": _now(), "id": job_id},
+        )
 
 
 def cancel_job(engine, job_id: str) -> dict | None:

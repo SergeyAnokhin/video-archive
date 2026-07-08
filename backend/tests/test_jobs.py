@@ -65,6 +65,14 @@ def test_delete_requires_finished_status(engine, source):
     assert service.get_job(engine, job["id"]) is None
 
 
+def test_set_job_total_items(engine, source):
+    job = service.create_job(engine, "preview", "source", None, {"path": ""})
+    assert job["total_items"] is None
+
+    service.set_job_total_items(engine, job["id"], 43)
+    assert service.get_job(engine, job["id"])["total_items"] == 43
+
+
 def test_retention_sweep_removes_old_finished_jobs(engine, source):
     job = service.create_job(engine, "rescan", "source", None, {"path": ""})
     service.start_job(engine, job["id"])

@@ -27,6 +27,7 @@ export interface JobSummary {
   started_at: string | null
   finished_at: string | null
   summary_message: string | null
+  total_items: number | null
   created_at: string
   updated_at: string
 }

@@ -320,6 +320,20 @@
     "remove": "Remove",
     "scopeWholeSource": "Whole source",
     "indicatorTooltip": "{{jobType}} — {{current}}",
+    "unit": {
+      "day": "d",
+      "hour": "h",
+      "minute": "min",
+      "second": "sec"
+    },
+    "progress": {
+      "count": "{{done}} / {{total}}",
+      "current": "Processing: {{name}}",
+      "eta": "Remaining: ~{{time}}",
+      "elapsed": "In progress: {{time}}",
+      "took": "Took: {{time}}",
+      "finishedAt": "Finished: {{time}}"
+    },
     "section": {
       "queued": "Queued",
       "running": "Running",

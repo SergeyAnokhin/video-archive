@@ -323,6 +323,7 @@ def _run_directory_scope(engine, job: dict, access: SourceAccess, params: dict, 
     skipped = 0
     failed = 0
     total = len(candidates)
+    service.set_job_total_items(engine, job["id"], total)
 
     for row in candidates:
         if service.is_cancel_requested(job["id"]):
@@ -410,6 +411,7 @@ def _run_variant_sweep(engine, job: dict, access: SourceAccess, row, profile: di
     processed = 0
     failed = 0
     total = len(variants)
+    service.set_job_total_items(engine, job["id"], total)
 
     with access.local_copy(row.relative_path) as old_path:
         for overrides in variants:

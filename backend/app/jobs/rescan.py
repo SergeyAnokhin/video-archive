@@ -56,6 +56,7 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
     processed = 0
     failed = 0
     total = len(touched_files)
+    service.set_job_total_items(engine, job["id"], total)
 
     for rel_file, attrs in touched_files.items():
         if service.is_cancel_requested(job["id"]):

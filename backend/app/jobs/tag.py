@@ -183,6 +183,7 @@ def _run_directory_scope(
     failed = 0
     total = len(candidates)
     cancelled = False
+    service.set_job_total_items(engine, job["id"], total)
 
     # Batch tagging (Specification §12.3, Stage 9) needs the whole pending
     # set up front (one provider request for many files), unlike the

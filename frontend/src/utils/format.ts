@@ -28,3 +28,30 @@ export function formatDuration(seconds: number): string {
   const ss = String(s).padStart(2, '0')
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`
 }
+
+export interface DurationUnitLabels {
+  day: string
+  hour: string
+  minute: string
+  second: string
+}
+
+/** Human-readable elapsed/remaining time, e.g. "2 ч 15 мин", "45 мин 30 сек", "3 дн". */
+export function formatElapsed(seconds: number, units: DurationUnitLabels): string {
+  const total = Math.max(0, Math.round(seconds))
+  const days = Math.floor(total / 86400)
+  const hours = Math.floor((total % 86400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+
+  if (days > 0) {
+    return hours > 0 ? `${days} ${units.day} ${hours} ${units.hour}` : `${days} ${units.day}`
+  }
+  if (hours > 0) {
+    return minutes > 0 ? `${hours} ${units.hour} ${minutes} ${units.minute}` : `${hours} ${units.hour}`
+  }
+  if (minutes > 0) {
+    return secs > 0 ? `${minutes} ${units.minute} ${secs} ${units.second}` : `${minutes} ${units.minute}`
+  }
+  return `${secs} ${units.second}`
+}

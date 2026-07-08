@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { formatBitrate, formatDuration, formatSize } from './format'
+import { formatBitrate, formatDuration, formatElapsed, formatSize } from './format'
+
+const UNITS = { day: 'd', hour: 'h', minute: 'min', second: 'sec' }
 
 describe('formatSize', () => {
   it('keeps sub-kilobyte values in bytes', () => {
@@ -46,5 +48,33 @@ describe('formatDuration', () => {
 
   it('rounds fractional seconds', () => {
     expect(formatDuration(89.6)).toBe('1:30')
+  })
+})
+
+describe('formatElapsed', () => {
+  it('renders seconds alone below a minute', () => {
+    expect(formatElapsed(0, UNITS)).toBe('0 sec')
+    expect(formatElapsed(45, UNITS)).toBe('45 sec')
+  })
+
+  it('renders minutes, dropping seconds when exact', () => {
+    expect(formatElapsed(90, UNITS)).toBe('1 min 30 sec')
+    expect(formatElapsed(120, UNITS)).toBe('2 min')
+  })
+
+  it('renders hours, dropping minutes when exact', () => {
+    expect(formatElapsed(3661, UNITS)).toBe('1 h 1 min')
+    expect(formatElapsed(7200, UNITS)).toBe('2 h')
+  })
+
+  it('renders days, dropping hours when exact, and never shows minutes/seconds', () => {
+    expect(formatElapsed(86400, UNITS)).toBe('1 d')
+    expect(formatElapsed(90000, UNITS)).toBe('1 d 1 h')
+    expect(formatElapsed(90065, UNITS)).toBe('1 d 1 h')
+  })
+
+  it('rounds fractional seconds and clamps negatives to zero', () => {
+    expect(formatElapsed(59.6, UNITS)).toBe('1 min')
+    expect(formatElapsed(-5, UNITS)).toBe('0 sec')
   })
 })

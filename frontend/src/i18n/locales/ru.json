@@ -320,6 +320,20 @@
     "remove": "Удалить",
     "scopeWholeSource": "Весь источник",
     "indicatorTooltip": "{{jobType}} — {{current}}",
+    "unit": {
+      "day": "дн",
+      "hour": "ч",
+      "minute": "мин",
+      "second": "сек"
+    },
+    "progress": {
+      "count": "{{done}} / {{total}}",
+      "current": "Обработка: {{name}}",
+      "eta": "Осталось: ~{{time}}",
+      "elapsed": "В процессе: {{time}}",
+      "took": "Заняло: {{time}}",
+      "finishedAt": "Завершено: {{time}}"
+    },
     "section": {
       "queued": "В очереди",
       "running": "Выполняется",

@@ -174,6 +174,7 @@ def _run_directory_scope(
     failed = 0
     total = len(candidates)
     cancelled = False
+    service.set_job_total_items(engine, job["id"], total)
 
     for row in candidates:
         if service.is_cancel_requested(job["id"]):
