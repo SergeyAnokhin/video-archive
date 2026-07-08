@@ -4,7 +4,7 @@ import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { useJobs } from '../context/JobsContext'
 import { LibrarySearchBox, type ActiveSearch } from './LibrarySearchBox'
-import type { ThemePreset } from '../types/api'
+import { THEME_PRESETS, type ThemePreset } from '../types/api'
 import './TopBar.css'
 
 interface TopBarProps {
@@ -15,7 +15,6 @@ interface TopBarProps {
   onClearSearch: () => void
 }
 
-const THEME_CYCLE: ThemePreset[] = ['strict', 'playful', 'casino']
 const THEME_ICON: Record<ThemePreset, typeof Palette> = {
   strict: Palette,
   playful: Sparkles,
@@ -27,7 +26,7 @@ export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle, onSearch,
   const { previewsVisible, toggle } = usePreviewVisibility()
   const { theme, setTheme } = useInterfaceSettings()
   const { activeJob, activeJobItems } = useJobs()
-  const nextTheme = THEME_CYCLE[(THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length]
+  const nextTheme = THEME_PRESETS[(THEME_PRESETS.indexOf(theme) + 1) % THEME_PRESETS.length]
   const ThemeIcon = THEME_ICON[theme]
   const themeToggleLabel = t('topBar.switchTheme', { theme: t(`theme.${nextTheme}`) })
 

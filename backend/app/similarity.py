@@ -39,7 +39,8 @@ def _now() -> str:
 def _average_hash(image_bgr) -> str:
     pil_image = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)).convert("L")
     small = pil_image.resize((HASH_SIZE, HASH_SIZE), Image.LANCZOS)
-    pixels = list(small.getdata())
+    # tobytes() over deprecated getdata(); identical ints for a single-band "L" image.
+    pixels = list(small.tobytes())
     average = sum(pixels) / len(pixels)
     bits = "".join("1" if p >= average else "0" for p in pixels)
     return f"{int(bits, 2):0{HASH_SIZE * HASH_SIZE // 4}x}"

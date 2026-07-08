@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from math import gcd
 from pathlib import Path, PurePosixPath
 
@@ -11,7 +10,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion, similarity
+from app import conversion, file_ops, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
 from app.media import ORIGINAL_MARKER, VARIANT_MARKER, preview_gif_relative_path
@@ -20,9 +19,20 @@ from app.sources import get_source_access
 
 router = APIRouter()
 
+# HTTP status per app/file_ops.py error code.
+_FILE_OP_STATUS = {
+    "file_not_found": 404,
+    "directory_not_found": 404,
+    "same_location": 400,
+    "destination_collision": 409,
+}
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+
+def _file_op_http_error(err: file_ops.FileOperationError) -> HTTPException:
+    return HTTPException(
+        status_code=_FILE_OP_STATUS[err.code],
+        detail={"error": {"code": err.code, "message": err.message}},
+    )
 
 
 def _file_not_found_error(file_id: str) -> HTTPException:
@@ -335,47 +345,12 @@ def get_file_tags(file_id: str):
     }
 
 
-def _file_with_source_lookup(conn, file_id: str):
-    # f.id is deliberately excluded from the select list: s.* also carries an
-    # `id` column (the source's), and the caller already has file_id in hand
-    # (mirrors the same avoidance in _preview_lookup() above).
-    return conn.execute(
-        text(
-            """
-            SELECT f.relative_path, f.file_name, f.directory_id, f.source_id, s.*
-            FROM files f
-            JOIN sources s ON s.id = f.source_id
-            WHERE f.id = :id AND s.is_active = 1
-            """
-        ),
-        {"id": file_id},
-    ).fetchone()
-
-
 @router.delete("/files/{file_id}")
 def delete_file(file_id: str):
-    engine = get_engine()
-    with engine.begin() as conn:
-        row = _file_with_source_lookup(conn, file_id)
-        if row is None:
-            raise _file_not_found_error(file_id)
-
-        access = get_source_access(row)
-        if access.exists(row.relative_path):
-            access.remote_remove(row.relative_path)
-
-        jpg_rel = str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
-        if access.exists(jpg_rel):
-            access.remote_remove(jpg_rel)
-
-        gif_rel = preview_gif_relative_path(row.relative_path)
-        if access.exists(gif_rel):
-            access.remote_remove(gif_rel)
-
-        conn.execute(text("DELETE FROM file_tags WHERE file_id = :id"), {"id": file_id})
-        conn.execute(text("DELETE FROM file_similarity_signatures WHERE file_id = :id"), {"id": file_id})
-        conn.execute(text("DELETE FROM files WHERE id = :id"), {"id": file_id})
-
+    try:
+        file_ops.delete_file(get_engine(), file_id)
+    except file_ops.FileOperationError as err:
+        raise _file_op_http_error(err)
     return {"deleted": True}
 
 
@@ -385,84 +360,10 @@ class MoveFileRequest(BaseModel):
 
 @router.post("/files/{file_id}/move")
 def move_file(file_id: str, body: MoveFileRequest):
-    engine = get_engine()
-    with engine.begin() as conn:
-        row = _file_with_source_lookup(conn, file_id)
-        if row is None:
-            raise _file_not_found_error(file_id)
-
-        target_dir_row = conn.execute(
-            text("SELECT id FROM directories WHERE source_id = :sid AND relative_path = :path"),
-            {"sid": row.source_id, "path": body.target_directory},
-        ).fetchone()
-        if target_dir_row is None:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": {
-                        "code": "directory_not_found",
-                        "message": f"Directory not found: {body.target_directory}",
-                    }
-                },
-            )
-
-        new_rel = f"{body.target_directory}/{row.file_name}" if body.target_directory else row.file_name
-        if new_rel == row.relative_path:
-            raise HTTPException(
-                status_code=400,
-                detail={"error": {"code": "same_location", "message": "File is already in this folder."}},
-            )
-
-        collision = conn.execute(
-            text("SELECT id FROM files WHERE source_id = :sid AND relative_path = :path"),
-            {"sid": row.source_id, "path": new_rel},
-        ).fetchone()
-        if collision is not None:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error": {
-                        "code": "destination_collision",
-                        "message": "A file with this name already exists in the destination folder.",
-                    }
-                },
-            )
-
-        access = get_source_access(row)
-        access.remote_rename(row.relative_path, new_rel)
-
-        old_jpg_rel = str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
-        new_jpg_rel = str(PurePosixPath(new_rel).with_suffix(".jpg"))
-        if access.exists(old_jpg_rel):
-            access.remote_rename(old_jpg_rel, new_jpg_rel)
-
-        old_gif_rel = preview_gif_relative_path(row.relative_path)
-        new_gif_rel = preview_gif_relative_path(new_rel)
-        if access.exists(old_gif_rel):
-            access.remote_rename(old_gif_rel, new_gif_rel)
-
-        conn.execute(
-            text(
-                """
-                UPDATE files
-                SET relative_path = :new_rel, directory_id = :dir_id, updated_at = :now
-                WHERE id = :id
-                """
-            ),
-            {"new_rel": new_rel, "dir_id": target_dir_row.id, "now": _now(), "id": file_id},
-        )
-
-        updated = conn.execute(
-            text(
-                """
-                SELECT f.*, d.relative_path AS directory_path
-                FROM files f
-                JOIN directories d ON d.id = f.directory_id
-                WHERE f.id = :id
-                """
-            ),
-            {"id": file_id},
-        ).fetchone()
+    try:
+        updated = file_ops.move_file(get_engine(), file_id, body.target_directory)
+    except file_ops.FileOperationError as err:
+        raise _file_op_http_error(err)
 
     return {
         "id": updated.id,

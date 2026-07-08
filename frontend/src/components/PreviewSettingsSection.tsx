@@ -9,6 +9,8 @@ import type {
   PreviewSettings,
   TimelineFlow,
 } from '../types/api'
+import { buildOccupancy, cellsOf, computeTilesLocal, fillAll } from '../utils/layoutGeometry'
+import { LayoutCanvas } from './LayoutCanvas'
 import './PreviewSettingsSection.css'
 
 const ASPECT_RATIOS: AspectRatioMode[] = ['standard', 'phone-portrait', 'phone-landscape', 'ultra-wide', 'custom']
@@ -27,95 +29,6 @@ function effectiveAspectRatio(settings: PreviewSettings): number {
     default:
       return 4 / 3
   }
-}
-
-function cellsOf(tile: EnlargedTile): [number, number][] {
-  const cells: [number, number][] = []
-  for (let r = tile.row; r < tile.row + tile.span; r++) {
-    for (let c = tile.col; c < tile.col + tile.span; c++) cells.push([r, c])
-  }
-  return cells
-}
-
-function buildOccupancy(rows: number, cols: number, enlarged: EnlargedTile[]): boolean[][] {
-  const grid = Array.from({ length: rows }, () => Array(cols).fill(false))
-  for (const tile of enlarged) {
-    for (const [r, c] of cellsOf(tile)) {
-      if (r < rows && c < cols) grid[r][c] = true
-    }
-  }
-  return grid
-}
-
-function fillAll(rows: number, cols: number, span: 2 | 3): EnlargedTile[] {
-  const occupied = Array.from({ length: rows }, () => Array(cols).fill(false))
-  const tiles: EnlargedTile[] = []
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (occupied[r][c] || r + span > rows || c + span > cols) continue
-      let fits = true
-      for (let rr = r; rr < r + span && fits; rr++) {
-        for (let cc = c; cc < c + span && fits; cc++) {
-          if (occupied[rr][cc]) fits = false
-        }
-      }
-      if (!fits) continue
-      tiles.push({ row: r, col: c, span })
-      for (let rr = r; rr < r + span; rr++) for (let cc = c; cc < c + span; cc++) occupied[rr][cc] = true
-    }
-  }
-  return tiles
-}
-
-function computeTilesLocal(rows: number, cols: number, enlarged: EnlargedTile[]): LayoutTile[] {
-  const occupied = buildOccupancy(rows, cols, enlarged)
-  const tiles: LayoutTile[] = enlarged.map((tile) => ({ ...tile, type: 'enlarged' }))
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (!occupied[r][c]) tiles.push({ row: r, col: c, span: 1, type: 'small' })
-    }
-  }
-  return tiles
-}
-
-interface LayoutCanvasProps {
-  tiles: LayoutTile[]
-  gridRows: number
-  gridCols: number
-  aspectRatio: number
-  caption?: string
-  mini?: boolean
-  onCellClick?: (row: number, col: number) => void
-}
-
-function LayoutCanvas({ tiles, gridRows, gridCols, aspectRatio, caption, mini, onCellClick }: LayoutCanvasProps) {
-  return (
-    <div
-      className={mini ? 'preview-canvas preview-canvas--mini' : 'preview-canvas'}
-      style={{ aspectRatio: `${aspectRatio}` }}
-    >
-      <div
-        className="preview-canvas__grid"
-        style={{ gridTemplateColumns: `repeat(${gridCols}, 1fr)`, gridTemplateRows: `repeat(${gridRows}, 1fr)` }}
-      >
-        {tiles.map((tile) => (
-          <button
-            key={`${tile.row}-${tile.col}`}
-            type="button"
-            className={`preview-canvas__tile preview-canvas__tile--${tile.type}`}
-            style={{
-              gridColumn: `${tile.col + 1} / span ${tile.span}`,
-              gridRow: `${tile.row + 1} / span ${tile.span}`,
-            }}
-            onClick={onCellClick ? () => onCellClick(tile.row, tile.col) : undefined}
-            disabled={!onCellClick}
-            tabIndex={onCellClick ? 0 : -1}
-          />
-        ))}
-      </div>
-      {caption !== undefined && <div className="preview-canvas__caption">{caption}</div>}
-    </div>
-  )
 }
 
 export function PreviewSettingsSection() {

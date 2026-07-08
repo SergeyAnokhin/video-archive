@@ -17,8 +17,9 @@ Running a second frontend dev session against an already-running backend (e.g. a
 
 | Suite | Command | Notes |
 | --- | --- | --- |
-| Backend (pytest) | `python -m pytest` from `backend/` | The only automated suite. Tests needing real ffmpeg/ffprobe skip automatically when unavailable. |
-| Frontend lint | `npm run lint` from `frontend/` | No frontend unit tests currently exist. |
+| Backend (pytest) | `python -m pytest` from `backend/` | The main suite. Tests needing real ffmpeg/ffprobe skip automatically when unavailable. |
+| Frontend unit tests (vitest) | `npm test` from `frontend/` | Pure-logic tests only (`src/**/*.test.ts`, e.g. `utils/format.test.ts`, `utils/layoutGeometry.test.ts`) — no DOM, no network, no component rendering. |
+| Frontend lint | `npm run lint` from `frontend/` | |
 | Frontend build check | `npm run build` from `frontend/` | Type-checks via `tsc` before bundling. |
 
 Test conventions (per-suite details in [`code-map-tests.md`](code-map-tests.md)):

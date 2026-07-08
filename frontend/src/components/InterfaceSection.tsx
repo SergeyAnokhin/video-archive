@@ -2,9 +2,8 @@ import { Dices, Languages, Palette, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LANGUAGES } from '../i18n'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
-import type { ThemePreset } from '../types/api'
+import { THEME_PRESETS, type ThemePreset } from '../types/api'
 
-const THEME_PRESETS: ThemePreset[] = ['strict', 'playful']
 const THEME_ICON: Record<ThemePreset, typeof Palette> = {
   strict: Palette,
   playful: Sparkles,
