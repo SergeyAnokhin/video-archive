@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
 import type { JobItem, JobStatus, JobSummary } from '../types/api'
+import { estimateEtaSeconds, type ProgressSample } from '../utils/eta'
 import { formatElapsed, type DurationUnitLabels } from '../utils/format'
 import { LogViewerModal } from './LogViewerModal'
 import './JobsModal.css'
@@ -141,10 +142,10 @@ export function JobsModal({ onClose }: JobsModalProps) {
 }
 
 /** Tracks (time, doneCount) samples for the last `ETA_WINDOW_MS` while a job
- * is running, so the remaining time can be estimated from the recent
+ * is running, so `estimateEtaSeconds()` can extrapolate from the recent
  * completion rate instead of the average over the job's whole lifetime. */
 function useEtaSeconds(jobId: string, isRunning: boolean, done: number, total: number | null): number | null {
-  const historyRef = useRef<{ time: number; done: number }[]>([])
+  const historyRef = useRef<ProgressSample[]>([])
   const jobIdRef = useRef(jobId)
 
   if (jobIdRef.current !== jobId) {
@@ -166,20 +167,8 @@ function useEtaSeconds(jobId: string, isRunning: boolean, done: number, total: n
     }
   }, [isRunning, done])
 
-  if (!isRunning || total === null || total <= 0) return null
-  const history = historyRef.current
-  if (history.length < 2) return null
-
-  const first = history[0]
-  const last = history[history.length - 1]
-  const elapsedMs = last.time - first.time
-  const deltaDone = last.done - first.done
-  if (deltaDone <= 0 || elapsedMs <= 0) return null
-
-  const remaining = total - done
-  if (remaining <= 0) return 0
-  const rate = deltaDone / (elapsedMs / 1000)
-  return remaining / rate
+  if (!isRunning || total === null) return null
+  return estimateEtaSeconds(historyRef.current, done, total)
 }
 
 /** Elapsed time since `startedAt`, refreshed every second while `live` is true. */
