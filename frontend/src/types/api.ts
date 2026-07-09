@@ -120,6 +120,11 @@ export interface DirectoryEntry {
   has_folder_preview: boolean
 }
 
+export interface VariantTag {
+  param: 'dimension' | 'crf' | 'codec'
+  value: number | string
+}
+
 export interface FileEntry {
   id: string
   file_name: string
@@ -133,6 +138,7 @@ export interface FileEntry {
   is_variant: boolean
   is_original: boolean
   duration_seconds: number | null
+  variant_tag?: VariantTag | null
 }
 
 export interface DirectoryChildrenResponse {

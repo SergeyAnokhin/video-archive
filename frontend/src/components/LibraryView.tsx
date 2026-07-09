@@ -306,6 +306,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
                   previewsVisible={previewsVisible}
                   onPlay={() => setPlayingFile(file)}
                   onInfo={() => setInfoFile(file)}
+                  onDelete={() => void handleDeleteFile(file.id)}
                 />
               ))}
             </div>
@@ -337,6 +338,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
                   previewsVisible={previewsVisible}
                   onPlay={() => setPlayingFile(file)}
                   onInfo={() => setInfoFile(file)}
+                  onDelete={() => void handleDeleteFile(file.id)}
                 />
               ))}
             </div>

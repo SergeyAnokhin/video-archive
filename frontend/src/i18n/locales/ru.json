@@ -405,7 +405,10 @@
     "fileNotConverted": "Ещё не сконвертировано",
     "fileNoPreview": "Превью ещё нет",
     "fileIsVariant": "Результат тюнинга — сравните и удалите лишнее",
-    "fileIsOriginal": "Сохранённый оригинал"
+    "fileIsOriginal": "Сохранённый оригинал",
+    "variantTagDimension": "Размер {{value}}px",
+    "variantTagCrf": "CRF {{value}}",
+    "variantTagCodec": "Кодек {{value}}"
   },
   "backendStatus": {
     "title": "Статус бэкенда",

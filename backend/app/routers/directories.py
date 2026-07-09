@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy import text
 
 from app.db import get_engine
-from app.media import FOLDER_PREVIEW_FILENAME, ORIGINAL_MARKER, VARIANT_MARKER
+from app.media import FOLDER_PREVIEW_FILENAME, ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 from app.status import compute_directory_status
@@ -29,6 +29,7 @@ def _file_row_to_dict(row) -> dict:
         "duration_seconds": row.duration_seconds,
         "is_variant": VARIANT_MARKER in row.file_name,
         "is_original": ORIGINAL_MARKER in row.file_name,
+        "variant_tag": None,
     }
 
 
@@ -74,7 +75,7 @@ def get_directory_children(
         file_rows = conn.execute(
             text(
                 """
-                SELECT id, file_name, extension, size_bytes, modified_at, is_video_supported,
+                SELECT id, relative_path, file_name, extension, size_bytes, modified_at, is_video_supported,
                        has_preview_asset, converted_at, tagged_at, duration_seconds
                 FROM files
                 WHERE directory_id = :dir_id AND is_video_supported = 1
@@ -84,6 +85,9 @@ def get_directory_children(
             {"dir_id": directory_row.id},
         ).all()
         files = [_file_row_to_dict(row) for row in file_rows]
+        variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in file_rows])
+        for entry in files:
+            entry["variant_tag"] = variant_tags.get(entry["id"])
 
     return {"path": path, "directories": directories, "files": files}
 

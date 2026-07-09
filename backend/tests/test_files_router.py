@@ -211,6 +211,35 @@ def test_move_file_rejects_unknown_directory(engine, source):
     assert res.status_code == 404
 
 
+def test_variant_preview_falls_back_to_original_asset(engine, source):
+    # A variant-sweep output never gets its own preview generated
+    # (Specification §8.3), so it must reuse the original's `.jpg`/`.gif`
+    # instead of showing a broken thumbnail.
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "clip.mp4").write_bytes(b"data")
+    (source["root"] / "clip.jpg").write_bytes(b"jpg-bytes")
+    previews_dir = source["root"] / ".video-archive" / "previews"
+    previews_dir.mkdir(parents=True)
+    (previews_dir / "clip.gif").write_bytes(b"gif-bytes")
+    _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+    variant_id = _insert_file(engine, source["id"], root_id, "clip.variant-crf28.mp4", "clip.variant-crf28.mp4")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE files SET has_preview_asset = 1 WHERE id = :id"), {"id": variant_id})
+
+    with TestClient(app) as client:
+        meta = client.get(f"/api/files/{variant_id}/preview")
+        assert meta.status_code == 200
+        assert meta.json()["has_preview_asset"] is True
+
+        jpg = client.get(f"/api/files/{variant_id}/preview.jpg")
+        assert jpg.status_code == 200
+        assert jpg.content == b"jpg-bytes"
+
+        gif = client.get(f"/api/files/{variant_id}/preview.gif")
+        assert gif.status_code == 200
+        assert gif.content == b"gif-bytes"
+
+
 def test_file_listing_flags_variant_and_original_markers(engine, source):
     root_id = _insert_directory(engine, source["id"], "", None)
     _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")

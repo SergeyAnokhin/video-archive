@@ -12,7 +12,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.conversion import build_ffmpeg_command, effective_max_dimension, encode_variant_suffix
-from app.media import PREVIEW_GIF_DIR, is_test_artifact, preview_gif_relative_path, sibling_relative_path
+from app.media import (
+    PREVIEW_GIF_DIR,
+    compute_variant_tags,
+    is_test_artifact,
+    parse_variant_suffix,
+    preview_gif_relative_path,
+    sibling_relative_path,
+    variant_base_stem,
+)
 from app.preview import diverse_video_frame_plan, select_frames_for_tiles
 from app.preview_layouts import compute_layout_tiles
 from app.preview_settings import effective_aspect_ratio
@@ -46,6 +54,71 @@ def test_preview_gif_relative_path():
     assert preview_gif_relative_path("clip.mp4") == f"{PREVIEW_GIF_DIR}/clip.gif"
     # Two different source files never collide.
     assert preview_gif_relative_path("a/clip.mp4") != preview_gif_relative_path("b/clip.mp4")
+
+
+def test_variant_base_stem():
+    assert variant_base_stem("clip.variant-d1000-crf28.mp4") == "clip"
+    assert variant_base_stem("clip.mp4") is None
+
+
+def test_parse_variant_suffix():
+    assert parse_variant_suffix("clip.variant-d1000-crf28.mp4") == {"dimension": 1000, "crf": 28}
+    assert parse_variant_suffix("clip.variant-crf28.mp4") == {"crf": 28}
+    assert parse_variant_suffix("clip.variant-h264-d1000-crf30.mp4") == {
+        "codec": "h264",
+        "dimension": 1000,
+        "crf": 30,
+    }
+    assert parse_variant_suffix("clip.mp4") == {}
+
+
+def test_compute_variant_tags_identifies_the_swept_axis():
+    # A CRF sweep: dimension stays fixed, crf varies -> tagged by crf.
+    rows = [
+        ("a", "clip.variant-d1920-crf22.mp4"),
+        ("b", "clip.variant-d1920-crf26.mp4"),
+        ("c", "clip.variant-d1920-crf30.mp4"),
+    ]
+    tags = compute_variant_tags(rows)
+    assert tags == {
+        "a": {"param": "crf", "value": 22},
+        "b": {"param": "crf", "value": 26},
+        "c": {"param": "crf", "value": 30},
+    }
+
+
+def test_compute_variant_tags_identifies_dimension_sweep():
+    rows = [
+        ("a", "clip.variant-d960-crf26.mp4"),
+        ("b", "clip.variant-d1440-crf26.mp4"),
+        ("c", "clip.variant-d1920-crf26.mp4"),
+    ]
+    tags = compute_variant_tags(rows)
+    assert tags["a"] == {"param": "dimension", "value": 960}
+    assert tags["c"] == {"param": "dimension", "value": 1920}
+
+
+def test_compute_variant_tags_ignores_lone_variants_and_ambiguous_groups():
+    # A single variant has no siblings to compare against.
+    assert compute_variant_tags([("a", "clip.variant-crf28.mp4")]) == {}
+
+    # Two parameters differ at once: too ambiguous to pick one confidently.
+    rows = [("a", "clip.variant-d960-crf22.mp4"), ("b", "clip.variant-d1920-crf30.mp4")]
+    assert compute_variant_tags(rows) == {}
+
+    # Non-variant files and files without siblings are simply left out.
+    rows = [("a", "clip.mp4"), ("b", "clip.variant-crf28.mp4")]
+    assert compute_variant_tags(rows) == {}
+
+
+def test_compute_variant_tags_scopes_groups_to_their_directory():
+    # Same stem in two different directories must not be compared to each
+    # other -- each is a lone variant within its own folder.
+    rows = [
+        ("a", "movies/clip.variant-crf22.mp4"),
+        ("b", "clips/clip.variant-crf30.mp4"),
+    ]
+    assert compute_variant_tags(rows) == {}
 
 
 # --- conversion: resize decision, variant naming, command construction ---

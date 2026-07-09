@@ -405,7 +405,10 @@
     "fileNotConverted": "Not converted yet",
     "fileNoPreview": "No preview yet",
     "fileIsVariant": "Tuning output — compare and delete the ones you don't need",
-    "fileIsOriginal": "Preserved original"
+    "fileIsOriginal": "Preserved original",
+    "variantTagDimension": "Size {{value}}px",
+    "variantTagCrf": "CRF {{value}}",
+    "variantTagCodec": "Codec {{value}}"
   },
   "backendStatus": {
     "title": "Backend status",

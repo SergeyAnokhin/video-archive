@@ -1,9 +1,27 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, File as FileIcon, Film, Folder, Info, SlidersHorizontal } from 'lucide-react'
-import type { DirectoryEntry, FileEntry } from '../types/api'
+import { Archive, File as FileIcon, Film, Folder, Info, SlidersHorizontal, Trash2 } from 'lucide-react'
+import type { DirectoryEntry, FileEntry, VariantTag } from '../types/api'
 import { formatDuration, formatSize } from '../utils/format'
 import './LibraryView.css'
+
+function variantTagOverlayText(tag: VariantTag): string {
+  switch (tag.param) {
+    case 'dimension':
+      return `${tag.value}px`
+    case 'crf':
+      return `CRF ${tag.value}`
+    case 'codec':
+      return String(tag.value).toUpperCase()
+  }
+}
+
+function useVariantTagLabel(tag: VariantTag): string {
+  const { t } = useTranslation()
+  const key =
+    tag.param === 'dimension' ? 'indicators.variantTagDimension' : tag.param === 'crf' ? 'indicators.variantTagCrf' : 'indicators.variantTagCodec'
+  return t(key, { value: tag.param === 'codec' ? String(tag.value).toUpperCase() : tag.value })
+}
 
 export function FolderCard({
   dir,
@@ -70,9 +88,10 @@ interface FileCardProps {
   previewsVisible: boolean
   onPlay: () => void
   onInfo: () => void
+  onDelete: () => void
 }
 
-export function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProps) {
+export function FileCard({ file, previewsVisible, onPlay, onInfo, onDelete }: FileCardProps) {
   const { t } = useTranslation()
   const [gifFailed, setGifFailed] = useState(false)
   const showConversionDot = file.is_video_supported && !file.converted_at
@@ -95,6 +114,9 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProp
           ) : (
             <FileIcon size={28} />
           )}
+          {file.variant_tag && (
+            <span className="library-card__variant-overlay">{variantTagOverlayText(file.variant_tag)}</span>
+          )}
         </button>
         <button
           type="button"
@@ -109,8 +131,31 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProp
       <div className="library-card__name" title={file.file_name}>
         {file.file_name}
       </div>
+      {file.variant_tag && (
+        <div className="library-card__tag-row">
+          <VariantTagChip tag={file.variant_tag} />
+        </div>
+      )}
       <div className="library-card__meta">
-        <span>{formatSize(file.size_bytes)}</span>
+        <span className="library-card__meta-size">
+          {formatSize(file.size_bytes)}
+          {file.is_variant && (
+            <button
+              type="button"
+              className="library-card__delete-btn"
+              aria-label={t('library.deleteFile')}
+              title={t('library.deleteFile')}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
+                  onDelete()
+                }
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </span>
         {file.duration_seconds != null && <span>{formatDuration(file.duration_seconds)}</span>}
       </div>
       {(showConversionDot || showPreviewDot || file.is_variant || file.is_original) && (
@@ -147,4 +192,9 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProp
       )}
     </div>
   )
+}
+
+function VariantTagChip({ tag }: { tag: VariantTag }) {
+  const label = useVariantTagLabel(tag)
+  return <span className="library-card__tag">{label}</span>
 }

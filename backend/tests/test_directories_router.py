@@ -75,3 +75,44 @@ def test_directory_children_excludes_non_video_files(tmp_path, monkeypatch):
 
     names = {f["file_name"] for f in files}
     assert names == {"clip.mp4"}
+
+
+def _insert_video_file(engine, source_id: str, dir_id: str, file_name: str) -> str:
+    file_id = str(uuid.uuid4())
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, has_preview_asset, "
+                "created_at, updated_at) "
+                "VALUES (:id, :sid, :did, :rel, :name, 'mp4', 1, :now, :now, 1, 0, :now, :now)"
+            ),
+            {"id": file_id, "sid": source_id, "did": dir_id, "rel": file_name, "name": file_name, "now": now},
+        )
+    return file_id
+
+
+def test_directory_children_tags_variant_files_with_the_swept_parameter(engine, source):
+    dir_id = str(uuid.uuid4())
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO directories (id, source_id, relative_path, name, parent_relative_path, "
+                "has_folder_preview, last_scanned_at, created_at, updated_at) "
+                "VALUES (:id, :sid, '', 'Root', NULL, 0, :now, :now, :now)"
+            ),
+            {"id": dir_id, "sid": source["id"], "now": now},
+        )
+    _insert_video_file(engine, source["id"], dir_id, "clip.mp4")
+    variant_a = _insert_video_file(engine, source["id"], dir_id, "clip.variant-d960-crf26.mp4")
+    variant_b = _insert_video_file(engine, source["id"], dir_id, "clip.variant-d1920-crf26.mp4")
+
+    with TestClient(app) as client:
+        res = client.get("/api/directories/children", params={"path": ""})
+        assert res.status_code == 200
+        by_id = {f["id"]: f for f in res.json()["files"]}
+
+    assert by_id[variant_a]["variant_tag"] == {"param": "dimension", "value": 960}
+    assert by_id[variant_b]["variant_tag"] == {"param": "dimension", "value": 1920}

@@ -13,7 +13,13 @@ from sqlalchemy import text
 from app import conversion, file_ops, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
-from app.media import ORIGINAL_MARKER, VARIANT_MARKER, preview_gif_relative_path
+from app.media import (
+    ORIGINAL_MARKER,
+    VARIANT_MARKER,
+    compute_variant_tags,
+    preview_gif_relative_path,
+    variant_base_stem,
+)
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 
@@ -56,6 +62,7 @@ def _file_row_to_dict(row) -> dict:
         "tagged_at": row.tagged_at,
         "is_variant": VARIANT_MARKER in row.file_name,
         "is_original": ORIGINAL_MARKER in row.file_name,
+        "variant_tag": None,
     }
 
 
@@ -131,7 +138,12 @@ def list_files(
             params,
         ).all()
 
-    return {"files": [_file_row_to_dict(row) for row in rows]}
+    files = [_file_row_to_dict(row) for row in rows]
+    variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in rows])
+    for entry in files:
+        entry["variant_tag"] = variant_tags.get(entry["id"])
+
+    return {"files": files}
 
 
 @router.get("/files/{file_id}")
@@ -227,7 +239,8 @@ def _preview_lookup(conn, file_id: str):
     row = conn.execute(
         text(
             """
-            SELECT f.relative_path, f.has_preview_asset, f.preview_generated_at, s.*
+            SELECT f.relative_path, f.file_name, f.directory_id, f.has_preview_asset,
+                   f.preview_generated_at, s.*
             FROM files f
             JOIN sources s ON s.id = f.source_id
             WHERE f.id = :id AND s.is_active = 1
@@ -240,15 +253,40 @@ def _preview_lookup(conn, file_id: str):
     return row
 
 
+def _preview_source_row(conn, row):
+    """The row whose on-disk preview assets should back `row`'s preview:
+    itself normally, or its original sibling for a variant-sweep output,
+    which never gets its own preview generated (Specification §8.3) — the
+    variant is visually near-identical to the original it was tuned from, so
+    reusing that preview beats showing a broken thumbnail (user request)."""
+    base_stem = variant_base_stem(row.file_name)
+    if base_stem is None:
+        return row
+    original = conn.execute(
+        text(
+            """
+            SELECT relative_path, file_name FROM files
+            WHERE directory_id = :dir_id AND file_name LIKE :prefix
+              AND file_name NOT LIKE '%.variant-%'
+            ORDER BY file_name
+            LIMIT 1
+            """
+        ),
+        {"dir_id": row.directory_id, "prefix": f"{base_stem}.%"},
+    ).fetchone()
+    return original if original is not None else row
+
+
 @router.get("/files/{file_id}/preview")
 def get_file_preview_metadata(file_id: str):
     with get_engine().connect() as conn:
         row = _preview_lookup(conn, file_id)
-    if row is None:
-        raise _file_not_found_error(file_id)
+        if row is None:
+            raise _file_not_found_error(file_id)
+        source_row = _preview_source_row(conn, row)
     access = get_source_access(row)
     return {
-        "has_preview_asset": bool(row.has_preview_asset) and access.exists(_preview_rel(row)),
+        "has_preview_asset": bool(row.has_preview_asset) and access.exists(_preview_rel(source_row)),
         "preview_generated_at": row.preview_generated_at,
     }
 
@@ -257,11 +295,12 @@ def get_file_preview_metadata(file_id: str):
 def get_file_preview_image(file_id: str):
     with get_engine().connect() as conn:
         row = _preview_lookup(conn, file_id)
-    if row is None:
-        raise _file_not_found_error(file_id)
+        if row is None:
+            raise _file_not_found_error(file_id)
+        source_row = _preview_source_row(conn, row)
 
     access = get_source_access(row)
-    preview_rel = _preview_rel(row)
+    preview_rel = _preview_rel(source_row)
     if not access.exists(preview_rel):
         raise HTTPException(
             status_code=404,
@@ -282,11 +321,12 @@ def get_file_preview_gif(file_id: str):
     rather than next to the video (`media.preview_gif_relative_path()`)."""
     with get_engine().connect() as conn:
         row = _preview_lookup(conn, file_id)
-    if row is None:
-        raise _file_not_found_error(file_id)
+        if row is None:
+            raise _file_not_found_error(file_id)
+        source_row = _preview_source_row(conn, row)
 
     access = get_source_access(row)
-    gif_rel = preview_gif_relative_path(row.relative_path)
+    gif_rel = preview_gif_relative_path(source_row.relative_path)
     if not access.exists(gif_rel):
         raise HTTPException(
             status_code=404,
