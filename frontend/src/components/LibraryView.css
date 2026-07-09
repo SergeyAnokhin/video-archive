@@ -328,7 +328,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-1);
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 700;
   color: #fff;
   text-align: center;
@@ -339,6 +339,8 @@
 
 .library-card__tag-row {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
 }
 
 .library-card__tag {

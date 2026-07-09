@@ -81,9 +81,9 @@ def test_compute_variant_tags_identifies_the_swept_axis():
     ]
     tags = compute_variant_tags(rows)
     assert tags == {
-        "a": {"param": "crf", "value": 22},
-        "b": {"param": "crf", "value": 26},
-        "c": {"param": "crf", "value": 30},
+        "a": [{"param": "crf", "value": 22}],
+        "b": [{"param": "crf", "value": 26}],
+        "c": [{"param": "crf", "value": 30}],
     }
 
 
@@ -94,17 +94,27 @@ def test_compute_variant_tags_identifies_dimension_sweep():
         ("c", "clip.variant-d1920-crf26.mp4"),
     ]
     tags = compute_variant_tags(rows)
-    assert tags["a"] == {"param": "dimension", "value": 960}
-    assert tags["c"] == {"param": "dimension", "value": 1920}
+    assert tags["a"] == [{"param": "dimension", "value": 960}]
+    assert tags["c"] == [{"param": "dimension", "value": 1920}]
 
 
-def test_compute_variant_tags_ignores_lone_variants_and_ambiguous_groups():
+def test_compute_variant_tags_tags_every_varying_axis_when_sweeps_accumulate():
+    # Two separate tuning sweeps left siblings next to the same source file
+    # (a dimension sweep, then later a CRF sweep): both axes vary across the
+    # combined group, so both get tagged instead of the whole group being
+    # hidden.
+    rows = [
+        ("a", "clip.variant-d960-crf22.mp4"),
+        ("b", "clip.variant-d1920-crf30.mp4"),
+    ]
+    tags = compute_variant_tags(rows)
+    assert tags["a"] == [{"param": "dimension", "value": 960}, {"param": "crf", "value": 22}]
+    assert tags["b"] == [{"param": "dimension", "value": 1920}, {"param": "crf", "value": 30}]
+
+
+def test_compute_variant_tags_ignores_lone_variants():
     # A single variant has no siblings to compare against.
     assert compute_variant_tags([("a", "clip.variant-crf28.mp4")]) == {}
-
-    # Two parameters differ at once: too ambiguous to pick one confidently.
-    rows = [("a", "clip.variant-d960-crf22.mp4"), ("b", "clip.variant-d1920-crf30.mp4")]
-    assert compute_variant_tags(rows) == {}
 
     # Non-variant files and files without siblings are simply left out.
     rows = [("a", "clip.mp4"), ("b", "clip.variant-crf28.mp4")]

@@ -86,18 +86,26 @@ def parse_variant_suffix(file_name: str) -> dict:
     return parsed
 
 
-def compute_variant_tags(rows: list[tuple[str, str]]) -> dict[str, dict]:
-    """For a set of `(file_id, relative_path)` pairs — possibly spanning
-    several directories — identify the single tuning parameter that
-    distinguishes each variant from its sibling variants (i.e. the axis the
-    user swept in `FileTuneModal`), so the UI can badge "this is the
-    CRF-26 one" etc. Only variants sharing the same directory and original
-    stem are compared against each other; a lone variant (no siblings) or a
-    group where more than one parameter differs is left untagged rather than
-    guessed at.
+_VARIANT_TAG_ORDER = ("codec", "dimension", "crf")
 
-    Returns `{file_id: {"param": "dimension"|"crf"|"codec", "value": ...}}`
-    for the files a confident tag could be determined for."""
+
+def compute_variant_tags(rows: list[tuple[str, str]]) -> dict[str, list[dict]]:
+    """For a set of `(file_id, relative_path)` pairs — possibly spanning
+    several directories — identify the tuning parameter(s) that distinguish
+    each variant from its sibling variants (i.e. the axis/axes the user
+    swept in `FileTuneModal`), so the UI can badge "this is the CRF-26 one"
+    etc. Only variants sharing the same directory and original stem are
+    compared against each other; a lone variant (no siblings) is left
+    untagged since there's nothing to compare it against.
+
+    A group can vary on more than one axis at once — e.g. a dimension sweep
+    and a later CRF sweep both left siblings next to the same source file —
+    so every varying axis is tagged rather than hiding the whole group when
+    more than one differs.
+
+    Returns `{file_id: [{"param": "dimension"|"crf"|"codec", "value": ...}, ...]}`
+    for the files at least one tag could be determined for, ordered the same
+    way `conversion.encode_variant_suffix()` encodes them into the file name."""
     groups: dict[tuple[str, str], list[tuple[str, str, dict]]] = {}
     for file_id, relative_path in rows:
         path = PurePosixPath(relative_path)
@@ -107,16 +115,17 @@ def compute_variant_tags(rows: list[tuple[str, str]]) -> dict[str, dict]:
         group_key = (path.parent.as_posix(), base)
         groups.setdefault(group_key, []).append((file_id, path.name, parse_variant_suffix(path.name)))
 
-    tags: dict[str, dict] = {}
+    tags: dict[str, list[dict]] = {}
     for members in groups.values():
         if len(members) < 2:
             continue
         keys = {key for _, _, parsed in members for key in parsed}
-        varying = [key for key in keys if len({parsed.get(key) for _, _, parsed in members}) > 1]
-        if len(varying) != 1:
+        varying = {key for key in keys if len({parsed.get(key) for _, _, parsed in members}) > 1}
+        if not varying:
             continue
-        param = varying[0]
+        order = [key for key in _VARIANT_TAG_ORDER if key in varying]
         for file_id, _, parsed in members:
-            if param in parsed:
-                tags[file_id] = {"param": param, "value": parsed[param]}
+            file_tags = [{"param": key, "value": parsed[key]} for key in order if key in parsed]
+            if file_tags:
+                tags[file_id] = file_tags
     return tags

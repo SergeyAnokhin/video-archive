@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Copy, Film, FolderInput, Images, SlidersHorizontal, Tags, Trash2, Wand2, X } from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
 import type { FileEntry, FileMediaInfo } from '../types/api'
+import { VariantTagChip } from './LibraryCards'
 import './ConvertDialog.css'
 import './FileInfoPanel.css'
 
@@ -147,6 +148,13 @@ export function FileInfoPanel({
                 <li className="file-info-panel__status-item">
                   <span className="file-info-panel__dot file-info-panel__dot--done" />
                   {t('indicators.fileIsVariant')}
+                  {file.variant_tags && file.variant_tags.length > 0 && (
+                    <span className="file-info-panel__variant-tags">
+                      {file.variant_tags.map((tag, index) => (
+                        <VariantTagChip key={index} tag={tag} />
+                      ))}
+                    </span>
+                  )}
                 </li>
               )}
               {file.is_original && (

@@ -184,6 +184,66 @@ def test_cancelling_a_running_job_stops_it_partway(engine, source, monkeypatch):
     assert event_types[-1] == "job_cancelled"
 
 
+def test_force_cancel_frees_the_lane_from_an_unresponsive_job(engine, source, monkeypatch):
+    """Models a handler stuck in an unbounded blocking call (e.g. a network
+    read or subprocess call with no timeout) that never reaches its own
+    `check_stop_requested()` checkpoint -- cooperative cancellation alone can
+    wait on it forever (user-reported: a `preview` job stuck mid-file, Pause/
+    Cancel logged but never honored). A first cancel can only request; a
+    second cancel (user request -- "click cancel again") must force the job
+    to `cancelled` immediately, and the lane must free up for the next queued
+    job of the same type rather than staying wedged behind the stuck one."""
+    stuck_started = threading.Event()
+    release_stuck = threading.Event()
+
+    stuck_job = service.create_job(engine, "rescan", "source", None, {"path": ""})
+    next_job = service.create_job(engine, "rescan", "source", None, {"path": ""})
+
+    def _stuck_handler(engine_, job):
+        if job["id"] == stuck_job["id"]:
+            stuck_started.set()
+            release_stuck.wait(timeout=30)
+            return "completed", "should not be observed -- job was force-cancelled"
+        return "completed", "ok"
+
+    monkeypatch.setitem(worker_module._HANDLERS, "rescan", _stuck_handler)
+
+    worker = JobWorker()
+    worker.start()
+    try:
+        assert stuck_started.wait(timeout=5), "handler never started"
+
+        first = service.cancel_job(engine, stuck_job["id"])
+        assert first["status"] == "running"
+        time.sleep(0.2)
+        assert service.get_job(engine, stuck_job["id"])["status"] == "running"
+
+        second = service.cancel_job(engine, stuck_job["id"])
+        assert second["status"] == "cancelled"
+
+        # The lane must not wait for the still-blocked handler thread.
+        finished_next = _wait_for_finish(engine, next_job["id"], timeout=5)
+        assert finished_next["status"] == "completed"
+
+        with engine.connect() as conn:
+            event_types = [
+                row.event_type
+                for row in conn.execute(
+                    text("SELECT event_type FROM app_events WHERE job_id = :id ORDER BY rowid"),
+                    {"id": stuck_job["id"]},
+                ).all()
+            ]
+        assert "job_force_cancelled" in event_types
+        assert "job_cancelled" in event_types
+        # The lane notices the out-of-band force-finish on its next poll
+        # (up to `_ABANDON_CHECK_SECONDS` later) and logs that it abandoned
+        # the still-running handler thread rather than waiting on it.
+        assert "job_force_abandoned" in event_types
+    finally:
+        release_stuck.set()
+        worker.stop()
+
+
 def _wait_for_finish(engine, job_id: str, timeout: float = 10.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

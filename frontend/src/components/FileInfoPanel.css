@@ -132,6 +132,12 @@
   background: var(--color-danger);
 }
 
+.file-info-panel__variant-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
 .file-info-panel__media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));

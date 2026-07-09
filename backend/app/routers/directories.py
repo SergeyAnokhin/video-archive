@@ -29,7 +29,7 @@ def _file_row_to_dict(row) -> dict:
         "duration_seconds": row.duration_seconds,
         "is_variant": VARIANT_MARKER in row.file_name,
         "is_original": ORIGINAL_MARKER in row.file_name,
-        "variant_tag": None,
+        "variant_tags": [],
     }
 
 
@@ -87,7 +87,7 @@ def get_directory_children(
         files = [_file_row_to_dict(row) for row in file_rows]
         variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in file_rows])
         for entry in files:
-            entry["variant_tag"] = variant_tags.get(entry["id"])
+            entry["variant_tags"] = variant_tags.get(entry["id"], [])
 
     return {"path": path, "directories": directories, "files": files}
 

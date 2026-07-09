@@ -425,6 +425,75 @@ def test_preview_job_excludes_test_artifacts(engine, source):
     assert not (source["root"] / "clips" / "movie.variant-crf28.jpg").exists()
 
 
+def test_preview_job_items_and_events_identify_file_by_path(engine, source):
+    """User-reported: a stuck preview job gave no way to tell which file it
+    was on -- `job_items.item_key` was never set (unlike `rescan`) and no
+    event fired until a file finished, so a hung file left no trace at all.
+    Both the file-scope and directory-scope code paths now set `item_key` to
+    the file's relative path and log a `job_item_started` event before doing
+    any work, so the Jobs modal's "current item" line and the job log both
+    identify the in-progress file immediately, not only on completion."""
+    video_path = source["root"] / "clips" / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+    scan_source(engine, source["id"], source["root"])
+
+    job = service.create_job(engine, "preview", "source", None, {"path": ""})
+    service.start_job(engine, job["id"])
+    status, _ = preview_job.run_preview_job(engine, job)
+    assert status == "completed"
+
+    items = service.get_job_items(engine, job["id"])
+    assert len(items) == 1
+    assert items[0]["item_key"] == "clips/movie.mp4"
+
+    with engine.connect() as conn:
+        events = [
+            (row.event_type, row.message)
+            for row in conn.execute(
+                text("SELECT event_type, message FROM app_events WHERE job_id = :id ORDER BY rowid"),
+                {"id": job["id"]},
+            ).all()
+        ]
+    event_types = [event_type for event_type, _ in events]
+    assert event_types.index("job_item_started") < event_types.index("job_item_completed")
+    started_message = next(message for event_type, message in events if event_type == "job_item_started")
+    assert "clips/movie.mp4" in started_message
+
+
+def test_preview_job_logs_per_stage_progress_events(engine, source):
+    """User request: a slow preview sat silent between "started" and
+    "completed" with no way to tell which stage (probing, frame extraction,
+    GIF rendering, collage rendering) was actually taking the time. Each
+    stage now logs its own `job_item_progress` event, in order, between the
+    two."""
+    video_path = source["root"] / "clips" / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+    scan_source(engine, source["id"], source["root"])
+
+    job = service.create_job(engine, "preview", "source", None, {"path": ""})
+    service.start_job(engine, job["id"])
+    status, _ = preview_job.run_preview_job(engine, job)
+    assert status == "completed"
+
+    with engine.connect() as conn:
+        events = [
+            (row.event_type, row.message)
+            for row in conn.execute(
+                text("SELECT event_type, message FROM app_events WHERE job_id = :id ORDER BY rowid"),
+                {"id": job["id"]},
+            ).all()
+        ]
+    event_types = [event_type for event_type, _ in events]
+    progress_messages = [message for event_type, message in events if event_type == "job_item_progress"]
+
+    assert event_types.index("job_item_started") < event_types.index("job_item_progress") < event_types.index(
+        "job_item_completed"
+    )
+    assert any("Probed" in message for message in progress_messages)
+    assert any("collage frame" in message for message in progress_messages)
+    assert any("collage" in message.lower() and "Rendered" in message for message in progress_messages)
+
+
 # --- parallel processing (post-V1, user request) --------------------------
 
 

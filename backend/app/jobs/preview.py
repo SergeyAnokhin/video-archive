@@ -24,6 +24,7 @@ snapshot at launch time").
 
 from __future__ import annotations
 
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
@@ -96,6 +97,10 @@ def _generate_one_file(
 ) -> tuple[str, float | None]:
     if not access.exists(file_row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
+
+    def on_stage(message: str) -> None:
+        service.log_event(engine, job_id, file_row.id, "info", "job_item_progress", message)
+
     with access.local_copy(file_row.relative_path) as video_path:
         local_dest = video_path.with_suffix(".jpg")
         local_gif = video_path.parent / f"{video_path.stem}.preview.gif"
@@ -106,6 +111,7 @@ def _generate_one_file(
             animated_segment_seconds=settings["animated_segment_seconds"],
             animated_transition=settings["animated_transition"],
             max_workers=max_workers,
+            on_stage=on_stage,
         )
         dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
         access.commit_new_file(local_dest, dest_rel)
@@ -149,8 +155,13 @@ def _run_file_scope(
     if row is None:
         raise RuntimeError("File not found.")
 
-    item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
+    item_id = service.create_job_item(
+        engine, job["id"], item_key=row.relative_path, file_id=row.id, step_name="preview_file"
+    )
     service.start_job_item(engine, item_id)
+    service.log_event(
+        engine, job["id"], row.id, "info", "job_item_started", f"Generating preview for {row.relative_path}"
+    )
     try:
         # Only one file here: spend the full configured parallelism on this
         # file's own independent frame extractions instead (see
@@ -180,8 +191,13 @@ def _process_preview_file(
     Returns whether it succeeded; failures are recorded through the normal
     job-item/event mechanism (thread-safe, see `app/jobs/service.py`) rather
     than raised, so one file's failure can't abort a whole in-flight batch."""
-    item_id = service.create_job_item(engine, job_id, file_id=row.id, step_name="preview_file")
+    item_id = service.create_job_item(
+        engine, job_id, item_key=row.relative_path, file_id=row.id, step_name="preview_file"
+    )
     service.start_job_item(engine, item_id)
+    service.log_event(
+        engine, job_id, row.id, "info", "job_item_started", f"Generating preview for {row.relative_path}"
+    )
     try:
         # Several files already run side by side here, so each one keeps its
         # own frame extraction sequential (max_workers=1, the default) --
@@ -385,9 +401,15 @@ def _generate_folder_previews(
         path_counts = Counter(plan)
         dest_name = "folder-preview.gif"
         dest_rel = f"{directory.relative_path}/{dest_name}" if directory.relative_path else dest_name
+        dir_label = directory.relative_path or "(root)"
 
+        service.log_event(
+            engine, job["id"], None, "info", "job_item_progress",
+            f"Building folder preview for {dir_label}: {len(plan)} segment(s) from {len(path_counts)} video(s)",
+        )
         try:
             with ExitStack() as stack:
+                t0 = time.monotonic()
                 local_paths = {rel: stack.enter_context(access.local_copy(rel)) for rel in path_counts}
                 segments_by_rel = {
                     rel: preview.pick_representative_segments(
@@ -406,7 +428,12 @@ def _generate_folder_previews(
                     if idx < len(segments):
                         images.extend(segments[idx])
                         segment_sizes.append(len(segments[idx]))
+                service.log_event(
+                    engine, job["id"], None, "info", "job_item_progress",
+                    f"Extracted {len(images)} frame(s) for {dir_label} in {time.monotonic() - t0:.2f}s",
+                )
 
+                t0 = time.monotonic()
                 stage_dir = stack.enter_context(access.stage_output_dir(directory.relative_path))
                 local_dest = stage_dir / dest_name
                 preview.render_gif(
@@ -418,6 +445,10 @@ def _generate_folder_previews(
                 if not local_dest.exists():
                     raise preview.PreviewError("Could not extract any frames for the folder preview.")
                 access.commit_new_file(local_dest, dest_rel)
+                service.log_event(
+                    engine, job["id"], None, "info", "job_item_progress",
+                    f"Rendered folder preview GIF for {dir_label} in {time.monotonic() - t0:.2f}s",
+                )
             _mark_folder_previewed(engine, directory.id)
             service.log_event(
                 engine, job["id"], None, "info", "job_item_completed",

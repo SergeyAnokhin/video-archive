@@ -132,6 +132,42 @@ def test_production_mode_replaces_file(engine, source):
     assert row.id == file_row.id  # same logical file, just renamed/re-encoded in place
 
 
+def test_convert_job_logs_per_stage_progress_events(engine, source):
+    """User request: same "what is it doing right now" visibility as
+    preview jobs (see `test_preview.py`'s per-stage progress test) -- a
+    `job_item_progress` event fires for probing, the ffmpeg encode, and
+    output validation, between the file's `job_item_started`/
+    `job_item_completed` events."""
+    make_video(source["root"] / "clips" / "movie.avi")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/movie.avi")
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+    assert job["status"] == "completed"
+
+    with engine.connect() as conn:
+        events = [
+            (row.event_type, row.message)
+            for row in conn.execute(
+                text("SELECT event_type, message FROM app_events WHERE job_id = :id ORDER BY rowid"),
+                {"id": job["id"]},
+            ).all()
+        ]
+    event_types = [event_type for event_type, _ in events]
+    progress_messages = [message for event_type, message in events if event_type == "job_item_progress"]
+
+    assert event_types.index("job_item_started") < event_types.index("job_item_progress") < event_types.index(
+        "job_item_completed"
+    )
+    assert any("Probed" in message for message in progress_messages)
+    assert any("Encoding" in message or "Encoded" in message for message in progress_messages)
+    assert any("Validated" in message for message in progress_messages)
+
+
 def test_invalid_conversion_never_deletes_original(engine, source, monkeypatch):
     make_video(source["root"] / "clips" / "movie.mp4")
     scan_source(engine, source["id"], source["root"])
@@ -248,6 +284,50 @@ def test_variant_sweep_never_touches_source(engine, source):
 
     row = _file_row(engine, "clips/clip.mp4")
     assert row.converted_at is None
+
+
+def test_repeated_variant_combination_across_sweeps_does_not_fail(engine, source):
+    """Regression: two separate tuning sweeps for the same source file (e.g.
+    a dimension sweep, then later a CRF sweep) can reproduce an identical
+    `(dimension, crf)` combination the other sweep already wrote to disk
+    under the same `<stem>.variant-<params>.<ext>` name. `_create_variant`
+    must overwrite that file's `files` row (UPDATE) instead of blindly
+    INSERTing a second one for the same `(source_id, relative_path)`, which
+    violates that pair's UNIQUE constraint."""
+    make_video(source["root"] / "clips" / "clip.mp4")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    first = _run_job(
+        engine, "file", file_row.id,
+        {
+            "file_id": file_row.id, "profile_id": profile["id"], "mode": "test",
+            "variants": [{"max_dimension": 100, "crf": 26}, {"max_dimension": 200, "crf": 26}],
+        },
+    )
+    assert first["status"] == "completed"
+
+    # A later, separate sweep reproduces one of the same combinations.
+    second = _run_job(
+        engine, "file", file_row.id,
+        {
+            "file_id": file_row.id, "profile_id": profile["id"], "mode": "test",
+            "variants": [{"max_dimension": 100, "crf": 26}, {"max_dimension": 100, "crf": 30}],
+        },
+    )
+    assert second["status"] == "completed"
+    items = service.get_job_items(engine, second["id"])
+    assert all(item["status"] == "completed" for item in items)
+
+    with engine.connect() as conn:
+        count = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM files WHERE source_id = :sid AND relative_path = :rel"
+            ),
+            {"sid": file_row.source_id, "rel": "clips/clip.variant-d100-crf26.mp4"},
+        ).scalar()
+    assert count == 1
 
 
 # --- skip-processed and directory recursion ------------------------------------

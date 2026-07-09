@@ -25,6 +25,11 @@ _FINISH_EVENT_TYPES = {
     "cancelled": "job_cancelled",
 }
 
+# See `log_event()`'s console-mirroring note below.
+_CONSOLE_INFO_EVENT_TYPES = frozenset(
+    {"job_item_started", "job_item_progress", "job_force_cancelled", "job_force_abandoned"}
+)
+
 
 class JobConflictError(Exception):
     """Raised when a requested transition isn't valid for the job's current status."""
@@ -199,10 +204,20 @@ def log_event(
     # warning events here -- rather than at each individual job handler --
     # is what makes background-job failures visible in the terminal running
     # the backend, not just in the DB-backed event log / Log Viewer.
+    # `_CONSOLE_INFO_EVENT_TYPES` is a narrow exception (user request): these
+    # are exactly the "what is it doing right now" signal needed to diagnose
+    # a stuck or slow job from the terminal (`job_item_progress` in
+    # particular is the per-stage breakdown -- probing, frame extraction,
+    # encoding, rendering -- used to see where a preview/conversion job is
+    # actually spending its time), without flooding the console the way
+    # printing every `info` event would (e.g. every skipped file in a large
+    # rescan).
     if level == "error":
         logger.error("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
     elif level == "warning":
         logger.warning("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
+    elif event_type in _CONSOLE_INFO_EVENT_TYPES:
+        logger.info("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
 
 
 # --- jobs -----------------------------------------------------------------
@@ -347,12 +362,29 @@ def cancel_job(engine, job_id: str) -> dict | None:
         # can be finished directly, same as a not-yet-started queued job.
         finish_job(engine, job_id, "cancelled", "Cancelled while paused.")
     elif job["status"] == "running":
-        # Log before flagging: once the worker can see the cancel request it
-        # may finish and log job_cancel_honored/job_cancelled within
-        # microseconds, so logging after would risk this event landing after
-        # them in the event stream.
-        log_event(engine, job_id, None, "info", "job_cancel_requested", "Cancellation requested.")
-        request_cancel(job_id)
+        if is_cancel_requested(job_id):
+            # A second cancel request for a job that hasn't honored the
+            # first one yet (user request): the handler's per-item
+            # checkpoint (`check_stop_requested`) never runs if the item
+            # it's currently on is stuck in an unbounded blocking call (a
+            # network read with no timeout, an unresponsive subprocess) --
+            # cooperative cancellation alone can wait forever in that case.
+            # Force it: mark the job finished right away rather than waiting
+            # on the worker thread. `JobWorker`'s lane (`app/jobs/worker.py`)
+            # notices this out-of-band status change and abandons the still
+            # -running handler thread instead of blocking on it forever.
+            log_event(
+                engine, job_id, None, "warning", "job_force_cancelled",
+                "Force-cancelled: job did not respond to the first cancellation request.",
+            )
+            finish_job(engine, job_id, "cancelled", "Force-cancelled (unresponsive).")
+        else:
+            # Log before flagging: once the worker can see the cancel request
+            # it may finish and log job_cancel_honored/job_cancelled within
+            # microseconds, so logging after would risk this event landing
+            # after them in the event stream.
+            log_event(engine, job_id, None, "info", "job_cancel_requested", "Cancellation requested.")
+            request_cancel(job_id)
     else:
         raise JobConflictError("job_not_cancellable", f"Job is already {job['status']}.")
 

@@ -114,5 +114,5 @@ def test_directory_children_tags_variant_files_with_the_swept_parameter(engine, 
         assert res.status_code == 200
         by_id = {f["id"]: f for f in res.json()["files"]}
 
-    assert by_id[variant_a]["variant_tag"] == {"param": "dimension", "value": 960}
-    assert by_id[variant_b]["variant_tag"] == {"param": "dimension", "value": 1920}
+    assert by_id[variant_a]["variant_tags"] == [{"param": "dimension", "value": 960}]
+    assert by_id[variant_b]["variant_tags"] == [{"param": "dimension", "value": 1920}]

@@ -114,8 +114,10 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo, onDelete }: Fi
           ) : (
             <FileIcon size={28} />
           )}
-          {file.variant_tag && (
-            <span className="library-card__variant-overlay">{variantTagOverlayText(file.variant_tag)}</span>
+          {file.variant_tags && file.variant_tags.length > 0 && (
+            <span className="library-card__variant-overlay">
+              {file.variant_tags.map(variantTagOverlayText).join(' · ')}
+            </span>
           )}
         </button>
         <button
@@ -131,9 +133,11 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo, onDelete }: Fi
       <div className="library-card__name" title={file.file_name}>
         {file.file_name}
       </div>
-      {file.variant_tag && (
+      {file.variant_tags && file.variant_tags.length > 0 && (
         <div className="library-card__tag-row">
-          <VariantTagChip tag={file.variant_tag} />
+          {file.variant_tags.map((tag, index) => (
+            <VariantTagChip key={index} tag={tag} />
+          ))}
         </div>
       )}
       <div className="library-card__meta">
@@ -194,7 +198,7 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo, onDelete }: Fi
   )
 }
 
-function VariantTagChip({ tag }: { tag: VariantTag }) {
+export function VariantTagChip({ tag }: { tag: VariantTag }) {
   const label = useVariantTagLabel(tag)
   return <span className="library-card__tag">{label}</span>
 }

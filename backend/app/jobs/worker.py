@@ -17,6 +17,20 @@ Pausing a running job frees its lane immediately once the handler notices
 the request between items (see `service.check_stop_requested` call sites in
 `app/jobs/*.py`), so another queued job of the same lane can start right
 away instead of waiting for the paused one to finish.
+
+A cancel request can also be *forced* (`service.cancel_job()`, user
+request): if a job doesn't honor the first cooperative request -- e.g. its
+current item is stuck in an unbounded blocking call with no timeout (a
+network read, an unresponsive subprocess) -- a repeat cancel marks the job
+`cancelled` in the database immediately, without waiting for the handler.
+`_Lane._execute` below is what makes that actually free the lane: it runs
+the handler in a separate daemon thread and polls it with a timeout instead
+of calling it directly, so it can notice this out-of-band status change and
+abandon a still-running handler thread rather than blocking on it forever
+(which would otherwise wedge this lane -- and every future job of its
+types -- until the process restarts). Python has no safe way to kill a
+thread, so an abandoned thread is left to finish or error out on its own;
+it's a daemon thread, so it can't block process shutdown either.
 """
 
 from __future__ import annotations
@@ -37,6 +51,7 @@ from app.jobs.tag import run_tag_job
 
 _POLL_INTERVAL_SECONDS = 0.3
 _RETENTION_INTERVAL_SECONDS = 60.0
+_ABANDON_CHECK_SECONDS = 0.5
 
 _HANDLERS = {
     "rescan": run_rescan_job,
@@ -97,21 +112,62 @@ class _Lane:
                     last_retention = now
 
     def _execute(self, engine, job: dict) -> None:
-        service.start_job(engine, job["id"])
+        job_id = job["id"]
+        service.start_job(engine, job_id)
         handler = _HANDLERS.get(job["job_type"])
-        try:
-            if handler is None:
-                raise RuntimeError(f"No worker handler registered for job type: {job['job_type']}")
-            status, message = handler(engine, job)
-            if status == "paused":
-                service.mark_job_paused(engine, job["id"], message)
-            else:
-                service.finish_job(engine, job["id"], status, message)
-        except Exception as exc:  # noqa: BLE001 - a failed job must not stop the worker
-            service.finish_job(engine, job["id"], "failed", str(exc))
-        finally:
-            service.clear_cancel_request(job["id"])
-            service.clear_pause_request(job["id"])
+        if handler is None:
+            service.finish_job(engine, job_id, "failed", f"No worker handler registered for job type: {job['job_type']}")
+            service.clear_cancel_request(job_id)
+            service.clear_pause_request(job_id)
+            return
+
+        # Run the handler on its own thread rather than calling it directly
+        # on this lane's thread, so a force-cancel (see module docstring) can
+        # free this lane even if the handler itself never returns.
+        outcome: dict = {}
+
+        def _run() -> None:
+            try:
+                status, message = handler(engine, job)
+                outcome["status"] = status
+                outcome["message"] = message
+            except Exception as exc:  # noqa: BLE001 - a failed job must not stop the worker
+                outcome["status"] = "failed"
+                outcome["message"] = str(exc)
+
+        thread = threading.Thread(target=_run, name=f"job-{job_id[:8]}", daemon=True)
+        thread.start()
+
+        while thread.is_alive():
+            thread.join(timeout=_ABANDON_CHECK_SECONDS)
+            if thread.is_alive():
+                current = service.get_job(engine, job_id)
+                if current is not None and current["status"] in service.FINISHED_STATUSES:
+                    service.log_event(
+                        engine, job_id, None, "warning", "job_force_abandoned",
+                        "Job was force-stopped while its worker thread was still busy; the thread was abandoned.",
+                    )
+                    service.clear_cancel_request(job_id)
+                    service.clear_pause_request(job_id)
+                    return
+
+        # The handler may have kept running past an external force-finish
+        # that already recorded a terminal status (a race, not the abandon
+        # case above) -- that status must win, not a late result from here.
+        current = service.get_job(engine, job_id)
+        if current is not None and current["status"] in service.FINISHED_STATUSES:
+            service.clear_cancel_request(job_id)
+            service.clear_pause_request(job_id)
+            return
+
+        status = outcome.get("status", "failed")
+        message = outcome.get("message")
+        if status == "paused":
+            service.mark_job_paused(engine, job_id, message)
+        else:
+            service.finish_job(engine, job_id, status, message)
+        service.clear_cancel_request(job_id)
+        service.clear_pause_request(job_id)
 
 
 class JobWorker:

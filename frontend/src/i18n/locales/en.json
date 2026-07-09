@@ -388,6 +388,8 @@
   "logs": {
     "title": "Log Viewer",
     "close": "Close",
+    "copyAll": "Copy all",
+    "copied": "Copied",
     "filterJob": "Job ID",
     "filterFile": "File ID",
     "filterLevelAll": "All levels",

@@ -15,7 +15,9 @@ from __future__ import annotations
 import random
 import shutil
 import subprocess
+import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -432,6 +434,7 @@ def generate_file_preview(
     animated_segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
     animated_transition: str = "cut",
     max_workers: int = 1,
+    on_stage: Callable[[str], None] | None = None,
 ) -> float:
     """Returns the source's duration in seconds (from the ffprobe call this
     already performs), so callers can persist it without a second probe.
@@ -442,22 +445,42 @@ def generate_file_preview(
     a time (a `preview` job's file scope) should pass the configured
     parallelism here; callers already processing several files concurrently
     (directory scope) should keep this at 1 to avoid spawning
-    `files-in-flight x max_workers` ffmpeg processes at once."""
+    `files-in-flight x max_workers` ffmpeg processes at once.
+
+    `on_stage` (post-V1, user request) is called with a human-readable
+    message after each major stage (probing, frame extraction, animated
+    preview rendering, collage rendering) so a caller with job/log access
+    (`app/jobs/preview.py`) can surface per-file progress -- otherwise a
+    multi-minute file sits silent between "started" and "completed",
+    hiding which stage is actually slow."""
+
+    def stage(message: str) -> None:
+        if on_stage is not None:
+            on_stage(message)
+
     tiles = compute_layout_tiles(layout["grid_rows"], layout["grid_cols"], layout["layout_definition"])
 
+    t0 = time.monotonic()
     info = conversion.probe_media(video_path)
     if info is None or not info.get("has_video_stream") or not info.get("duration"):
         raise PreviewError("Source is not a probeable video with a video stream and duration.")
+    stage(f"Probed source ({info['duration']:.1f}s video) in {time.monotonic() - t0:.2f}s")
 
+    t0 = time.monotonic()
+    stage(f"Extracting {len(tiles)} collage frame(s)")
     timestamps = sample_interior_timestamps(info["duration"], len(tiles))
     images = fill_missing_frames(
         _map_parallel(lambda ts: extract_frame_image(video_path, ts), timestamps, max_workers)
     )
     if not any(img is not None for img in images):
         raise PreviewError("Could not extract any frames from the source video.")
+    stage(f"Extracted {len(tiles)} collage frame(s) in {time.monotonic() - t0:.2f}s")
 
     if gif_dest_path is not None:
+        t0 = time.monotonic()
         if animated_source_mode == "clip":
+            stage(f"Extracting animated preview clip segments at {len(timestamps)} position(s)")
+
             # Same sample timestamps as the collage (user request: "clip"
             # mode grabs a short burst of frames per position instead of one
             # still), falling back to the already-extracted still frame if
@@ -472,17 +495,24 @@ def generate_file_preview(
             for segment in _map_parallel(_extract_segment, list(zip(timestamps, images)), max_workers):
                 gif_images.extend(segment)
                 gif_segment_sizes.append(len(segment))
+            stage(f"Extracted {len(gif_images)} animated preview frame(s) in {time.monotonic() - t0:.2f}s")
+
+            t0 = time.monotonic()
             render_gif(
                 gif_images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors,
                 segment_seconds=animated_segment_seconds, transition=animated_transition,
                 segment_sizes=gif_segment_sizes,
             )
         else:
+            stage("Reusing collage frames for animated preview")
             render_gif(
                 images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors,
                 segment_seconds=animated_segment_seconds, transition=animated_transition,
             )
+        stage(f"Rendered animated preview GIF in {time.monotonic() - t0:.2f}s")
 
+    t0 = time.monotonic()
+    stage("Scoring and selecting frames for the collage layout")
     frame_infos = [_score_frame(img) for img in images]
     assignment = select_frames_for_tiles(
         tiles, images, frame_infos, layout["identity_diversity_enabled"], layout["timeline_flow"]
@@ -493,6 +523,7 @@ def generate_file_preview(
         ordered_images, tiles, video_path.name, aspect_ratio, dest_path,
         grid_rows=layout["grid_rows"], grid_cols=layout["grid_cols"],
     )
+    stage(f"Rendered collage image in {time.monotonic() - t0:.2f}s")
 
     return info["duration"]
 

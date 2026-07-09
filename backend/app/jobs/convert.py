@@ -24,6 +24,7 @@ directly on the remote source without re-uploading their bytes.
 
 from __future__ import annotations
 
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -62,10 +63,22 @@ def _temp_output_path(directory: Path, stem: str, container: str) -> Path:
     return directory / f".{stem}.convert-{uuid.uuid4().hex[:8]}.{container}"
 
 
-def _encode_and_validate(source_path: Path, temp_path: Path, params: dict) -> float | None:
+def _encode_and_validate(
+    engine, job_id: str, file_id: str, source_path: Path, temp_path: Path, params: dict
+) -> float | None:
     """Returns the source's duration in seconds (from the ffprobe call this
     already performs for max-dimension resolution), so callers can persist it
-    without a second probe. Re-encoding does not change a video's duration."""
+    without a second probe. Re-encoding does not change a video's duration.
+
+    Logs a `job_item_progress` event (post-V1, user request) around each
+    stage -- probing, the ffmpeg encode itself, and output validation -- so
+    a slow conversion's time can be attributed to a specific stage instead
+    of sitting silent between "started" and "completed"."""
+
+    def progress(message: str) -> None:
+        service.log_event(engine, job_id, file_id, "info", "job_item_progress", message)
+
+    t0 = time.monotonic()
     source_info = conversion.probe_media(source_path)
     max_dim = conversion.effective_max_dimension(source_info, params["max_dimension"])
     args = conversion.build_ffmpeg_command(
@@ -77,12 +90,18 @@ def _encode_and_validate(source_path: Path, temp_path: Path, params: dict) -> fl
         max_dimension=max_dim,
         extra_encoder_args=params["extra_encoder_args"],
     )
+    progress(f"Probed source in {time.monotonic() - t0:.2f}s")
+
+    t0 = time.monotonic()
+    progress(f"Encoding with ffmpeg (codec={params['video_codec']}, crf={params['crf']})")
     ok, error = conversion.run_ffmpeg(args)
     if not ok:
         if temp_path.exists():
             temp_path.unlink()
         raise ConversionError(f"ffmpeg failed: {error}")
+    progress(f"Encoded in {time.monotonic() - t0:.2f}s")
 
+    t0 = time.monotonic()
     valid, reason = conversion.validate_converted_output(
         temp_path, video_codec=params["video_codec"], container=params["container"]
     )
@@ -91,6 +110,7 @@ def _encode_and_validate(source_path: Path, temp_path: Path, params: dict) -> fl
         # not been touched yet in either mode (Specification §8.1 rule 4).
         temp_path.unlink()
         raise ConversionError(f"Validation failed: {reason}")
+    progress(f"Validated output in {time.monotonic() - t0:.2f}s")
 
     return source_info.get("duration") if source_info else None
 
@@ -99,19 +119,24 @@ def _has_preview(access: SourceAccess, rel_path: str, stem: str) -> bool:
     return access.exists(sibling_relative_path(rel_path, f"{stem}.jpg"))
 
 
-def _replace_production(engine, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str) -> dict:
+def _replace_production(
+    engine, job_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str
+) -> dict:
     directory = old_path.parent
     stem = old_path.stem
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(engine, job_id, file_row.id, old_path, temp_path, params)
 
     final_name = f"{stem}.{params['container']}"
     final_rel = sibling_relative_path(file_row.relative_path, final_name)
     access.commit_new_file(temp_path, final_rel)
     if final_rel != file_row.relative_path:
         access.remote_remove(file_row.relative_path)
+    service.log_event(
+        engine, job_id, file_row.id, "info", "job_item_progress", f"Replaced source with {final_name}"
+    )
 
     final_stat = access.stat_rel(final_rel)
     now = _now()
@@ -147,14 +172,16 @@ def _replace_production(engine, access: SourceAccess, old_path: Path, file_row, 
     return {"output_ref": final_rel}
 
 
-def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str) -> dict:
+def _replace_test_mode(
+    engine, job_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str
+) -> dict:
     directory = old_path.parent
     stem = old_path.stem
     original_ext = file_row.extension
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(engine, job_id, file_row.id, old_path, temp_path, params)
 
     # Original is always renamed, even without a name collision, so preserved
     # originals stay uniformly recognizable (Specification §8.2). Renaming
@@ -165,6 +192,10 @@ def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, p
     new_output_name = f"{stem}.{params['container']}"
     new_output_rel = sibling_relative_path(file_row.relative_path, new_output_name)
     access.commit_new_file(temp_path, new_output_rel)
+    service.log_event(
+        engine, job_id, file_row.id, "info", "job_item_progress",
+        f"Kept original as {stem}.original.{original_ext}, wrote {new_output_name}",
+    )
 
     now = _now()
     has_preview = _has_preview(access, file_row.relative_path, stem)
@@ -231,14 +262,16 @@ def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, p
     return {"output_ref": new_output_rel}
 
 
-def _create_variant(engine, access: SourceAccess, old_path: Path, file_row, profile: dict, overrides: dict) -> dict:
+def _create_variant(
+    engine, job_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict, overrides: dict
+) -> dict:
     directory = old_path.parent
     stem = old_path.stem
     params = _effective_params(profile, overrides)
     suffix = conversion.encode_variant_suffix(profile, overrides)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(engine, job_id, file_row.id, old_path, temp_path, params)
 
     variant_name = f"{stem}.variant-{suffix}.{params['container']}"
     variant_rel = sibling_relative_path(file_row.relative_path, variant_name)
@@ -246,48 +279,81 @@ def _create_variant(engine, access: SourceAccess, old_path: Path, file_row, prof
 
     stat = access.stat_rel(variant_rel)
     now = _now()
-    new_file_id = str(uuid.uuid4())
+    has_preview = _has_preview(access, file_row.relative_path, stem)
 
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                INSERT INTO files
-                    (id, source_id, directory_id, relative_path, file_name, extension,
-                     size_bytes, modified_at, discovered_at, last_scanned_at,
-                     is_video_supported, has_preview_asset, duration_seconds, created_at, updated_at)
-                VALUES
-                    (:id, :sid, :dir_id, :rel, :file_name, :ext,
-                     :size, :modified_at, :now, :now,
-                     1, :has_preview, :duration, :now, :now)
-                """
-            ),
-            {
-                "id": new_file_id,
-                "sid": file_row.source_id,
-                "dir_id": file_row.directory_id,
-                "rel": variant_rel,
-                "file_name": variant_name,
-                "ext": params["container"],
-                "size": stat.size,
-                "modified_at": stat.modified_at,
-                "duration": duration_seconds,
-                "has_preview": _has_preview(access, file_row.relative_path, stem),
-                "now": now,
-            },
-        )
+        # A variant with this exact suffix may already have a `files` row --
+        # e.g. re-running a tuning sweep with a combination (dimension+crf)
+        # that an earlier sweep already produced for this source file.
+        # `commit_new_file()` above already overwrote the file on disk
+        # unconditionally, so the DB side must follow the same
+        # overwrite-in-place semantics (UPDATE) instead of blindly INSERTing
+        # a second row for the same `(source_id, relative_path)`, which
+        # violates that pair's UNIQUE constraint.
+        existing = conn.execute(
+            text("SELECT id FROM files WHERE source_id = :sid AND relative_path = :rel"),
+            {"sid": file_row.source_id, "rel": variant_rel},
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                text(
+                    """
+                    UPDATE files
+                    SET size_bytes = :size, modified_at = :modified_at, last_scanned_at = :now,
+                        is_video_supported = 1, has_preview_asset = :has_preview,
+                        duration_seconds = :duration, updated_at = :now
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": existing.id,
+                    "size": stat.size,
+                    "modified_at": stat.modified_at,
+                    "duration": duration_seconds,
+                    "has_preview": has_preview,
+                    "now": now,
+                },
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO files
+                        (id, source_id, directory_id, relative_path, file_name, extension,
+                         size_bytes, modified_at, discovered_at, last_scanned_at,
+                         is_video_supported, has_preview_asset, duration_seconds, created_at, updated_at)
+                    VALUES
+                        (:id, :sid, :dir_id, :rel, :file_name, :ext,
+                         :size, :modified_at, :now, :now,
+                         1, :has_preview, :duration, :now, :now)
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "sid": file_row.source_id,
+                    "dir_id": file_row.directory_id,
+                    "rel": variant_rel,
+                    "file_name": variant_name,
+                    "ext": params["container"],
+                    "size": stat.size,
+                    "modified_at": stat.modified_at,
+                    "duration": duration_seconds,
+                    "has_preview": has_preview,
+                    "now": now,
+                },
+            )
 
     return {"output_ref": variant_rel, "suffix": suffix}
 
 
-def _convert_one_file(engine, access: SourceAccess, file_row, profile: dict, mode: str, profile_id: str) -> dict:
+def _convert_one_file(engine, job_id: str, access: SourceAccess, file_row, profile: dict, mode: str, profile_id: str) -> dict:
     if not access.exists(file_row.relative_path):
         raise ConversionError("Source file no longer exists on the source.")
 
     with access.local_copy(file_row.relative_path) as old_path:
         if mode == "test":
-            return _replace_test_mode(engine, access, old_path, file_row, profile, profile_id)
-        return _replace_production(engine, access, old_path, file_row, profile, profile_id)
+            return _replace_test_mode(engine, job_id, access, old_path, file_row, profile, profile_id)
+        return _replace_production(engine, job_id, access, old_path, file_row, profile, profile_id)
 
 
 def run_convert_job(engine, job: dict) -> tuple[str, str]:
@@ -318,8 +384,9 @@ def _process_convert_file(engine, job_id: str, access: SourceAccess, row, profil
     batch."""
     item_id = service.create_job_item(engine, job_id, file_id=row.id, step_name="convert_file")
     service.start_job_item(engine, item_id)
+    service.log_event(engine, job_id, row.id, "info", "job_item_started", f"Converting {row.relative_path}")
     try:
-        outcome = _convert_one_file(engine, access, row, profile, mode, profile_id)
+        outcome = _convert_one_file(engine, job_id, access, row, profile, mode, profile_id)
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
         return True
@@ -453,8 +520,9 @@ def _run_file_scope(
         return "completed", "File already converted; skipped."
 
     service.start_job_item(engine, item_id)
+    service.log_event(engine, job["id"], row.id, "info", "job_item_started", f"Converting {row.relative_path}")
     try:
-        outcome = _convert_one_file(engine, access, row, profile, mode, profile_id)
+        outcome = _convert_one_file(engine, job["id"], access, row, profile, mode, profile_id)
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job["id"], row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
         return "completed", "File converted."
@@ -474,8 +542,9 @@ def _process_variant(engine, job_id: str, access: SourceAccess, old_path: Path, 
     suffix = conversion.encode_variant_suffix(profile, overrides)
     item_id = service.create_job_item(engine, job_id, file_id=row.id, item_key=suffix, step_name="convert_variant")
     service.start_job_item(engine, item_id)
+    service.log_event(engine, job_id, row.id, "info", "job_item_started", f"Encoding variant {suffix}")
     try:
-        outcome = _create_variant(engine, access, old_path, row, profile, overrides)
+        outcome = _create_variant(engine, job_id, access, old_path, row, profile, overrides)
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Variant produced.")
         service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Variant {suffix} produced.")
         return True

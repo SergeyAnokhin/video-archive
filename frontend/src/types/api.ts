@@ -138,7 +138,7 @@ export interface FileEntry {
   is_variant: boolean
   is_original: boolean
   duration_seconds: number | null
-  variant_tag?: VariantTag | null
+  variant_tags?: VariantTag[]
 }
 
 export interface DirectoryChildrenResponse {

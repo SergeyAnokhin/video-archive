@@ -62,7 +62,7 @@ def _file_row_to_dict(row) -> dict:
         "tagged_at": row.tagged_at,
         "is_variant": VARIANT_MARKER in row.file_name,
         "is_original": ORIGINAL_MARKER in row.file_name,
-        "variant_tag": None,
+        "variant_tags": [],
     }
 
 
@@ -141,7 +141,7 @@ def list_files(
     files = [_file_row_to_dict(row) for row in rows]
     variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in rows])
     for entry in files:
-        entry["variant_tag"] = variant_tags.get(entry["id"])
+        entry["variant_tags"] = variant_tags.get(entry["id"], [])
 
     return {"files": files}
 

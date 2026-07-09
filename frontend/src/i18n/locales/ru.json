@@ -388,6 +388,8 @@
   "logs": {
     "title": "Просмотр логов",
     "close": "Закрыть",
+    "copyAll": "Копировать всё",
+    "copied": "Скопировано",
     "filterJob": "ID задания",
     "filterFile": "ID файла",
     "filterLevelAll": "Все уровни",

@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { Check, Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LogEvent } from '../types/api'
@@ -18,7 +18,18 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
   const [fileIdFilter, setFileIdFilter] = useState('')
   const [levelFilter, setLevelFilter] = useState('')
   const [events, setEvents] = useState<LogEvent[]>([])
+  const [copied, setCopied] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
+
+  async function handleCopyAll() {
+    if (events.length === 0) return
+    const text = events
+      .map((event) => `${event.created_at} [${event.level.toUpperCase()}] ${event.message}`)
+      .join('\n')
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -80,14 +91,25 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
       >
         <div className="log-viewer__header">
           <h2 className="log-viewer__title">{t('logs.title')}</h2>
-          <button
-            type="button"
-            className="log-viewer__close"
-            aria-label={t('logs.close')}
-            onClick={onClose}
-          >
-            <X size={18} />
-          </button>
+          <div className="log-viewer__header-actions">
+            <button
+              type="button"
+              className="log-viewer__copy"
+              onClick={() => void handleCopyAll()}
+              disabled={events.length === 0}
+            >
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? t('logs.copied') : t('logs.copyAll')}
+            </button>
+            <button
+              type="button"
+              className="log-viewer__close"
+              aria-label={t('logs.close')}
+              onClick={onClose}
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="log-viewer__filters">
