@@ -53,6 +53,38 @@ def _file_row(engine, relative_path: str):
         ).fetchone()
 
 
+# --- probe_media --------------------------------------------------------------
+
+
+def test_probe_media_returns_none_instead_of_raising_on_null_stdout(tmp_path, monkeypatch):
+    """Regression test: a 0 exit code with `stdout=None` (observed
+    intermittently on Windows across many back-to-back ffprobe calls) used to
+    raise an uncaught `TypeError` out of `json.loads(None)`, surfacing as a
+    cryptic job-item failure message instead of the normal "not probeable"
+    path."""
+    fake_result = type("FakeResult", (), {"returncode": 0, "stdout": None})()
+    monkeypatch.setattr(conversion.subprocess, "run", lambda *a, **k: fake_result)
+
+    assert conversion.probe_media(tmp_path / "clip.mp4") is None
+
+
+def test_probe_media_handles_non_ascii_path(tmp_path):
+    """Regression test: `ffprobe`'s JSON output is UTF-8, but `subprocess.run`
+    without an explicit `encoding` decodes with the OS console codepage (e.g.
+    cp1252 on many Windows setups). For a path containing non-Latin-1
+    characters (e.g. Cyrillic folder/file names), that mismatch used to raise
+    a `UnicodeDecodeError` inside subprocess's stdout reader thread, silently
+    truncating `result.stdout` and making a perfectly valid video look "not
+    probeable"."""
+    video_path = tmp_path / "Я умею любить" / "клип.mp4"
+    make_video(video_path, duration=1.0, size="320x240")
+
+    info = conversion.probe_media(video_path)
+    assert info is not None
+    assert info["has_video_stream"] is True
+    assert info["duration"] is not None
+
+
 # --- profile CRUD ------------------------------------------------------------
 
 

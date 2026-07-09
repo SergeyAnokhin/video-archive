@@ -8,11 +8,14 @@ request's whole lifetime.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+
+logger = logging.getLogger(__name__)
 
 FINISHED_STATUSES = ("completed", "failed", "cancelled")
 
@@ -110,7 +113,7 @@ def check_stop_requested(job_id: str) -> str | None:
 # --- row <-> dict mapping ----------------------------------------------------
 
 
-def _job_row_to_dict(row) -> dict:
+def _job_row_to_dict(row, failed_item_count: int = 0) -> dict:
     return {
         "id": row.id,
         "job_type": row.job_type,
@@ -122,9 +125,27 @@ def _job_row_to_dict(row) -> dict:
         "finished_at": row.finished_at,
         "summary_message": row.summary_message,
         "total_items": row.total_items,
+        "failed_item_count": failed_item_count,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
+
+
+def _count_failed_items(engine, job_ids: list[str]) -> dict[str, int]:
+    """Per-job count of failed `job_items` (user-requested visibility into
+    how many items errored during a job), batched for `list_jobs` so
+    rendering the jobs list doesn't issue one query per job."""
+    if not job_ids:
+        return {}
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT job_id, COUNT(*) AS failed_count FROM job_items "
+                "WHERE job_id IN :ids AND status = 'failed' GROUP BY job_id"
+            ).bindparams(bindparam("ids", expanding=True)),
+            {"ids": job_ids},
+        ).all()
+    return {row.job_id: row.failed_count for row in rows}
 
 
 def _job_item_row_to_dict(row) -> dict:
@@ -173,6 +194,15 @@ def log_event(
                 "now": _now(),
             },
         )
+    # Every job/job-item failure funnels through this function (paired with
+    # `fail_job_item`/`finish_job` at every call site), so logging error and
+    # warning events here -- rather than at each individual job handler --
+    # is what makes background-job failures visible in the terminal running
+    # the backend, not just in the DB-backed event log / Log Viewer.
+    if level == "error":
+        logger.error("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
+    elif level == "warning":
+        logger.warning("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
 
 
 # --- jobs -----------------------------------------------------------------
@@ -205,7 +235,10 @@ def create_job(engine, job_type: str, scope_type: str, scope_ref: str | None, pa
 def get_job(engine, job_id: str) -> dict | None:
     with engine.connect() as conn:
         row = conn.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).fetchone()
-    return _job_row_to_dict(row) if row else None
+    if row is None:
+        return None
+    failed_count = _count_failed_items(engine, [job_id]).get(job_id, 0)
+    return _job_row_to_dict(row, failed_count)
 
 
 def list_jobs(
@@ -232,7 +265,8 @@ def list_jobs(
             ),
             params,
         ).all()
-    return [_job_row_to_dict(row) for row in rows]
+    failed_counts = _count_failed_items(engine, [row.id for row in rows])
+    return [_job_row_to_dict(row, failed_counts.get(row.id, 0)) for row in rows]
 
 
 def get_current_job_summary(engine) -> dict | None:

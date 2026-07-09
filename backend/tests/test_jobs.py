@@ -77,6 +77,26 @@ def test_set_job_total_items(engine, source):
     assert service.get_job(engine, job["id"])["total_items"] == 43
 
 
+def test_get_job_and_list_jobs_report_failed_item_count(engine, source):
+    """User-requested visibility into how many items errored during a job
+    (surfaced in the Jobs modal), backed by a live count over `job_items`
+    rather than a separately maintained counter."""
+    job = service.create_job(engine, "preview", "source", None, {"path": ""})
+    assert job["failed_item_count"] == 0
+
+    ok_item = service.create_job_item(engine, job["id"], step_name="preview_file")
+    service.complete_job_item(engine, ok_item)
+    bad_item = service.create_job_item(engine, job["id"], step_name="preview_file")
+    service.fail_job_item(engine, bad_item, message="boom")
+    other_bad_item = service.create_job_item(engine, job["id"], step_name="preview_file")
+    service.fail_job_item(engine, other_bad_item, message="boom again")
+
+    assert service.get_job(engine, job["id"])["failed_item_count"] == 2
+
+    listed = {row["id"]: row for row in service.list_jobs(engine)}
+    assert listed[job["id"]]["failed_item_count"] == 2
+
+
 def test_retention_sweep_removes_old_finished_jobs(engine, source):
     job = service.create_job(engine, "rescan", "source", None, {"path": ""})
     service.start_job(engine, job["id"])

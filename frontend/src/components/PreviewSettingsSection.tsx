@@ -2,6 +2,8 @@ import { Copy, Eraser, FolderOpen, Grid2x2, Grid3x3, LayoutGrid, Save, Square, S
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
+  AnimatedSourceMode,
+  AnimatedTransition,
   AspectRatioMode,
   EnlargedTile,
   LayoutTile,
@@ -15,6 +17,8 @@ import './PreviewSettingsSection.css'
 
 const ASPECT_RATIOS: AspectRatioMode[] = ['standard', 'phone-portrait', 'phone-landscape', 'ultra-wide', 'custom']
 const QUICK_SLOT_NAMES = ['Quick 1', 'Quick 2', 'Quick 3']
+const ANIMATED_SOURCE_MODES: AnimatedSourceMode[] = ['frame', 'clip']
+const ANIMATED_TRANSITIONS: AnimatedTransition[] = ['cut', 'crossfade']
 
 function effectiveAspectRatio(settings: PreviewSettings): number {
   switch (settings.aspect_ratio) {
@@ -33,6 +37,7 @@ function effectiveAspectRatio(settings: PreviewSettings): number {
 
 export function PreviewSettingsSection() {
   const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<'collage' | 'animated'>('collage')
   const [presets, setPresets] = useState<PreviewLayoutPreset[]>([])
   const [settings, setSettings] = useState<PreviewSettings | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
@@ -240,7 +245,28 @@ export function PreviewSettingsSection() {
     <section className="settings-modal__section">
       <h3 className="settings-modal__section-title">{t('previewSettings.title')}</h3>
 
-      {settings && (
+      <div className="settings-modal__options" role="tablist" aria-label={t('previewSettings.title')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'collage'}
+          className="settings-modal__option"
+          onClick={() => setActiveTab('collage')}
+        >
+          {t('previewSettings.tabCollage')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'animated'}
+          className="settings-modal__option"
+          onClick={() => setActiveTab('animated')}
+        >
+          {t('previewSettings.tabAnimated')}
+        </button>
+      </div>
+
+      {activeTab === 'collage' && settings && (
         <>
           <label className="settings-modal__label">
             {t('previewSettings.aspectRatio')}
@@ -276,6 +302,12 @@ export function PreviewSettingsSection() {
               />
             </div>
           )}
+        </>
+      )}
+
+      {activeTab === 'animated' && settings && (
+        <>
+          <p className="settings-modal__hint">{t('previewSettings.animatedIntro')}</p>
 
           <div className="settings-modal__row">
             <label className="settings-modal__label">
@@ -315,9 +347,64 @@ export function PreviewSettingsSection() {
               />
             </label>
           </div>
+
+          <div className="settings-modal__row">
+            <label className="settings-modal__label">
+              {t('previewSettings.animatedSourceMode')}
+              <select
+                className="settings-modal__input"
+                value={settings.animated_source_mode}
+                onChange={(event) =>
+                  void updateSettings({ animated_source_mode: event.target.value as AnimatedSourceMode })
+                }
+              >
+                {ANIMATED_SOURCE_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {t(`previewSettings.animatedSourceModeOption.${mode}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="settings-modal__label">
+              {t(
+                settings.animated_source_mode === 'clip'
+                  ? 'previewSettings.animatedSegmentSecondsClip'
+                  : 'previewSettings.animatedSegmentSeconds'
+              )}
+              <input
+                type="number"
+                min={0.1}
+                max={5}
+                step={0.1}
+                className="settings-modal__input"
+                value={settings.animated_segment_seconds}
+                onChange={(event) => void updateSettings({ animated_segment_seconds: Number(event.target.value) })}
+              />
+            </label>
+
+            <label className="settings-modal__label">
+              {t('previewSettings.animatedTransition')}
+              <select
+                className="settings-modal__input"
+                value={settings.animated_transition}
+                onChange={(event) =>
+                  void updateSettings({ animated_transition: event.target.value as AnimatedTransition })
+                }
+              >
+                {ANIMATED_TRANSITIONS.map((transition) => (
+                  <option key={transition} value={transition}>
+                    {t(`previewSettings.animatedTransitionOption.${transition}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </>
       )}
 
+      {activeTab === 'collage' && (
+      <>
       <div className="preview-settings__toolbar">
         <div className="settings-modal__options" role="group" aria-label={t('previewSettings.brush')}>
           <button
@@ -519,6 +606,8 @@ export function PreviewSettingsSection() {
           <Copy size={14} /> {t('previewSettings.saveAsNewPreset')}
         </button>
       </div>
+      </>
+      )}
     </section>
   )
 }

@@ -28,6 +28,7 @@ export interface JobSummary {
   finished_at: string | null
   summary_message: string | null
   total_items: number | null
+  failed_item_count: number
   created_at: string
   updated_at: string
 }
@@ -202,6 +203,9 @@ export interface PreviewLayoutPreset {
   updated_at: string
 }
 
+export type AnimatedSourceMode = 'frame' | 'clip'
+export type AnimatedTransition = 'cut' | 'crossfade'
+
 export interface PreviewSettings {
   aspect_ratio: AspectRatioMode
   aspect_ratio_custom_width: number | null
@@ -209,6 +213,9 @@ export interface PreviewSettings {
   folder_preview_frame_count: number
   gif_max_width: number
   gif_colors: number
+  animated_source_mode: AnimatedSourceMode
+  animated_segment_seconds: number
+  animated_transition: AnimatedTransition
   updated_at: string
 }
 

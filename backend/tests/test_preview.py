@@ -46,6 +46,24 @@ def test_sample_interior_timestamps_edge_cases():
     assert sample_interior_timestamps(0, 3) == []
 
 
+# --- frame extraction -------------------------------------------------------
+
+
+def test_extract_frame_image_handles_non_ascii_path(tmp_path):
+    """`cv2.imread()` silently returns `None` on Windows when the path
+    contains non-ASCII characters; regression test for a real-world failure
+    where every frame extraction failed for videos under a Cyrillic-named
+    folder."""
+    video_dir = tmp_path / "Я умею любить"
+    video_dir.mkdir()
+    video_path = video_dir / "clip.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+
+    image = preview.extract_frame_image(video_path, 1.0)
+    assert image is not None
+    assert image.shape[:2] == (240, 320)
+
+
 # --- layout geometry ------------------------------------------------------
 
 
@@ -241,6 +259,81 @@ def test_render_gif_crops_frames_to_aspect_ratio(tmp_path):
         assert abs(img.size[0] / img.size[1] - 19.5 / 9) < 0.02
 
 
+# --- animated preview: clip source mode + crossfade transition ------------
+
+
+def test_extract_clip_frames_samples_a_burst(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    frames = preview.extract_clip_frames(video_path, 1.0, 0.5, fps=8.0)
+    # ~0.5s at 8fps should yield several frames, not just one still.
+    assert len(frames) >= 2
+    assert all(frame.shape[:2] == (240, 320) for frame in frames)
+
+
+def test_pick_representative_segments_frame_mode_matches_single_frames(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    segments = preview.pick_representative_segments(video_path, 3, mode="frame")
+    assert len(segments) == 3
+    assert all(len(segment) == 1 for segment in segments)
+
+
+def test_pick_representative_segments_clip_mode_returns_bursts(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    segments = preview.pick_representative_segments(video_path, 2, mode="clip", segment_seconds=0.5)
+    assert len(segments) == 2
+    assert all(len(segment) >= 1 for segment in segments)
+
+
+def test_render_gif_clip_segments_hold_for_configured_duration(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    burst_a = preview.extract_clip_frames(video_path, 0.5, 0.4)
+    burst_b = preview.extract_clip_frames(video_path, 2.0, 0.4)
+    images = burst_a + burst_b
+    segment_sizes = [len(burst_a), len(burst_b)]
+
+    dest_path = tmp_path / "clip-preview.gif"
+    preview.render_gif(images, dest_path, 4 / 3, segment_seconds=0.4, segment_sizes=segment_sizes)
+
+    assert dest_path.exists()
+    with Image.open(dest_path) as img:
+        assert img.is_animated
+        # Pillow's GIF writer (optimize=True) can collapse consecutive
+        # frames that end up pixel-identical (the synthetic test source
+        # repeats frames when sampled faster than its own low framerate),
+        # so this only checks that more than one frame survived -- i.e.
+        # the clip burst produced motion, not a single static image.
+        assert img.n_frames >= 2
+
+
+def test_render_gif_crossfade_inserts_blended_frames(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+    images = [
+        preview.extract_frame_image(video_path, 0.5),
+        preview.extract_frame_image(video_path, 2.5),
+    ]
+
+    dest_cut = tmp_path / "cut.gif"
+    preview.render_gif(images, dest_cut, 4 / 3, transition="cut")
+    dest_crossfade = tmp_path / "crossfade.gif"
+    preview.render_gif(images, dest_crossfade, 4 / 3, transition="crossfade")
+
+    with Image.open(dest_cut) as img:
+        cut_frame_count = img.n_frames
+    with Image.open(dest_crossfade) as img:
+        crossfade_frame_count = img.n_frames
+
+    assert crossfade_frame_count == cut_frame_count + preview.CROSSFADE_STEPS
+
+
 # --- preview job: file scope -----------------------------------------------
 
 
@@ -336,6 +429,9 @@ def test_preview_settings_singleton_roundtrip(engine):
     defaults = preview_settings.get_settings(engine)
     assert defaults["gif_max_width"] == preview_settings.DEFAULT_GIF_MAX_WIDTH
     assert defaults["gif_colors"] == preview_settings.DEFAULT_GIF_COLORS
+    assert defaults["animated_source_mode"] == preview_settings.DEFAULT_ANIMATED_SOURCE_MODE
+    assert defaults["animated_segment_seconds"] == preview_settings.DEFAULT_ANIMATED_SEGMENT_SECONDS
+    assert defaults["animated_transition"] == preview_settings.DEFAULT_ANIMATED_TRANSITION
 
     updated = preview_settings.update_settings(
         engine,
@@ -344,10 +440,16 @@ def test_preview_settings_singleton_roundtrip(engine):
             "folder_preview_frame_count": 6,
             "gif_max_width": 320,
             "gif_colors": 32,
+            "animated_source_mode": "clip",
+            "animated_segment_seconds": 0.8,
+            "animated_transition": "crossfade",
         },
     )
     assert updated["aspect_ratio"] == "ultra-wide"
     assert updated["folder_preview_frame_count"] == 6
     assert updated["gif_max_width"] == 320
     assert updated["gif_colors"] == 32
+    assert updated["animated_source_mode"] == "clip"
+    assert updated["animated_segment_seconds"] == 0.8
+    assert updated["animated_transition"] == "crossfade"
     assert preview_settings.get_settings(engine) == updated

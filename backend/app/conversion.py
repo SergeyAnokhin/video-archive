@@ -48,7 +48,16 @@ def probe_media(path: Path) -> dict | None:
                 str(path),
             ],
             capture_output=True,
-            text=True,
+            # ffprobe's JSON output is always UTF-8, regardless of the
+            # OS console codepage (e.g. cp1252 on many Windows setups) that
+            # `text=True` would otherwise decode with by default -- that
+            # mismatch previously raised UnicodeDecodeError inside
+            # subprocess's stdout reader thread for any source path
+            # containing non-Latin-1 characters (e.g. Cyrillic filenames),
+            # silently truncating `result.stdout` to None/empty and making
+            # a perfectly valid video look "not probeable".
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             check=False,
         )
@@ -60,7 +69,9 @@ def probe_media(path: Path) -> dict | None:
 
     try:
         data = json.loads(result.stdout)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
+        # TypeError covers `result.stdout` coming back `None`/empty despite
+        # a 0 exit code (e.g. a genuinely unparseable probe).
         return None
 
     video_streams = [s for s in data.get("streams", []) if s.get("codec_type") == "video"]
@@ -131,7 +142,13 @@ def build_ffmpeg_command(
 def run_ffmpeg(args: list[str], timeout: int = 3600) -> tuple[bool, str]:
     """Run an ffmpeg command; returns (success, stderr tail for diagnostics)."""
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+        # See probe_media()'s comment: ffmpeg's stderr log can echo the
+        # source path, so decoding it against the OS console codepage
+        # instead of UTF-8 risks the same reader-thread crash for
+        # non-Latin-1 filenames.
+        result = subprocess.run(
+            args, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, check=False
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, str(exc)
 

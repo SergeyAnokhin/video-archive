@@ -203,6 +203,8 @@
   },
   "previewSettings": {
     "title": "Превью",
+    "tabCollage": "Коллаж",
+    "tabAnimated": "Анимированное превью",
     "aspectRatio": "Соотношение сторон коллажа",
     "aspectRatioOption": {
       "standard": "Стандартное",
@@ -211,9 +213,22 @@
       "ultra-wide": "Широкоформатное (21:9 и шире)",
       "custom": "Свой вариант"
     },
-    "folderFrameCount": "Число кадров для превью папки",
-    "gifMaxWidth": "Макс. ширина GIF-превью (px)",
-    "gifColors": "Качество GIF-превью (цветов)",
+    "animatedIntro": "Анимированное превью — короткая GIF-анимация, которую мы показываем на плитках файлов и папок, чтобы было сразу понятно, что внутри.",
+    "folderFrameCount": "Число сегментов анимации",
+    "gifMaxWidth": "Макс. ширина анимированного превью (px)",
+    "gifColors": "Качество анимированного превью (цветов)",
+    "animatedSourceMode": "Способ формирования",
+    "animatedSourceModeOption": {
+      "frame": "Кадры (стоп-кадр на сегмент)",
+      "clip": "Видео-фрагменты (короткий кусок видео)"
+    },
+    "animatedSegmentSeconds": "Длительность кадра, сек",
+    "animatedSegmentSecondsClip": "Длительность фрагмента, сек",
+    "animatedTransition": "Переход между сегментами",
+    "animatedTransitionOption": {
+      "cut": "Без перехода (резкая смена)",
+      "crossfade": "Плавный (кроссфейд)"
+    },
     "brush": "Кисть тайла",
     "brushSmall": "Маленький тайл",
     "brushEnlarged2": "Укрупнённый 2×2",
@@ -334,7 +349,8 @@
       "eta": "Осталось: ~{{time}}",
       "elapsed": "В процессе: {{time}}",
       "took": "Заняло: {{time}}",
-      "finishedAt": "Завершено: {{time}}"
+      "finishedAt": "Завершено: {{time}}",
+      "errors": "Ошибок: {{count}}"
     },
     "section": {
       "running": "Выполняется",

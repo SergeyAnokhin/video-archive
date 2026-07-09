@@ -354,6 +354,12 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
 
       {job.summary_message && <div className="jobs-modal__row-message">{job.summary_message}</div>}
 
+      {job.failed_item_count > 0 && (
+        <div className="jobs-modal__error-count">
+          {t('jobs.progress.errors', { count: job.failed_item_count })}
+        </div>
+      )}
+
       {currentItem && (
         <div className="jobs-modal__row-message">
           {t('jobs.progress.current', { name: currentItem.item_key ?? currentItem.file_id ?? '…' })}

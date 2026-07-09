@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -27,6 +28,12 @@ from app.routers import (
     tags,
     tree,
 )
+
+# Background-job errors (failed preview/convert/tag items, whole-job
+# crashes) are otherwise only recorded in the DB-backed event log -- this
+# makes them show up in the terminal running the backend too. Root-level so
+# it also covers loggers elsewhere in `app.*` should any start using them.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 _worker = JobWorker()
 

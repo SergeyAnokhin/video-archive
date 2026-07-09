@@ -16,9 +16,10 @@ Handles both scopes:
   action, not a bulk job).
 
 The layout preset and global settings (aspect ratio, folder-preview frame
-count, GIF max width/color count — user request) are resolved once at
-launch and reused for the whole job (Job Model "Preview Jobs" — "use
-preview settings snapshot at launch time").
+count, GIF max width/color count, animated-preview source mode/segment
+duration/transition — user request) are resolved once at launch and reused
+for the whole job (Job Model "Preview Jobs" — "use preview settings
+snapshot at launch time").
 """
 
 from __future__ import annotations
@@ -92,6 +93,9 @@ def _generate_one_file(
         preview.generate_file_preview(
             video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
             gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
+            animated_source_mode=settings["animated_source_mode"],
+            animated_segment_seconds=settings["animated_segment_seconds"],
+            animated_transition=settings["animated_transition"],
         )
         dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
         access.commit_new_file(local_dest, dest_rel)
@@ -254,6 +258,9 @@ def _generate_folder_previews(
 
     aspect_ratio = preview_settings.effective_aspect_ratio(settings)
     frame_count = settings["folder_preview_frame_count"]
+    animated_source_mode = settings["animated_source_mode"]
+    animated_segment_seconds = settings["animated_segment_seconds"]
+    animated_transition = settings["animated_transition"]
     updated = 0
 
     for directory in directories:
@@ -306,24 +313,31 @@ def _generate_folder_previews(
         try:
             with ExitStack() as stack:
                 local_paths = {rel: stack.enter_context(access.local_copy(rel)) for rel in path_counts}
-                frames_by_rel = {
-                    rel: preview.pick_representative_frames(local_paths[rel], count)
+                segments_by_rel = {
+                    rel: preview.pick_representative_segments(
+                        local_paths[rel], count, mode=animated_source_mode,
+                        segment_seconds=animated_segment_seconds,
+                    )
                     for rel, count in path_counts.items()
                 }
                 cursors: dict[str, int] = {rel: 0 for rel in path_counts}
                 images = []
+                segment_sizes = []
                 for rel in plan:
-                    frames = frames_by_rel[rel]
+                    segments = segments_by_rel[rel]
                     idx = cursors[rel]
                     cursors[rel] += 1
-                    if idx < len(frames):
-                        images.append(frames[idx])
+                    if idx < len(segments):
+                        images.extend(segments[idx])
+                        segment_sizes.append(len(segments[idx]))
 
                 stage_dir = stack.enter_context(access.stage_output_dir(directory.relative_path))
                 local_dest = stage_dir / dest_name
                 preview.render_gif(
                     images, local_dest, aspect_ratio,
                     max_width=settings["gif_max_width"], colors=settings["gif_colors"],
+                    segment_seconds=animated_segment_seconds, transition=animated_transition,
+                    segment_sizes=segment_sizes,
                 )
                 if not local_dest.exists():
                     raise preview.PreviewError("Could not extract any frames for the folder preview.")

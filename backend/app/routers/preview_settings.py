@@ -22,6 +22,9 @@ class PreviewSettingsRequest(BaseModel):
     folder_preview_frame_count: int = service.DEFAULT_FOLDER_PREVIEW_FRAME_COUNT
     gif_max_width: int = service.DEFAULT_GIF_MAX_WIDTH
     gif_colors: int = service.DEFAULT_GIF_COLORS
+    animated_source_mode: Literal["frame", "clip"] = service.DEFAULT_ANIMATED_SOURCE_MODE
+    animated_segment_seconds: float = service.DEFAULT_ANIMATED_SEGMENT_SECONDS
+    animated_transition: Literal["cut", "crossfade"] = service.DEFAULT_ANIMATED_TRANSITION
 
 
 @router.get("/preview-settings")

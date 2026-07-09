@@ -203,6 +203,8 @@
   },
   "previewSettings": {
     "title": "Preview",
+    "tabCollage": "Collage",
+    "tabAnimated": "Animated preview",
     "aspectRatio": "Collage aspect ratio",
     "aspectRatioOption": {
       "standard": "Standard",
@@ -211,9 +213,22 @@
       "ultra-wide": "Ultra-wide (21:9+)",
       "custom": "Custom"
     },
-    "folderFrameCount": "Folder-preview frame count",
-    "gifMaxWidth": "GIF preview max width (px)",
-    "gifColors": "GIF preview quality (colors)",
+    "animatedIntro": "The animated preview is a short looping GIF shown on file and folder tiles so you can tell what's inside at a glance.",
+    "folderFrameCount": "Number of animation segments",
+    "gifMaxWidth": "Animated preview max width (px)",
+    "gifColors": "Animated preview quality (colors)",
+    "animatedSourceMode": "Source mode",
+    "animatedSourceModeOption": {
+      "frame": "Frames (still per segment)",
+      "clip": "Video clips (short segment of video)"
+    },
+    "animatedSegmentSeconds": "Frame duration, sec",
+    "animatedSegmentSecondsClip": "Clip duration, sec",
+    "animatedTransition": "Transition between segments",
+    "animatedTransitionOption": {
+      "cut": "No transition (hard cut)",
+      "crossfade": "Smooth (crossfade)"
+    },
     "brush": "Tile brush",
     "brushSmall": "Small tile",
     "brushEnlarged2": "Enlarged 2×2",
@@ -334,7 +349,8 @@
       "eta": "Remaining: ~{{time}}",
       "elapsed": "In progress: {{time}}",
       "took": "Took: {{time}}",
-      "finishedAt": "Finished: {{time}}"
+      "finishedAt": "Finished: {{time}}",
+      "errors": "Errors: {{count}}"
     },
     "section": {
       "running": "Running",

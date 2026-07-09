@@ -372,6 +372,22 @@ MIGRATIONS: dict[int, list[str]] = {
     13: [
         "ALTER TABLE jobs ADD COLUMN total_items INTEGER",
     ],
+    # Post-V1: animated-preview source mode (user request) -- the animated
+    # GIF preview (file-companion `.preview.gif` and `folder-preview.gif`)
+    # previously always cycled through single still frames with a fixed
+    # 450ms hold and a hard cut between them. This splits that setting out
+    # from the (unrelated) static collage settings and adds a "clip" source
+    # mode, where each position instead contributes a short burst of frames
+    # sampled from a brief video segment, plus an optional crossfade
+    # transition between positions. `animated_segment_seconds` replaces the
+    # old fixed 450ms constant as the configurable "how long each position is
+    # shown" duration (still frame hold time in "frame" mode, clip length in
+    # "clip" mode) -- 0.45 keeps prior behavior as the default.
+    14: [
+        "ALTER TABLE preview_settings ADD COLUMN animated_source_mode TEXT NOT NULL DEFAULT 'frame'",
+        "ALTER TABLE preview_settings ADD COLUMN animated_segment_seconds REAL NOT NULL DEFAULT 0.45",
+        "ALTER TABLE preview_settings ADD COLUMN animated_transition TEXT NOT NULL DEFAULT 'cut'",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

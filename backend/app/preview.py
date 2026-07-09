@@ -13,11 +13,13 @@ is picked by blur score alone when no face/person model is available.
 from __future__ import annotations
 
 import random
+import shutil
 import subprocess
 import uuid
 from pathlib import Path
 
 import cv2
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from app import conversion, detection
@@ -33,7 +35,22 @@ CAPTION_COLOR = (230, 230, 230)
 
 GIF_MAX_WIDTH = 640
 GIF_DEFAULT_COLORS = 64
-GIF_FRAME_DURATION_MS = 450
+# Default "how long each position is shown" (Preview Settings
+# `animated_segment_seconds`, user request): still-frame hold time in
+# "frame" mode, sampled-clip length in "clip" mode. Matches the fixed hold
+# time the animated preview used before this was configurable.
+GIF_DEFAULT_SEGMENT_SECONDS = 0.45
+GIF_MIN_FRAME_DURATION_MS = 20
+# "clip" source mode: frames-per-second sampled from the short video segment
+# at each position, and a hard cap on how many frames one segment can
+# contribute (guards against a pathologically long `segment_seconds`).
+CLIP_SAMPLE_FPS = 8.0
+CLIP_MAX_FRAMES = 24
+# Crossfade transition (Preview Settings `animated_transition`, user
+# request): a fixed number of alpha-blended frames inserted between
+# consecutive segments, each held briefly, instead of a hard cut.
+CROSSFADE_STEPS = 5
+CROSSFADE_FRAME_DURATION_MS = 40
 
 
 class PreviewError(Exception):
@@ -61,12 +78,68 @@ def extract_frame_image(video_path: Path, timestamp: float):
         result = subprocess.run(args, capture_output=True, timeout=30, check=False)
         if result.returncode != 0 or not tmp_path.exists():
             return None
-        return cv2.imread(str(tmp_path))
+        # cv2.imread() silently fails (returns None) on Windows when the path
+        # contains non-ASCII characters (e.g. Cyrillic folder names) -- it
+        # shells out to an fopen()-style API that mangles them. Reading the
+        # bytes via Python's own (Unicode-safe) file I/O and decoding them in
+        # memory sidesteps that.
+        data = np.fromfile(str(tmp_path), dtype=np.uint8)
+        return cv2.imdecode(data, cv2.IMREAD_COLOR)
     except (OSError, subprocess.SubprocessError):
         return None
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
+
+
+def extract_clip_frames(
+    video_path: Path,
+    start_timestamp: float,
+    duration_seconds: float,
+    *,
+    fps: float = CLIP_SAMPLE_FPS,
+    max_frames: int = CLIP_MAX_FRAMES,
+) -> list:
+    """Sample a burst of frames from a short video segment starting at
+    `start_timestamp` ("clip" animated-preview source mode, user request):
+    unlike `extract_frame_image()`'s single `-frames:v 1`, this asks ffmpeg
+    for `fps` frames/second over `duration_seconds` in one invocation, giving
+    the animated preview real motion for this position instead of a still.
+    Returns as many decoded frames as ffmpeg produced (possibly fewer than
+    expected near the end of the video, possibly empty on failure) --
+    callers must tolerate a short/empty result."""
+    ffmpeg_bin = conversion.ffmpeg_path()
+    if not ffmpeg_bin:
+        return []
+
+    tmp_dir = video_path.parent / f".{video_path.stem}.preview-clip-{uuid.uuid4().hex[:8]}"
+    tmp_dir.mkdir(exist_ok=True)
+    try:
+        args = [
+            ffmpeg_bin, "-y",
+            "-ss", f"{max(0.0, start_timestamp):.3f}",
+            "-i", str(video_path),
+            "-t", f"{max(0.05, duration_seconds):.3f}",
+            "-vf", f"fps={fps}",
+            "-frames:v", str(max_frames),
+            "-q:v", "2",
+            str(tmp_dir / "f%04d.jpg"),
+        ]
+        result = subprocess.run(args, capture_output=True, timeout=30, check=False)
+        if result.returncode != 0:
+            return []
+        frames = []
+        # Unicode-safe read, same reasoning as `extract_frame_image()`.
+        for frame_path in sorted(tmp_dir.glob("f*.jpg")):
+            data = np.fromfile(str(frame_path), dtype=np.uint8)
+            image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+            if image is not None:
+                frames.append(image)
+        return frames
+    except (OSError, subprocess.SubprocessError):
+        return []
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def fill_missing_frames(images: list):
@@ -249,6 +322,9 @@ def render_gif(
     *,
     max_width: int = GIF_MAX_WIDTH,
     colors: int = GIF_DEFAULT_COLORS,
+    segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
+    transition: str = "cut",
+    segment_sizes: list[int] | None = None,
 ) -> None:
     """Compose frames into a small looping GIF for grid/list-view hover
     previews — a lighter, lower-fidelity companion to the JPEG collage.
@@ -259,26 +335,65 @@ def render_gif(
     only ever being shown in a small hover thumbnail) are configurable via
     `preview_settings.py`'s `gif_max_width`/`gif_colors`; a smaller palette
     shrinks file size at the cost of banding, which is an acceptable
-    trade-off at this size."""
+    trade-off at this size.
+
+    `images` is a flat, already-ordered list of frames; `segment_sizes`
+    (user request, animated-preview source mode) optionally groups them into
+    consecutive "positions" -- e.g. a burst of frames sampled from one short
+    clip in "clip" mode -- so each position's frames together fill
+    `segment_seconds` regardless of how many frames represent it. When
+    omitted, every image is its own one-frame segment ("frame" mode, and the
+    prior single-still-per-position behavior). `transition="crossfade"`
+    inserts a few alpha-blended frames between consecutive positions instead
+    of a hard cut."""
     target_w = max_width
     target_h = max(1, round(target_w / aspect_ratio))
-    frames = []
+    fitted_frames = []
     for image_bgr in images:
         if image_bgr is None:
             continue
         pil_image = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
-        fitted = _cover_resize(pil_image, target_w, target_h)
-        frames.append(fitted.convert("P", palette=Image.ADAPTIVE, colors=colors))
-    if not frames:
+        fitted_frames.append(_cover_resize(pil_image, target_w, target_h))
+    if not fitted_frames:
         return
 
+    if segment_sizes is None:
+        segment_sizes = [1] * len(fitted_frames)
+
+    segments = []
+    cursor = 0
+    for size in segment_sizes:
+        if size <= 0:
+            continue
+        segments.append(fitted_frames[cursor : cursor + size])
+        cursor += size
+    if not segments:
+        return
+
+    output_frames = []
+    durations = []
+    for index, segment in enumerate(segments):
+        per_frame_ms = max(GIF_MIN_FRAME_DURATION_MS, round(segment_seconds * 1000 / len(segment)))
+        for frame in segment:
+            output_frames.append(frame)
+            durations.append(per_frame_ms)
+        if transition == "crossfade" and index < len(segments) - 1:
+            last_frame = segment[-1]
+            next_frame = segments[index + 1][0]
+            for step in range(1, CROSSFADE_STEPS + 1):
+                alpha = step / (CROSSFADE_STEPS + 1)
+                output_frames.append(Image.blend(last_frame, next_frame, alpha))
+                durations.append(CROSSFADE_FRAME_DURATION_MS)
+
+    palette_frames = [frame.convert("P", palette=Image.ADAPTIVE, colors=colors) for frame in output_frames]
+
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    frames[0].save(
+    palette_frames[0].save(
         dest_path,
         format="GIF",
         save_all=True,
-        append_images=frames[1:],
-        duration=GIF_FRAME_DURATION_MS,
+        append_images=palette_frames[1:],
+        duration=durations,
         loop=0,
         optimize=True,
     )
@@ -296,6 +411,9 @@ def generate_file_preview(
     gif_dest_path: Path | None = None,
     gif_max_width: int = GIF_MAX_WIDTH,
     gif_colors: int = GIF_DEFAULT_COLORS,
+    animated_source_mode: str = "frame",
+    animated_segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
+    animated_transition: str = "cut",
 ) -> None:
     tiles = compute_layout_tiles(layout["grid_rows"], layout["grid_cols"], layout["layout_definition"])
 
@@ -309,7 +427,28 @@ def generate_file_preview(
         raise PreviewError("Could not extract any frames from the source video.")
 
     if gif_dest_path is not None:
-        render_gif(images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors)
+        if animated_source_mode == "clip":
+            # Same sample timestamps as the collage (user request: "clip"
+            # mode grabs a short burst of frames per position instead of one
+            # still), falling back to the already-extracted still frame if
+            # the clip burst comes back empty (e.g. too close to EOF).
+            gif_images: list = []
+            gif_segment_sizes: list[int] = []
+            for timestamp, fallback in zip(timestamps, images):
+                burst = extract_clip_frames(video_path, timestamp, animated_segment_seconds)
+                segment = burst if burst else ([fallback] if fallback is not None else [])
+                gif_images.extend(segment)
+                gif_segment_sizes.append(len(segment))
+            render_gif(
+                gif_images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors,
+                segment_seconds=animated_segment_seconds, transition=animated_transition,
+                segment_sizes=gif_segment_sizes,
+            )
+        else:
+            render_gif(
+                images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors,
+                segment_seconds=animated_segment_seconds, transition=animated_transition,
+            )
 
     frame_infos = [_score_frame(img) for img in images]
     assignment = select_frames_for_tiles(
@@ -390,17 +529,17 @@ def diverse_video_frame_plan(video_paths: list[str], frame_count: int) -> list[s
     return plan
 
 
-def _pick_representative_frame(video_path: Path, candidate_count: int = 3):
+def _pick_representative_frame_and_timestamp(video_path: Path, candidate_count: int = 3):
     info = conversion.probe_media(video_path)
     if info is None or not info.get("duration"):
-        return None
+        return None, None
 
     timestamps = sample_interior_timestamps(info["duration"], candidate_count) or [info["duration"] / 2]
-    candidates = [img for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]
+    candidates = [(ts, img) for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]
     if not candidates:
-        return None
+        return None, None
 
-    infos = [_score_frame(img) for img in candidates]
+    infos = [_score_frame(img) for _, img in candidates]
     for idx, frame_info in enumerate(infos):
         if frame_info["faces"]:
             return candidates[idx]
@@ -409,6 +548,11 @@ def _pick_representative_frame(video_path: Path, candidate_count: int = 3):
             return candidates[idx]
     best_idx = max(range(len(candidates)), key=lambda i: infos[i]["blur"])
     return candidates[best_idx]
+
+
+def _pick_representative_frame(video_path: Path, candidate_count: int = 3):
+    _, frame = _pick_representative_frame_and_timestamp(video_path, candidate_count)
+    return frame
 
 
 def pick_representative_frames(video_path: Path, count: int) -> list:
@@ -430,3 +574,46 @@ def pick_representative_frames(video_path: Path, count: int) -> list:
         return []
     timestamps = sample_interior_timestamps(info["duration"], count)
     return [img for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]
+
+
+def pick_representative_segments(
+    video_path: Path,
+    count: int,
+    *,
+    mode: str = "frame",
+    segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
+) -> list[list]:
+    """Like `pick_representative_frames`, but returns one *segment* (a list
+    of 1+ frames) per position instead of a single frame, so the folder
+    animated preview can render either a still frame ("frame" mode) or a
+    short clip burst ("clip" mode) per video (Preview Settings
+    `animated_source_mode`, user request). Falls back to a single still
+    frame at the same timestamp whenever a clip burst extraction comes back
+    empty (e.g. too close to EOF)."""
+    if count <= 0:
+        return []
+
+    if count == 1:
+        timestamp, frame = _pick_representative_frame_and_timestamp(video_path)
+        if timestamp is None:
+            return []
+        if mode == "clip":
+            burst = extract_clip_frames(video_path, timestamp, segment_seconds)
+            if burst:
+                return [burst]
+        return [[frame]] if frame is not None else []
+
+    info = conversion.probe_media(video_path)
+    if info is None or not info.get("duration"):
+        return []
+    timestamps = sample_interior_timestamps(info["duration"], count)
+    segments: list[list] = []
+    for timestamp in timestamps:
+        if mode == "clip":
+            burst = extract_clip_frames(video_path, timestamp, segment_seconds)
+            if burst:
+                segments.append(burst)
+                continue
+        frame = extract_frame_image(video_path, timestamp)
+        segments.append([frame] if frame is not None else [])
+    return segments

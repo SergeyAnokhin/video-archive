@@ -191,6 +191,12 @@
   white-space: nowrap;
 }
 
+.jobs-modal__error-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-danger);
+}
+
 .jobs-modal__row-actions {
   display: flex;
   flex-shrink: 0;
