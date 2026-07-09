@@ -22,6 +22,8 @@ Running a second frontend dev session against an already-running backend (e.g. a
 | Frontend lint | `npm run lint` from `frontend/` | |
 | Frontend build check | `npm run build` from `frontend/` | Type-checks via `tsc` before bundling. |
 
+`tsc --noEmit` alone is not sufficient proof a `.tsx` edit actually builds: it has been observed to pass on JSX that Vite's dev/build transform (oxc) rejects outright — e.g. multiple sibling elements inside `{condition && (...)}` without a wrapping `<>...</>` fragment is a real parse error in the running app (`preview_logs`/browser overlay) even though `tsc --noEmit` reports no error. After editing conditional-rendering JSX with more than one top-level sibling, reload the dev server / check `preview_logs` (or run `npm run build`) rather than trusting `tsc` alone.
+
 Test conventions (per-suite details in [`code-map-tests.md`](code-map-tests.md)):
 
 - Every test gets an isolated temp SQLite DB and an isolated secrets file via autouse fixtures in `backend/tests/conftest.py` — tests never touch `backend/video_archive.db` or `backend/secrets.env`.
