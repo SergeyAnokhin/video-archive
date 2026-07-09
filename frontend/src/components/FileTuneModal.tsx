@@ -36,6 +36,15 @@ const CODEC_OPTIONS = ['h265', 'h264', 'vp9', 'av1']
 
 type SweepParameter = 'dimension' | 'crf' | 'codec'
 
+// Centered on the app's own defaults (h265 CRF 26, Specification §7): a
+// narrow band around "good enough to archive" so the sweep still finishes
+// quickly and every generated variant is a plausible real choice, not a
+// throwaway extreme.
+const DEFAULT_SWEEP_RANGES: Record<'dimension' | 'crf', { min: number; max: number; step: number }> = {
+  crf: { min: 22, max: 30, step: 4 },
+  dimension: { min: 960, max: 1920, step: 480 },
+}
+
 function generateRange(min: number, max: number, step: number): number[] {
   const values: number[] = []
   for (let value = min; value <= max; value += step) {
@@ -50,9 +59,9 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
   const [profileId, setProfileId] = useState(profiles.find((p) => p.is_default)?.id ?? profiles[0]?.id ?? '')
   const [rows, setRows] = useState<VariantRow[]>([])
   const [sweepParameter, setSweepParameter] = useState<SweepParameter>('crf')
-  const [sweepMin, setSweepMin] = useState('')
-  const [sweepMax, setSweepMax] = useState('')
-  const [sweepStep, setSweepStep] = useState('')
+  const [sweepMin, setSweepMin] = useState(String(DEFAULT_SWEEP_RANGES.crf.min))
+  const [sweepMax, setSweepMax] = useState(String(DEFAULT_SWEEP_RANGES.crf.max))
+  const [sweepStep, setSweepStep] = useState(String(DEFAULT_SWEEP_RANGES.crf.step))
   const [sweepCodecs, setSweepCodecs] = useState<string[]>([])
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
@@ -202,7 +211,16 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
                 <select
                   className="convert-dialog__input"
                   value={sweepParameter}
-                  onChange={(event) => setSweepParameter(event.target.value as SweepParameter)}
+                  onChange={(event) => {
+                    const next = event.target.value as SweepParameter
+                    setSweepParameter(next)
+                    if (next !== 'codec') {
+                      const defaults = DEFAULT_SWEEP_RANGES[next]
+                      setSweepMin(String(defaults.min))
+                      setSweepMax(String(defaults.max))
+                      setSweepStep(String(defaults.step))
+                    }
+                  }}
                 >
                   <option value="dimension">{t('convertDialog.variantsParameterDimension')}</option>
                   <option value="crf">{t('convertDialog.variantsParameterCrf')}</option>

@@ -1,4 +1,4 @@
-import { X, HardDrive, Wand2, Images, PlayCircle, Tags, Bot, Archive, Palette } from 'lucide-react'
+import { X, HardDrive, Wand2, Images, PlayCircle, Tags, Bot, Archive, Palette, Cpu } from 'lucide-react'
 import { useEffect, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SourceSection } from './SourceSection'
@@ -9,13 +9,23 @@ import { ProviderSettingsSection } from './ProviderSettingsSection'
 import { PlaybackSettingsSection } from './PlaybackSettingsSection'
 import { BackupMaintenanceSection } from './BackupMaintenanceSection'
 import { InterfaceSection } from './InterfaceSection'
+import { PerformanceSettingsSection } from './PerformanceSettingsSection'
 import './SettingsModal.css'
 
 interface SettingsModalProps {
   onClose: () => void
 }
 
-type TabId = 'source' | 'profiles' | 'preview' | 'playback' | 'tagging' | 'providers' | 'backup' | 'interface'
+type TabId =
+  | 'source'
+  | 'profiles'
+  | 'preview'
+  | 'playback'
+  | 'tagging'
+  | 'providers'
+  | 'backup'
+  | 'interface'
+  | 'performance'
 
 interface TabDef {
   id: TabId
@@ -32,6 +42,7 @@ const TABS: TabDef[] = [
   { id: 'tagging', icon: Tags, labelKey: 'tagging.title', Component: TaggingSettingsSection },
   { id: 'providers', icon: Bot, labelKey: 'providerSettings.title', Component: ProviderSettingsSection },
   { id: 'backup', icon: Archive, labelKey: 'backupMaintenance.title', Component: BackupMaintenanceSection },
+  { id: 'performance', icon: Cpu, labelKey: 'performanceSettings.title', Component: PerformanceSettingsSection },
   { id: 'interface', icon: Palette, labelKey: 'settings.interfaceSection', Component: InterfaceSection },
 ]
 

@@ -25,12 +25,13 @@ directly on the remote source without re-uploading their bytes.
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles
+from app import conversion, conversion_profiles, performance_settings
 from app.jobs import service
 from app.media import is_test_artifact, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -61,7 +62,10 @@ def _temp_output_path(directory: Path, stem: str, container: str) -> Path:
     return directory / f".{stem}.convert-{uuid.uuid4().hex[:8]}.{container}"
 
 
-def _encode_and_validate(source_path: Path, temp_path: Path, params: dict) -> None:
+def _encode_and_validate(source_path: Path, temp_path: Path, params: dict) -> float | None:
+    """Returns the source's duration in seconds (from the ffprobe call this
+    already performs for max-dimension resolution), so callers can persist it
+    without a second probe. Re-encoding does not change a video's duration."""
     source_info = conversion.probe_media(source_path)
     max_dim = conversion.effective_max_dimension(source_info, params["max_dimension"])
     args = conversion.build_ffmpeg_command(
@@ -88,6 +92,8 @@ def _encode_and_validate(source_path: Path, temp_path: Path, params: dict) -> No
         temp_path.unlink()
         raise ConversionError(f"Validation failed: {reason}")
 
+    return source_info.get("duration") if source_info else None
+
 
 def _has_preview(access: SourceAccess, rel_path: str, stem: str) -> bool:
     return access.exists(sibling_relative_path(rel_path, f"{stem}.jpg"))
@@ -99,7 +105,7 @@ def _replace_production(engine, access: SourceAccess, old_path: Path, file_row, 
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    _encode_and_validate(old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(old_path, temp_path, params)
 
     final_name = f"{stem}.{params['container']}"
     final_rel = sibling_relative_path(file_row.relative_path, final_name)
@@ -118,7 +124,9 @@ def _replace_production(engine, access: SourceAccess, old_path: Path, file_row, 
                 SET relative_path = :rel, file_name = :file_name, extension = :ext,
                     size_bytes = :size, modified_at = :modified_at, is_video_supported = 1,
                     has_preview_asset = :has_preview, converted_at = :now,
-                    last_conversion_profile_id = :profile_id, last_scanned_at = :now, updated_at = :now
+                    last_conversion_profile_id = :profile_id,
+                    duration_seconds = COALESCE(:duration, duration_seconds),
+                    last_scanned_at = :now, updated_at = :now
                 WHERE id = :id
                 """
             ),
@@ -131,6 +139,7 @@ def _replace_production(engine, access: SourceAccess, old_path: Path, file_row, 
                 "has_preview": _has_preview(access, file_row.relative_path, stem),
                 "now": now,
                 "profile_id": profile_id,
+                "duration": duration_seconds,
                 "id": file_row.id,
             },
         )
@@ -145,7 +154,7 @@ def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, p
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    _encode_and_validate(old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(old_path, temp_path, params)
 
     # Original is always renamed, even without a name collision, so preserved
     # originals stay uniformly recognizable (Specification §8.2). Renaming
@@ -170,7 +179,9 @@ def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, p
                 UPDATE files
                 SET relative_path = :rel, file_name = :file_name, extension = :ext,
                     size_bytes = :size, modified_at = :modified_at,
-                    has_preview_asset = :has_preview, last_scanned_at = :now, updated_at = :now
+                    has_preview_asset = :has_preview,
+                    duration_seconds = COALESCE(:duration, duration_seconds),
+                    last_scanned_at = :now, updated_at = :now
                 WHERE id = :id
                 """
             ),
@@ -181,6 +192,7 @@ def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, p
                 "size": orig_stat.size,
                 "modified_at": orig_stat.modified_at,
                 "has_preview": has_preview,
+                "duration": duration_seconds,
                 "now": now,
                 "id": file_row.id,
             },
@@ -192,12 +204,12 @@ def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, p
                     (id, source_id, directory_id, relative_path, file_name, extension,
                      size_bytes, modified_at, discovered_at, last_scanned_at,
                      is_video_supported, converted_at, last_conversion_profile_id,
-                     has_preview_asset, created_at, updated_at)
+                     has_preview_asset, duration_seconds, created_at, updated_at)
                 VALUES
                     (:id, :sid, :dir_id, :rel, :file_name, :ext,
                      :size, :modified_at, :now, :now,
                      1, :now, :profile_id,
-                     :has_preview, :now, :now)
+                     :has_preview, :duration, :now, :now)
                 """
             ),
             {
@@ -209,6 +221,7 @@ def _replace_test_mode(engine, access: SourceAccess, old_path: Path, file_row, p
                 "ext": params["container"],
                 "size": new_stat.size,
                 "modified_at": new_stat.modified_at,
+                "duration": duration_seconds,
                 "has_preview": has_preview,
                 "now": now,
                 "profile_id": profile_id,
@@ -225,7 +238,7 @@ def _create_variant(engine, access: SourceAccess, old_path: Path, file_row, prof
     suffix = conversion.encode_variant_suffix(profile, overrides)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    _encode_and_validate(old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(old_path, temp_path, params)
 
     variant_name = f"{stem}.variant-{suffix}.{params['container']}"
     variant_rel = sibling_relative_path(file_row.relative_path, variant_name)
@@ -242,11 +255,11 @@ def _create_variant(engine, access: SourceAccess, old_path: Path, file_row, prof
                 INSERT INTO files
                     (id, source_id, directory_id, relative_path, file_name, extension,
                      size_bytes, modified_at, discovered_at, last_scanned_at,
-                     is_video_supported, has_preview_asset, created_at, updated_at)
+                     is_video_supported, has_preview_asset, duration_seconds, created_at, updated_at)
                 VALUES
                     (:id, :sid, :dir_id, :rel, :file_name, :ext,
                      :size, :modified_at, :now, :now,
-                     1, :has_preview, :now, :now)
+                     1, :has_preview, :duration, :now, :now)
                 """
             ),
             {
@@ -258,6 +271,7 @@ def _create_variant(engine, access: SourceAccess, old_path: Path, file_row, prof
                 "ext": params["container"],
                 "size": stat.size,
                 "modified_at": stat.modified_at,
+                "duration": duration_seconds,
                 "has_preview": _has_preview(access, file_row.relative_path, stem),
                 "now": now,
             },
@@ -283,6 +297,7 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
         raise RuntimeError("Conversion profile not found.")
 
     mode = params.get("mode", "production")
+    worker_count = max(1, performance_settings.get_settings(engine)["parallel_workers"])
 
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -291,11 +306,34 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
     access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, access, params, profile, mode)
-    return _run_directory_scope(engine, job, access, params, profile, mode)
+        return _run_file_scope(engine, job, access, params, profile, mode, worker_count)
+    return _run_directory_scope(engine, job, access, params, profile, mode, worker_count)
 
 
-def _run_directory_scope(engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str) -> tuple[str, str]:
+def _process_convert_file(engine, job_id: str, access: SourceAccess, row, profile: dict, mode: str, profile_id: str) -> bool:
+    """One directory-scope file, run from inside a batch's thread pool.
+    Returns whether it succeeded; failures go through the normal job-item/
+    event mechanism (thread-safe, see `app/jobs/service.py`) rather than
+    being raised, so one file's failure can't abort a whole in-flight
+    batch."""
+    item_id = service.create_job_item(engine, job_id, file_id=row.id, step_name="convert_file")
+    service.start_job_item(engine, item_id)
+    try:
+        outcome = _convert_one_file(engine, access, row, profile, mode, profile_id)
+        service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
+        service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
+        return True
+    except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
+        service.fail_job_item(engine, item_id, message=str(exc))
+        service.log_event(
+            engine, job_id, row.id, "error", "job_item_failed", f"Failed to convert {row.relative_path}: {exc}"
+        )
+        return False
+
+
+def _run_directory_scope(
+    engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str, worker_count: int
+) -> tuple[str, str]:
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
     profile_id = profile["id"]
@@ -325,18 +363,46 @@ def _run_directory_scope(engine, job: dict, access: SourceAccess, params: dict, 
     total = len(candidates)
     service.set_job_total_items(engine, job["id"], total)
 
+    # Independent files are converted `worker_count` at a time (post-V1,
+    # user request -- a single file's own ffmpeg encode already uses all
+    # available CPU cores on its own, so the previously-sequential
+    # one-file-at-a-time loop left most cores idle for the wall-clock
+    # duration of a directory job). A batch is flushed (run concurrently,
+    # then awaited) once it reaches `worker_count`, or at the end of the
+    # loop for a trailing partial batch; the cooperative cancel/pause check
+    # runs between batches, same checkpoint idea as the old between-files
+    # check, just coarser by up to `worker_count - 1` in-flight files.
+    batch: list = []
+
+    def flush(pending: list) -> None:
+        nonlocal processed, failed
+        if not pending:
+            return
+        with ThreadPoolExecutor(max_workers=len(pending)) as executor:
+            results = list(
+                executor.map(
+                    lambda r: _process_convert_file(engine, job["id"], access, r, profile, mode, profile_id),
+                    pending,
+                )
+            )
+        for ok in results:
+            if ok:
+                processed += 1
+            else:
+                failed += 1
+
     for row in candidates:
         stop = service.check_stop_requested(job["id"])
         if stop:
+            flush(batch)
             verb = "Cancelled" if stop == "cancel" else "Paused"
             status = "cancelled" if stop == "cancel" else "paused"
             message = f"{verb} after {processed} of {total} file(s)."
             service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
             return status, message
 
-        item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="convert_file")
-
         if skip_processed and row.converted_at:
+            item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="convert_file")
             service.skip_job_item(engine, item_id, "Already converted; skipped.")
             service.log_event(
                 engine, job["id"], row.id, "debug", "job_item_skipped",
@@ -345,21 +411,12 @@ def _run_directory_scope(engine, job: dict, access: SourceAccess, params: dict, 
             skipped += 1
             continue
 
-        service.start_job_item(engine, item_id)
-        try:
-            outcome = _convert_one_file(engine, access, row, profile, mode, profile_id)
-            service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
-            service.log_event(
-                engine, job["id"], row.id, "info", "job_item_completed", f"Converted {row.relative_path}"
-            )
-            processed += 1
-        except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
-            failed += 1
-            service.fail_job_item(engine, item_id, message=str(exc))
-            service.log_event(
-                engine, job["id"], row.id, "error", "job_item_failed",
-                f"Failed to convert {row.relative_path}: {exc}",
-            )
+        batch.append(row)
+        if len(batch) >= worker_count:
+            flush(batch)
+            batch = []
+
+    flush(batch)
 
     summary = f"Converted {processed} of {total} file(s)"
     if skipped:
@@ -372,7 +429,9 @@ def _run_directory_scope(engine, job: dict, access: SourceAccess, params: dict, 
     return status, summary
 
 
-def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str) -> tuple[str, str]:
+def _run_file_scope(
+    engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str, worker_count: int
+) -> tuple[str, str]:
     file_id = params.get("file_id")
     variants = params.get("variants")
     profile_id = profile["id"]
@@ -383,7 +442,7 @@ def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, profi
         raise RuntimeError("File not found.")
 
     if variants:
-        return _run_variant_sweep(engine, job, access, row, profile, variants)
+        return _run_variant_sweep(engine, job, access, row, profile, variants, worker_count)
 
     skip_processed = params.get("skip_processed", True)
     item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="convert_file")
@@ -407,7 +466,28 @@ def _run_file_scope(engine, job: dict, access: SourceAccess, params: dict, profi
         return "failed", str(exc)
 
 
-def _run_variant_sweep(engine, job: dict, access: SourceAccess, row, profile: dict, variants: list[dict]) -> tuple[str, str]:
+def _process_variant(engine, job_id: str, access: SourceAccess, old_path: Path, row, profile: dict, overrides: dict) -> bool:
+    """One variant, run from inside a batch's thread pool -- every variant
+    is an independent encode of the same already-local-copied source file
+    (see `_run_variant_sweep`), the clearest "one file, many threads" case
+    in this codebase (post-V1, user request)."""
+    suffix = conversion.encode_variant_suffix(profile, overrides)
+    item_id = service.create_job_item(engine, job_id, file_id=row.id, item_key=suffix, step_name="convert_variant")
+    service.start_job_item(engine, item_id)
+    try:
+        outcome = _create_variant(engine, access, old_path, row, profile, overrides)
+        service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Variant produced.")
+        service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Variant {suffix} produced.")
+        return True
+    except Exception as exc:  # noqa: BLE001 - one variant's failure must not abort the sweep
+        service.fail_job_item(engine, item_id, message=str(exc))
+        service.log_event(engine, job_id, row.id, "error", "job_item_failed", f"Variant {suffix} failed: {exc}")
+        return False
+
+
+def _run_variant_sweep(
+    engine, job: dict, access: SourceAccess, row, profile: dict, variants: list[dict], worker_count: int
+) -> tuple[str, str]:
     if not access.exists(row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
 
@@ -417,7 +497,8 @@ def _run_variant_sweep(engine, job: dict, access: SourceAccess, row, profile: di
     service.set_job_total_items(engine, job["id"], total)
 
     with access.local_copy(row.relative_path) as old_path:
-        for overrides in variants:
+        index = 0
+        while index < total:
             stop = service.check_stop_requested(job["id"])
             if stop:
                 verb = "Cancelled" if stop == "cancel" else "Paused"
@@ -426,24 +507,20 @@ def _run_variant_sweep(engine, job: dict, access: SourceAccess, row, profile: di
                 service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
                 return status, message
 
-            suffix = conversion.encode_variant_suffix(profile, overrides)
-            item_id = service.create_job_item(
-                engine, job["id"], file_id=row.id, item_key=suffix, step_name="convert_variant"
-            )
-            service.start_job_item(engine, item_id)
-            try:
-                outcome = _create_variant(engine, access, old_path, row, profile, overrides)
-                service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Variant produced.")
-                service.log_event(
-                    engine, job["id"], row.id, "info", "job_item_completed", f"Variant {suffix} produced."
+            chunk = variants[index : index + worker_count]
+            with ThreadPoolExecutor(max_workers=len(chunk)) as executor:
+                results = list(
+                    executor.map(
+                        lambda overrides: _process_variant(engine, job["id"], access, old_path, row, profile, overrides),
+                        chunk,
+                    )
                 )
-                processed += 1
-            except Exception as exc:  # noqa: BLE001 - one variant's failure must not abort the sweep
-                failed += 1
-                service.fail_job_item(engine, item_id, message=str(exc))
-                service.log_event(
-                    engine, job["id"], row.id, "error", "job_item_failed", f"Variant {suffix} failed: {exc}"
-                )
+            for ok in results:
+                if ok:
+                    processed += 1
+                else:
+                    failed += 1
+            index += worker_count
 
     summary = f"Produced {processed} of {total} variant(s)"
     if failed:

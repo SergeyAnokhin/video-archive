@@ -18,6 +18,7 @@ from app.routers import (
     interface_settings,
     jobs,
     logs,
+    performance_settings,
     playback,
     playback_settings,
     preview_layouts,
@@ -69,3 +70,4 @@ app.include_router(jobs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(backup_settings.router, prefix="/api")
+app.include_router(performance_settings.router, prefix="/api")

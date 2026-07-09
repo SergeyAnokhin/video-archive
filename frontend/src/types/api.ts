@@ -132,6 +132,7 @@ export interface FileEntry {
   tagged_at: string | null
   is_variant: boolean
   is_original: boolean
+  duration_seconds: number | null
 }
 
 export interface DirectoryChildrenResponse {
@@ -296,6 +297,11 @@ export interface BackupSummary {
 
 export interface BackupSettings {
   retention_count: number
+  updated_at: string
+}
+
+export interface PerformanceSettings {
+  parallel_workers: number
   updated_at: string
 }
 

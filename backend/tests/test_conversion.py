@@ -13,7 +13,7 @@ import shutil
 import pytest
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles
+from app import conversion, conversion_profiles, performance_settings
 from app.jobs import convert, service
 from app.scan import scan_source
 
@@ -314,3 +314,55 @@ def test_directory_test_mode_recursive(engine, source):
     assert (source["root"] / "top.mp4").exists()
     assert (source["root"] / "sub" / "nested.original.mp4").exists()
     assert (source["root"] / "sub" / "nested.mp4").exists()
+
+
+# --- parallel processing (post-V1, user request) --------------------------
+
+
+def test_directory_scope_converts_all_files_across_multiple_batches(engine, source):
+    """`parallel_workers=2` against 5 candidate files forces the
+    directory-scope loop through three flushed batches (2 + 2 + 1) instead
+    of one -- every file must still end up converted and counted exactly
+    once regardless of the batch boundaries."""
+    performance_settings.update_settings(engine, {"parallel_workers": 2})
+    for i in range(5):
+        make_video(source["root"] / "clips" / f"clip_{i}.mp4")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+
+    job = _run_job(
+        engine, "source", None,
+        {"path": "", "profile_id": profile["id"], "mode": "production", "skip_processed": True},
+    )
+
+    assert job["status"] == "completed"
+    assert "Converted 5 of 5 file(s)" in job["summary_message"]
+    items = service.get_job_items(engine, job["id"])
+    assert len(items) == 5
+    assert all(item["status"] == "completed" for item in items)
+    for i in range(5):
+        assert (source["root"] / "clips" / f"clip_{i}.mp4").exists()
+
+
+def test_variant_sweep_produces_all_variants_across_multiple_batches(engine, source):
+    """Same batching concern as above, applied to a single file's variant
+    sweep (the "one file, many threads" case)."""
+    performance_settings.update_settings(engine, {"parallel_workers": 2})
+    make_video(source["root"] / "clips" / "clip.mp4")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    variants = [{"crf": 20}, {"crf": 24}, {"crf": 28}, {"crf": 32}, {"crf": 36}]
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "test", "variants": variants},
+    )
+
+    assert job["status"] == "completed"
+    variant_files = sorted(p.name for p in (source["root"] / "clips").glob("clip.variant-*.mp4"))
+    assert len(variant_files) == 5
+
+    items = service.get_job_items(engine, job["id"])
+    assert len(items) == 5
+    assert all(item["status"] == "completed" for item in items)

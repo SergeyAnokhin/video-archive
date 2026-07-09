@@ -63,6 +63,11 @@
     "modeDirectLink": "Direct link (open externally)",
     "hint": "Both playback strategies stay available from the library — this only sets which one \"Play\" uses by default."
   },
+  "performanceSettings": {
+    "title": "Performance",
+    "parallelWorkers": "Parallel processing (files/variants at once)",
+    "hint": "How many files (bulk convert/preview jobs) or tuning variants are processed at the same time. For a single file, the same number is used to extract preview frames in parallel."
+  },
   "conversionProfiles": {
     "title": "Conversion profiles",
     "empty": "No conversion profiles yet. Add one to start converting videos.",

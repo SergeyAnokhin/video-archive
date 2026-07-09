@@ -25,12 +25,13 @@ snapshot at launch time").
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from app import preview, preview_layouts, preview_settings, similarity
+from app import performance_settings, preview, preview_layouts, preview_settings, similarity
 from app.jobs import service
 from app.media import is_test_artifact, preview_gif_relative_path, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -49,14 +50,15 @@ def _resolve_layout(engine, preset_id: str | None) -> dict:
     return preset
 
 
-def _mark_file_previewed(engine, file_id: str) -> None:
+def _mark_file_previewed(engine, file_id: str, duration_seconds: float | None) -> None:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "UPDATE files SET has_preview_asset = 1, preview_generated_at = :now, updated_at = :now "
+                "UPDATE files SET has_preview_asset = 1, preview_generated_at = :now, "
+                "duration_seconds = COALESCE(:duration, duration_seconds), updated_at = :now "
                 "WHERE id = :id"
             ),
-            {"now": _now(), "id": file_id},
+            {"now": _now(), "id": file_id, "duration": duration_seconds},
         )
 
 
@@ -83,26 +85,34 @@ def _try_store_similarity_signature(engine, job_id: str, file_id: str, video_pat
 
 
 def _generate_one_file(
-    engine, job_id: str, access: SourceAccess, file_row, layout: dict, aspect_ratio: float, settings: dict
-) -> str:
+    engine,
+    job_id: str,
+    access: SourceAccess,
+    file_row,
+    layout: dict,
+    aspect_ratio: float,
+    settings: dict,
+    max_workers: int = 1,
+) -> tuple[str, float | None]:
     if not access.exists(file_row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
     with access.local_copy(file_row.relative_path) as video_path:
         local_dest = video_path.with_suffix(".jpg")
         local_gif = video_path.parent / f"{video_path.stem}.preview.gif"
-        preview.generate_file_preview(
+        duration_seconds = preview.generate_file_preview(
             video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
             gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
             animated_source_mode=settings["animated_source_mode"],
             animated_segment_seconds=settings["animated_segment_seconds"],
             animated_transition=settings["animated_transition"],
+            max_workers=max_workers,
         )
         dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
         access.commit_new_file(local_dest, dest_rel)
         if local_gif.exists():
             access.commit_new_file(local_gif, preview_gif_relative_path(file_row.relative_path))
         _try_store_similarity_signature(engine, job_id, file_row.id, video_path)
-    return dest_rel
+    return dest_rel, duration_seconds
 
 
 def run_preview_job(engine, job: dict) -> tuple[str, str]:
@@ -110,6 +120,7 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     layout = _resolve_layout(engine, params.get("layout_preset_id"))
     settings = preview_settings.get_settings(engine)
     aspect_ratio = preview_settings.effective_aspect_ratio(settings)
+    worker_count = max(1, performance_settings.get_settings(engine)["parallel_workers"])
 
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -118,12 +129,19 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, access, params, layout, aspect_ratio, settings)
-    return _run_directory_scope(engine, job, access, params, layout, aspect_ratio, settings)
+        return _run_file_scope(engine, job, access, params, layout, aspect_ratio, settings, worker_count)
+    return _run_directory_scope(engine, job, access, params, layout, aspect_ratio, settings, worker_count)
 
 
 def _run_file_scope(
-    engine, job: dict, access: SourceAccess, params: dict, layout: dict, aspect_ratio: float, settings: dict
+    engine,
+    job: dict,
+    access: SourceAccess,
+    params: dict,
+    layout: dict,
+    aspect_ratio: float,
+    settings: dict,
+    worker_count: int,
 ) -> tuple[str, str]:
     file_id = params.get("file_id")
     with engine.connect() as conn:
@@ -134,8 +152,13 @@ def _run_file_scope(
     item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
     service.start_job_item(engine, item_id)
     try:
-        output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio, settings)
-        _mark_file_previewed(engine, row.id)
+        # Only one file here: spend the full configured parallelism on this
+        # file's own independent frame extractions instead (see
+        # `preview.generate_file_preview()`'s `max_workers`).
+        output_ref, duration_seconds = _generate_one_file(
+            engine, job["id"], access, row, layout, aspect_ratio, settings, max_workers=worker_count
+        )
+        _mark_file_previewed(engine, row.id, duration_seconds)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
             engine, job["id"], row.id, "info", "job_item_completed", f"Preview generated for {row.relative_path}"
@@ -150,8 +173,45 @@ def _run_file_scope(
         return "failed", str(exc)
 
 
+def _process_preview_file(
+    engine, job_id: str, access: SourceAccess, row, layout: dict, aspect_ratio: float, settings: dict
+) -> bool:
+    """One directory-scope file, run from inside a batch's thread pool.
+    Returns whether it succeeded; failures are recorded through the normal
+    job-item/event mechanism (thread-safe, see `app/jobs/service.py`) rather
+    than raised, so one file's failure can't abort a whole in-flight batch."""
+    item_id = service.create_job_item(engine, job_id, file_id=row.id, step_name="preview_file")
+    service.start_job_item(engine, item_id)
+    try:
+        # Several files already run side by side here, so each one keeps its
+        # own frame extraction sequential (max_workers=1, the default) --
+        # spending the configured parallelism on both axes at once would
+        # spawn `files-in-flight x max_workers` ffmpeg processes together.
+        output_ref, duration_seconds = _generate_one_file(engine, job_id, access, row, layout, aspect_ratio, settings)
+        _mark_file_previewed(engine, row.id, duration_seconds)
+        service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
+        service.log_event(
+            engine, job_id, row.id, "info", "job_item_completed", f"Preview generated for {row.relative_path}"
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
+        service.fail_job_item(engine, item_id, message=str(exc))
+        service.log_event(
+            engine, job_id, row.id, "error", "job_item_failed",
+            f"Failed to generate preview for {row.relative_path}: {exc}",
+        )
+        return False
+
+
 def _run_directory_scope(
-    engine, job: dict, access: SourceAccess, params: dict, layout: dict, aspect_ratio: float, settings: dict
+    engine,
+    job: dict,
+    access: SourceAccess,
+    params: dict,
+    layout: dict,
+    aspect_ratio: float,
+    settings: dict,
+    worker_count: int,
 ) -> tuple[str, str]:
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
@@ -180,15 +240,41 @@ def _run_directory_scope(
     stop_status: str | None = None
     service.set_job_total_items(engine, job["id"], total)
 
+    # Independent files are processed `worker_count` at a time (post-V1,
+    # user request -- a directory-scope job used to run one ffmpeg process
+    # at a time regardless of available CPU cores). A batch is flushed (run
+    # concurrently, then awaited) once it reaches `worker_count`, or at the
+    # end of the loop for a trailing partial batch; the cooperative
+    # cancel/pause check runs between batches, same checkpoint granularity
+    # idea as the old between-files check, just coarser by up to
+    # `worker_count - 1` in-flight files.
+    batch: list = []
+
+    def flush(pending: list) -> None:
+        nonlocal processed, failed
+        if not pending:
+            return
+        with ThreadPoolExecutor(max_workers=len(pending)) as executor:
+            results = list(
+                executor.map(
+                    lambda r: _process_preview_file(engine, job["id"], access, r, layout, aspect_ratio, settings),
+                    pending,
+                )
+            )
+        for ok in results:
+            if ok:
+                processed += 1
+            else:
+                failed += 1
+
     for row in candidates:
         stop = service.check_stop_requested(job["id"])
         if stop:
             stop_status = "cancelled" if stop == "cancel" else "paused"
             break
 
-        item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
-
         if skip_processed and row.has_preview_asset:
+            item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
             service.skip_job_item(engine, item_id, "Already has a preview; skipped.")
             service.log_event(
                 engine, job["id"], row.id, "debug", "job_item_skipped",
@@ -197,22 +283,12 @@ def _run_directory_scope(
             skipped += 1
             continue
 
-        service.start_job_item(engine, item_id)
-        try:
-            output_ref = _generate_one_file(engine, job["id"], access, row, layout, aspect_ratio, settings)
-            _mark_file_previewed(engine, row.id)
-            service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
-            service.log_event(
-                engine, job["id"], row.id, "info", "job_item_completed", f"Preview generated for {row.relative_path}"
-            )
-            processed += 1
-        except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
-            failed += 1
-            service.fail_job_item(engine, item_id, message=str(exc))
-            service.log_event(
-                engine, job["id"], row.id, "error", "job_item_failed",
-                f"Failed to generate preview for {row.relative_path}: {exc}",
-            )
+        batch.append(row)
+        if len(batch) >= worker_count:
+            flush(batch)
+            batch = []
+
+    flush(batch)
 
     folder_count = 0
     if stop_status is None:

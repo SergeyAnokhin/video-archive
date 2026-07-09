@@ -26,6 +26,7 @@ def _file_row_to_dict(row) -> dict:
         "has_preview_asset": bool(row.has_preview_asset),
         "converted_at": row.converted_at,
         "tagged_at": row.tagged_at,
+        "duration_seconds": row.duration_seconds,
         "is_variant": VARIANT_MARKER in row.file_name,
         "is_original": ORIGINAL_MARKER in row.file_name,
     }
@@ -74,7 +75,7 @@ def get_directory_children(
             text(
                 """
                 SELECT id, file_name, extension, size_bytes, modified_at, is_video_supported,
-                       has_preview_asset, converted_at, tagged_at
+                       has_preview_asset, converted_at, tagged_at, duration_seconds
                 FROM files
                 WHERE directory_id = :dir_id AND is_video_supported = 1
                 ORDER BY file_name COLLATE NOCASE

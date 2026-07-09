@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Archive, File as FileIcon, Film, Folder, Info, SlidersHorizontal } from 'lucide-react'
 import type { DirectoryEntry, FileEntry } from '../types/api'
-import { formatSize } from '../utils/format'
+import { formatDuration, formatSize } from '../utils/format'
 import './LibraryView.css'
 
 export function FolderCard({
@@ -33,7 +33,12 @@ export function FolderCard({
           <Folder size={28} />
         )}
       </div>
-      <div className="library-card__name">{dir.name}</div>
+      <div className="library-card__name-row">
+        <span className="library-card__name" title={dir.name}>
+          {dir.name}
+        </span>
+        {status && <span className="library-card__meta">{status.total_supported_files}</span>}
+      </div>
       {(showConversionDot || showPreviewDot) && (
         <div className="library-card__badges">
           {showConversionDot && (
@@ -104,7 +109,10 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo }: FileCardProp
       <div className="library-card__name" title={file.file_name}>
         {file.file_name}
       </div>
-      <div className="library-card__meta">{formatSize(file.size_bytes)}</div>
+      <div className="library-card__meta">
+        <span>{formatSize(file.size_bytes)}</span>
+        {file.duration_seconds != null && <span>{formatDuration(file.duration_seconds)}</span>}
+      </div>
       {(showConversionDot || showPreviewDot || file.is_variant || file.is_original) && (
         <div className="library-card__badges">
           {showConversionDot && (

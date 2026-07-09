@@ -264,7 +264,22 @@
   white-space: nowrap;
 }
 
+.library-card__name-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.library-card__name-row .library-card__name {
+  flex: 1;
+  min-width: 0;
+}
+
 .library-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--color-text-muted);
 }

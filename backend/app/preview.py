@@ -16,6 +16,7 @@ import random
 import shutil
 import subprocess
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -140,6 +141,22 @@ def extract_clip_frames(
         return []
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _map_parallel(func, items: list, max_workers: int) -> list:
+    """`[func(item) for item in items]`, optionally spread across a thread
+    pool (post-V1, user request: a single file's independent per-timestamp
+    ffmpeg frame extractions are the "one file, many threads" case for
+    preview generation -- `app/jobs/convert.py`'s variant sweep is the
+    equivalent for conversion). Preserves input order regardless of
+    completion order, which callers rely on (frame index <-> timestamp
+    index correspondence). Falls back to a plain sequential loop for
+    `max_workers <= 1` or a single item, since spinning up a thread pool for
+    one call only adds overhead."""
+    if max_workers <= 1 or len(items) <= 1:
+        return [func(item) for item in items]
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as executor:
+        return list(executor.map(func, items))
 
 
 def fill_missing_frames(images: list):
@@ -414,7 +431,18 @@ def generate_file_preview(
     animated_source_mode: str = "frame",
     animated_segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
     animated_transition: str = "cut",
-) -> None:
+    max_workers: int = 1,
+) -> float:
+    """Returns the source's duration in seconds (from the ffprobe call this
+    already performs), so callers can persist it without a second probe.
+
+    `max_workers` (post-V1, user request, default 1 = sequential, unchanged
+    prior behavior) spreads this one file's independent per-timestamp ffmpeg
+    frame extractions across a thread pool -- callers doing a single file at
+    a time (a `preview` job's file scope) should pass the configured
+    parallelism here; callers already processing several files concurrently
+    (directory scope) should keep this at 1 to avoid spawning
+    `files-in-flight x max_workers` ffmpeg processes at once."""
     tiles = compute_layout_tiles(layout["grid_rows"], layout["grid_cols"], layout["layout_definition"])
 
     info = conversion.probe_media(video_path)
@@ -422,7 +450,9 @@ def generate_file_preview(
         raise PreviewError("Source is not a probeable video with a video stream and duration.")
 
     timestamps = sample_interior_timestamps(info["duration"], len(tiles))
-    images = fill_missing_frames([extract_frame_image(video_path, ts) for ts in timestamps])
+    images = fill_missing_frames(
+        _map_parallel(lambda ts: extract_frame_image(video_path, ts), timestamps, max_workers)
+    )
     if not any(img is not None for img in images):
         raise PreviewError("Could not extract any frames from the source video.")
 
@@ -432,11 +462,14 @@ def generate_file_preview(
             # mode grabs a short burst of frames per position instead of one
             # still), falling back to the already-extracted still frame if
             # the clip burst comes back empty (e.g. too close to EOF).
+            def _extract_segment(pair: tuple[float, object]) -> list:
+                timestamp, fallback = pair
+                burst = extract_clip_frames(video_path, timestamp, animated_segment_seconds)
+                return burst if burst else ([fallback] if fallback is not None else [])
+
             gif_images: list = []
             gif_segment_sizes: list[int] = []
-            for timestamp, fallback in zip(timestamps, images):
-                burst = extract_clip_frames(video_path, timestamp, animated_segment_seconds)
-                segment = burst if burst else ([fallback] if fallback is not None else [])
+            for segment in _map_parallel(_extract_segment, list(zip(timestamps, images)), max_workers):
                 gif_images.extend(segment)
                 gif_segment_sizes.append(len(segment))
             render_gif(
@@ -460,6 +493,8 @@ def generate_file_preview(
         ordered_images, tiles, video_path.name, aspect_ratio, dest_path,
         grid_rows=layout["grid_rows"], grid_cols=layout["grid_cols"],
     )
+
+    return info["duration"]
 
 
 # --- folder preview (animated GIF, diverse across videos/subfolders) ------

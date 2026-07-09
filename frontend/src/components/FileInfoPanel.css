@@ -46,7 +46,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1 1 40%;
+  flex: 7 1 0%;
   min-height: 0;
   color: var(--color-text-muted);
   background: var(--color-bg);
@@ -62,10 +62,12 @@
 
 .file-info-panel__details {
   display: flex;
-  flex: 1 1 60%;
+  flex: 3 1 0%;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-height: 0;
+  min-width: 220px;
+  max-width: 320px;
   overflow-y: auto;
 }
 
@@ -77,6 +79,11 @@
   .file-info-panel__thumb {
     flex: 0 0 auto;
     max-height: 30vh;
+  }
+
+  .file-info-panel__details {
+    flex: 1 1 auto;
+    max-width: none;
   }
 }
 
@@ -127,8 +134,8 @@
 
 .file-info-panel__media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-1);
   margin: 0;
   transition: opacity 0.15s ease;
 }
@@ -140,8 +147,8 @@
 .file-info-panel__media-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2);
+  gap: 1px;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-surface-raised);
 }

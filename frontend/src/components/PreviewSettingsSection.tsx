@@ -245,7 +245,11 @@ export function PreviewSettingsSection() {
     <section className="settings-modal__section">
       <h3 className="settings-modal__section-title">{t('previewSettings.title')}</h3>
 
-      <div className="settings-modal__options" role="tablist" aria-label={t('previewSettings.title')}>
+      <div
+        className="settings-modal__options settings-modal__options--segmented"
+        role="tablist"
+        aria-label={t('previewSettings.title')}
+      >
         <button
           type="button"
           role="tab"

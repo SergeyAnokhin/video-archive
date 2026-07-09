@@ -388,6 +388,28 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE preview_settings ADD COLUMN animated_segment_seconds REAL NOT NULL DEFAULT 0.45",
         "ALTER TABLE preview_settings ADD COLUMN animated_transition TEXT NOT NULL DEFAULT 'cut'",
     ],
+    # Post-V1: video duration on library cards (user request). Duration is
+    # never probed during scanning (extension-only, cheap); it is instead
+    # captured for free from the ffprobe call that preview generation and
+    # conversion already perform, and persisted here so the grid can show it
+    # without an ffprobe round-trip per card. Stays NULL until the file has
+    # been previewed or converted at least once.
+    15: [
+        "ALTER TABLE files ADD COLUMN duration_seconds REAL",
+    ],
+    # Post-V1: performance settings singleton (user request) -- how many
+    # files/variants the `convert` and `preview` jobs process concurrently
+    # (see `app/performance_settings.py`). Same singleton convention as
+    # preview/playback/backup/interface_settings.
+    16: [
+        """
+        CREATE TABLE IF NOT EXISTS performance_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            parallel_workers INTEGER NOT NULL DEFAULT 4,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -473,6 +495,11 @@ def init_db() -> int:
             from app.interface_settings import seed_default_settings as seed_default_interface_settings
 
             seed_default_interface_settings(conn)
+
+        if current_version < 16 <= SCHEMA_VERSION:
+            from app.performance_settings import seed_default_settings as seed_default_performance_settings
+
+            seed_default_performance_settings(conn)
 
     return SCHEMA_VERSION
 

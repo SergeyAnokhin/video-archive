@@ -14,10 +14,20 @@ if a model file is missing"), not an error condition.
 from __future__ import annotations
 
 import logging
+import threading
 import urllib.request
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# The face detector/recognizer below are shared, lazily-created cv2 DNN
+# objects (`cv2.FaceDetectorYN`/`cv2.FaceRecognizerSF`); `setInputSize()` +
+# `detect()` mutate the detector's internal state, so concurrent calls from
+# multiple threads (post-V1: preview generation can now process several
+# files in parallel, see `app/jobs/preview.py`) would race on that shared
+# state. `detect_persons()` (onnxruntime `InferenceSession.run()`) and
+# `blur_score()` are stateless/thread-safe already and stay unlocked.
+_cv2_face_lock = threading.Lock()
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
@@ -136,8 +146,9 @@ def detect_faces(image_bgr) -> list[dict]:
         return []
 
     height, width = image_bgr.shape[:2]
-    detector.setInputSize((width, height))
-    _, faces = detector.detect(image_bgr)
+    with _cv2_face_lock:
+        detector.setInputSize((width, height))
+        _, faces = detector.detect(image_bgr)
     if faces is None:
         return []
 
@@ -157,8 +168,9 @@ def face_embedding(image_bgr, face_row):
     if recognizer is None:
         return None
     try:
-        aligned = recognizer.alignCrop(image_bgr, face_row)
-        return recognizer.feature(aligned)
+        with _cv2_face_lock:
+            aligned = recognizer.alignCrop(image_bgr, face_row)
+            return recognizer.feature(aligned)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Face embedding failed: %s", exc)
         return None
@@ -173,7 +185,8 @@ def embedding_distance(embedding_a, embedding_b) -> float:
         try:
             import cv2
 
-            similarity = recognizer.match(embedding_a, embedding_b, cv2.FaceRecognizerSF_FR_COSINE)
+            with _cv2_face_lock:
+                similarity = recognizer.match(embedding_a, embedding_b, cv2.FaceRecognizerSF_FR_COSINE)
             return 1.0 - float(similarity)
         except Exception:  # noqa: BLE001
             pass

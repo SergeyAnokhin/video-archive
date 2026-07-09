@@ -16,7 +16,7 @@ import pytest
 from PIL import Image
 from sqlalchemy import text
 
-from app import media, preview, preview_layouts, preview_settings
+from app import media, performance_settings, preview, preview_layouts, preview_settings
 from app.jobs import preview as preview_job
 from app.jobs import service
 from app.sampling import sample_interior_timestamps
@@ -423,6 +423,35 @@ def test_preview_job_excludes_test_artifacts(engine, source):
     assert "1 of 1" in message
     assert not (source["root"] / "clips" / "movie.original.jpg").exists()
     assert not (source["root"] / "clips" / "movie.variant-crf28.jpg").exists()
+
+
+# --- parallel processing (post-V1, user request) --------------------------
+
+
+def test_preview_job_directory_scope_generates_all_across_multiple_batches(engine, source):
+    """`parallel_workers=2` against 5 candidate files forces the
+    directory-scope loop through three flushed batches (2 + 2 + 1) instead
+    of one -- every file must still get its collage/GIF and be counted
+    exactly once regardless of the batch boundaries."""
+    performance_settings.update_settings(engine, {"parallel_workers": 2})
+    for i in range(5):
+        make_video(source["root"] / "clips" / f"clip_{i}.mp4", duration=2.0, size="320x240")
+    scan_source(engine, source["id"], source["root"])
+
+    job = service.create_job(engine, "preview", "source", None, {"path": "", "skip_processed": True})
+    service.start_job(engine, job["id"])
+    status, message = preview_job.run_preview_job(engine, job)
+
+    assert status == "completed"
+    assert "Generated previews for 5 of 5 file(s)" in message
+    for i in range(5):
+        assert (source["root"] / "clips" / f"clip_{i}.jpg").exists()
+
+    with engine.connect() as conn:
+        previewed = conn.execute(
+            text("SELECT COUNT(*) FROM files WHERE has_preview_asset = 1")
+        ).scalar_one()
+    assert previewed == 5
 
 
 def test_preview_settings_singleton_roundtrip(engine):
