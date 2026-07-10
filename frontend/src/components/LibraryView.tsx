@@ -1,8 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowDownAZ, HardDrive, Home, Images, MoreVertical, RefreshCw, Tag, Tags, Wand2, X } from 'lucide-react'
+import {
+  ArrowDownAZ,
+  FolderPlus,
+  HardDrive,
+  Home,
+  Images,
+  MoreVertical,
+  RefreshCw,
+  Tag,
+  Tags,
+  Wand2,
+  X,
+} from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
+import { CreateFolderDialog } from './CreateFolderDialog'
 import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
 import { FileTuneModal } from './FileTuneModal'
@@ -14,6 +27,7 @@ import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
 import type { DirectoryChildrenResponse, FileEntry, JobSummary, VariantTag } from '../types/api'
+import { recordRecentFolder } from '../utils/recentFolders'
 import { recordRecentlyViewed } from '../utils/recentlyViewed'
 import './LibraryView.css'
 
@@ -99,6 +113,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
   const [overflowOpen, setOverflowOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>('name')
   const [reloadTick, setReloadTick] = useState(0)
+  const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const overflowRef = useRef<HTMLDivElement | null>(null)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
 
@@ -193,6 +208,35 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
 
   const segments = path ? path.split('/') : []
 
+  // Next/prev navigation in PlaybackModal/FileInfoPanel only makes sense
+  // against this directory's own sorted listing (user request) -- search
+  // results keep their separate inline sortFiles() call below and don't
+  // participate in next/prev.
+  const sortedFiles = data ? sortFiles(data.files, sortBy) : []
+  const playingIndex = playingFile ? sortedFiles.findIndex((f) => f.id === playingFile.id) : -1
+  const infoIndex = infoFile ? sortedFiles.findIndex((f) => f.id === infoFile.id) : -1
+
+  function handleMoved() {
+    setPlayingFile(null)
+    setInfoFile(null)
+    setReloadTick((tick) => tick + 1)
+  }
+
+  function goToPlayingOffset(offset: number) {
+    const target = sortedFiles[playingIndex + offset]
+    if (target) {
+      recordRecentlyViewed(target.id)
+      setPlayingFile(target)
+    }
+  }
+
+  function goToInfoOffset(offset: number) {
+    const target = sortedFiles[infoIndex + offset]
+    if (target) {
+      setInfoFile(target)
+    }
+  }
+
   const nextSortBy = SORT_OPTIONS[(SORT_OPTIONS.indexOf(sortBy) + 1) % SORT_OPTIONS.length]
   const SortIcon = SORT_ICON[sortBy]
   const sortToggleLabel = t('library.sortToggle', { mode: t(SORT_LABEL_KEY[nextSortBy]) })
@@ -253,6 +297,30 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
     }
   }
 
+  async function handleToggleFavoriteFolder(dirPath: string, favorite: boolean) {
+    const res = await fetch('/api/directories/favorite', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: dirPath, favorite }),
+    })
+    if (res.ok) {
+      setReloadTick((tick) => tick + 1)
+    }
+  }
+
+  async function handleDeleteFolder(dirPath: string) {
+    const res = await fetch(`/api/directories?${new URLSearchParams({ path: dirPath }).toString()}`, {
+      method: 'DELETE',
+    })
+    if (res.ok) {
+      setReloadTick((tick) => tick + 1)
+    } else {
+      const json = await res.json().catch(() => null)
+      const code = json?.detail?.error?.code
+      window.alert(code === 'directory_not_empty' ? t('library.deleteFolderNotEmpty') : t('library.deleteFolderFailed'))
+    }
+  }
+
   return (
     <div className="library-view">
       <div className="library-view__toolbar">
@@ -274,6 +342,16 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
         </nav>
 
         <div className="library-view__toolbar-actions">
+          <button
+            type="button"
+            className="library-view__icon-btn"
+            aria-label={t('library.createFolder')}
+            title={t('library.createFolder')}
+            onClick={() => setCreateFolderOpen(true)}
+          >
+            <FolderPlus size={16} />
+          </button>
+
           <button
             type="button"
             className="library-view__icon-btn"
@@ -400,17 +478,27 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
           {data && (data.directories.length > 0 || data.files.length > 0) && (
             <div className="library-view__grid">
               {data.directories.map((dir) => (
-                <FolderCard key={dir.path} dir={dir} onOpen={() => onNavigate(dir.path)} />
+                <FolderCard
+                  key={dir.path}
+                  dir={dir}
+                  onOpen={() => onNavigate(dir.path)}
+                  onToggleFavorite={() => void handleToggleFavoriteFolder(dir.path, !dir.is_favorite)}
+                  onDelete={() => void handleDeleteFolder(dir.path)}
+                />
               ))}
-              {sortFiles(data.files, sortBy).map((file) => (
+              {sortedFiles.map((file) => (
                 <FileCard
                   key={file.id}
                   file={file}
                   onPlay={() => {
                     recordRecentlyViewed(file.id)
+                    recordRecentFolder(path)
                     setPlayingFile(file)
                   }}
-                  onInfo={() => setInfoFile(file)}
+                  onInfo={() => {
+                    recordRecentFolder(path)
+                    setInfoFile(file)
+                  }}
                   onDelete={() => void handleDeleteFile(file.id)}
                 />
               ))}
@@ -459,7 +547,17 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
         />
       )}
 
-      {playingFile && <PlaybackModal file={playingFile} onClose={() => setPlayingFile(null)} />}
+      {playingFile && (
+        <PlaybackModal
+          file={playingFile}
+          onClose={() => setPlayingFile(null)}
+          onMoved={handleMoved}
+          hasPrev={playingIndex > 0}
+          hasNext={playingIndex >= 0 && playingIndex < sortedFiles.length - 1}
+          onPrev={() => goToPlayingOffset(-1)}
+          onNext={() => goToPlayingOffset(1)}
+        />
+      )}
       {similarFile && <SimilarFilesModal file={similarFile} onClose={() => setSimilarFile(null)} />}
       {infoFile && (
         <FileInfoPanel
@@ -485,6 +583,22 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
           onMove={() => {
             setMoveFile(infoFile)
             setInfoFile(null)
+          }}
+          onMoved={handleMoved}
+          hasPrev={infoIndex > 0}
+          hasNext={infoIndex >= 0 && infoIndex < sortedFiles.length - 1}
+          onPrev={() => goToInfoOffset(-1)}
+          onNext={() => goToInfoOffset(1)}
+        />
+      )}
+
+      {createFolderOpen && (
+        <CreateFolderDialog
+          parentPath={path}
+          onClose={() => setCreateFolderOpen(false)}
+          onCreated={() => {
+            setCreateFolderOpen(false)
+            setReloadTick((tick) => tick + 1)
           }}
         />
       )}

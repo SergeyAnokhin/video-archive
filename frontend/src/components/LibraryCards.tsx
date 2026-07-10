@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, File as FileIcon, Film, Folder, Info, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Archive, File as FileIcon, Film, Folder, Info, SlidersHorizontal, Star, Trash2 } from 'lucide-react'
 import type { DirectoryEntry, FileEntry, VariantTag } from '../types/api'
 import { formatDuration, formatSize } from '../utils/format'
 import './LibraryView.css'
@@ -26,9 +26,13 @@ function useVariantTagLabel(tag: VariantTag): string {
 export function FolderCard({
   dir,
   onOpen,
+  onToggleFavorite,
+  onDelete,
 }: {
   dir: DirectoryEntry
   onOpen: () => void
+  onToggleFavorite: () => void
+  onDelete: () => void
 }) {
   const { t } = useTranslation()
   const status = dir.status
@@ -37,7 +41,18 @@ export function FolderCard({
   const showThumbnail = dir.has_folder_preview
 
   return (
-    <button type="button" className="library-card library-card--folder" onClick={onOpen}>
+    <div
+      className="library-card library-card--folder"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
+    >
       <div className="library-card__thumb-frame">
         <div className="library-card__thumb">
           {showThumbnail ? (
@@ -50,6 +65,32 @@ export function FolderCard({
             <Folder size={28} />
           )}
         </div>
+        <button
+          type="button"
+          className={`library-card__favorite-btn ${dir.is_favorite ? 'library-card__favorite-btn--active' : ''}`}
+          aria-label={t(dir.is_favorite ? 'library.unfavoriteFolder' : 'library.favoriteFolder')}
+          title={t(dir.is_favorite ? 'library.unfavoriteFolder' : 'library.favoriteFolder')}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleFavorite()
+          }}
+        >
+          <Star size={16} fill={dir.is_favorite ? 'currentColor' : 'none'} />
+        </button>
+        <button
+          type="button"
+          className="library-card__folder-delete-btn"
+          aria-label={t('library.deleteFolder')}
+          title={t('library.deleteFolder')}
+          onClick={(event) => {
+            event.stopPropagation()
+            if (window.confirm(t('library.confirmDeleteFolder', { name: dir.name }))) {
+              onDelete()
+            }
+          }}
+        >
+          <Trash2 size={14} />
+        </button>
         {(showConversionDot || showPreviewDot) && (
           <div className="library-card__badges">
             {showConversionDot && (
@@ -90,7 +131,7 @@ export function FolderCard({
           </div>
         )}
       </div>
-    </button>
+    </div>
   )
 }
 

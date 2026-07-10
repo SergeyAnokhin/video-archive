@@ -41,6 +41,42 @@
   right: var(--space-3);
 }
 
+.playback-overlay__folder-actions {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 1;
+}
+
+.playback-overlay__nav {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.playback-overlay__nav:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.playback-overlay__nav--prev {
+  left: var(--space-3);
+}
+
+.playback-overlay__nav--next {
+  right: var(--space-3);
+}
+
 .playback-overlay__mode-toggle {
   bottom: var(--space-3);
   right: var(--space-3);

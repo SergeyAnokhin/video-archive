@@ -153,6 +153,12 @@ class SMBBackend:
     def remote_remove(self, rel_path: str) -> None:
         self._with_retry(smbclient.remove, self._unc(rel_path))
 
+    def remote_mkdir(self, rel_path: str) -> None:
+        self._with_retry(smbclient.mkdir, self._unc(rel_path))
+
+    def remote_rmdir(self, rel_path: str) -> None:
+        self._with_retry(smbclient.rmdir, self._unc(rel_path))
+
     def read_bytes(self, rel_path: str) -> bytes:
         def _read() -> bytes:
             with smbclient.open_file(self._unc(rel_path), mode="rb") as f:

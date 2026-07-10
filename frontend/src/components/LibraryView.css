@@ -281,6 +281,52 @@
   color: var(--color-accent);
 }
 
+.library-card__favorite-btn {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  border-radius: 50%;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.library-card__favorite-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--color-warning);
+}
+
+.library-card__favorite-btn--active {
+  color: var(--color-warning);
+}
+
+.library-card__folder-delete-btn {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  border-radius: 50%;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.library-card__folder-delete-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--color-danger);
+}
+
 .library-card__thumb-img {
   width: 100%;
   height: 100%;

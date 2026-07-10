@@ -82,6 +82,7 @@ class FakeSMBFS:
         self.share = share
         self.prefix = f"\\\\{host}\\{share}"
         self.files: dict[str, tuple[bytes, float]] = {}
+        self.dirs: set[str] = set()
         self.fail_next: list[Exception] = []
 
     def _to_rel(self, unc_path: str) -> str:
@@ -101,7 +102,11 @@ class FakeSMBFS:
     def exists(self, rel_path: str) -> bool:
         if rel_path == "":
             return True
-        return rel_path in self.files or any(k.startswith(rel_path + "/") for k in self.files)
+        return (
+            rel_path in self.files
+            or rel_path in self.dirs
+            or any(k.startswith(rel_path + "/") for k in self.files)
+        )
 
     # -- smbclient-shaped API -------------------------------------------------
 
@@ -150,6 +155,14 @@ class FakeSMBFS:
     def remove(self, unc_path: str, **kwargs) -> None:
         self._maybe_fail()
         del self.files[self._to_rel(unc_path)]
+
+    def mkdir(self, unc_path: str, **kwargs) -> None:
+        self._maybe_fail()
+        self.dirs.add(self._to_rel(unc_path))
+
+    def rmdir(self, unc_path: str, **kwargs) -> None:
+        self._maybe_fail()
+        self.dirs.discard(self._to_rel(unc_path))
 
     def path_exists(self, unc_path: str, **kwargs) -> bool:
         return self.exists(self._to_rel(unc_path))
@@ -225,6 +238,8 @@ def fake_smb(monkeypatch):
     monkeypatch.setattr(smbclient, "open_file", fs.open_file)
     monkeypatch.setattr(smbclient, "rename", fs.rename)
     monkeypatch.setattr(smbclient, "remove", fs.remove)
+    monkeypatch.setattr(smbclient, "mkdir", fs.mkdir)
+    monkeypatch.setattr(smbclient, "rmdir", fs.rmdir)
     monkeypatch.setattr(smbclient.path, "exists", fs.path_exists)
     monkeypatch.setattr(smbclient.path, "isdir", fs.path_isdir)
     return fs

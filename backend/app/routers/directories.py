@@ -4,15 +4,31 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import preview_cache
+from app import directory_ops, preview_cache
 from app.db import get_engine
 from app.media import ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags
 from app.source_access import get_active_source_or_404
 from app.status import compute_directory_status
 
 router = APIRouter()
+
+# HTTP status per app/directory_ops.py error code.
+_DIR_OP_STATUS = {
+    "directory_not_found": 404,
+    "invalid_name": 400,
+    "destination_collision": 409,
+    "directory_not_empty": 400,
+}
+
+
+def _dir_op_http_error(err: directory_ops.DirectoryOperationError) -> HTTPException:
+    return HTTPException(
+        status_code=_DIR_OP_STATUS[err.code],
+        detail={"error": {"code": err.code, "message": err.message}},
+    )
 
 
 def _file_row_to_dict(row) -> dict:
@@ -54,7 +70,7 @@ def get_directory_children(
 
         subdir_rows = conn.execute(
             text(
-                "SELECT relative_path, name, has_folder_preview FROM directories "
+                "SELECT relative_path, name, has_folder_preview, is_favorite FROM directories "
                 "WHERE source_id = :sid AND parent_relative_path = :path "
                 "ORDER BY name COLLATE NOCASE"
             ),
@@ -66,6 +82,7 @@ def get_directory_children(
             entry = {
                 "path": row.relative_path,
                 "name": row.name,
+                "is_favorite": bool(row.is_favorite),
                 "has_folder_preview": bool(row.has_folder_preview),
             }
             if include_status:
@@ -90,6 +107,48 @@ def get_directory_children(
             entry["variant_tags"] = variant_tags.get(entry["id"], [])
 
     return {"path": path, "directories": directories, "files": files}
+
+
+class CreateDirectoryRequest(BaseModel):
+    parent_path: str = ""
+    name: str
+
+
+@router.post("/directories")
+def create_directory(body: CreateDirectoryRequest):
+    try:
+        row = directory_ops.create_directory(get_engine(), body.parent_path, body.name)
+    except directory_ops.DirectoryOperationError as err:
+        raise _dir_op_http_error(err)
+    return {"path": row.relative_path, "name": row.name}
+
+
+@router.delete("/directories")
+def delete_directory(path: str = Query(default="")):
+    try:
+        directory_ops.delete_directory(get_engine(), path)
+    except directory_ops.DirectoryOperationError as err:
+        raise _dir_op_http_error(err)
+    return {"deleted": True}
+
+
+class SetFavoriteDirectoryRequest(BaseModel):
+    path: str
+    favorite: bool
+
+
+@router.put("/directories/favorite")
+def set_favorite_directory(body: SetFavoriteDirectoryRequest):
+    try:
+        row = directory_ops.set_favorite(get_engine(), body.path, body.favorite)
+    except directory_ops.DirectoryOperationError as err:
+        raise _dir_op_http_error(err)
+    return {"path": row.relative_path, "name": row.name, "is_favorite": bool(row.is_favorite)}
+
+
+@router.get("/directories/favorites")
+def get_favorite_directories():
+    return {"favorites": directory_ops.list_favorites(get_engine())}
 
 
 @router.get("/directories/preview.gif")

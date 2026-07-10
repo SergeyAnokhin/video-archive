@@ -18,7 +18,15 @@ import pytest
 from smbprotocol.exceptions import SMBException
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles, preview_cache, preview_layouts, preview_settings, tags as tags_service
+from app import (
+    conversion,
+    conversion_profiles,
+    directory_ops,
+    preview_cache,
+    preview_layouts,
+    preview_settings,
+    tags as tags_service,
+)
 from app.jobs import convert, preview as preview_job, service, tag as tag_job
 from app.scan import scan_source_access
 from app.sources import get_source_access
@@ -68,6 +76,16 @@ def test_retry_on_connection_error(fake_smb):
     assert {e.name for e in entries} == {"movie.mp4"}
 
 
+def test_remote_mkdir_and_rmdir(fake_smb):
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass")
+
+    backend.remote_mkdir("clips")
+    assert backend.exists("clips")
+
+    backend.remote_rmdir("clips")
+    assert not backend.exists("clips")
+
+
 def test_commit_new_file_uploads_and_cleans_up_local_temp(fake_smb, tmp_path):
     backend = SMBBackend("testnas", 445, "testshare", "user", "pass")
     local_file = tmp_path / "output.mp4"
@@ -115,6 +133,25 @@ def test_scan_smb_source_discovers_files(engine, smb_source):
     assert file_row is not None
     assert file_row.has_preview_asset == 1
     assert file_row.size_bytes == 100
+
+
+# --- folder create/delete (user request, app/directory_ops.py) --------------
+
+
+def test_create_and_delete_directory_over_smb(engine, smb_source):
+    row = directory_ops.create_directory(engine, "", "NewFolder")
+    assert row.relative_path == "NewFolder"
+    assert smb_source["fs"].exists("NewFolder")
+
+    directory_ops.delete_directory(engine, "NewFolder")
+    assert not smb_source["fs"].exists("NewFolder")
+
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT id FROM directories WHERE source_id = :sid AND relative_path = 'NewFolder'"),
+            {"sid": smb_source["id"]},
+        ).fetchone()
+    assert row is None
 
 
 # --- conversion, preview, tagging (require real ffmpeg/ffprobe) --------------

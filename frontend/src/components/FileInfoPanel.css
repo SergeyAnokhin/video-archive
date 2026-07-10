@@ -10,6 +10,7 @@
 }
 
 .file-info-panel .convert-dialog__title {
+  margin-top: 40px;
   padding-right: var(--space-6, 48px);
 }
 
@@ -32,6 +33,44 @@
 
 .file-info-panel__close:hover {
   color: var(--color-text);
+}
+
+.file-info-panel__folder-actions {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 1;
+}
+
+.file-info-panel__nav-group {
+  position: absolute;
+  top: var(--space-3);
+  right: calc(var(--space-3) + var(--touch-target-min) + var(--space-2));
+  z-index: 1;
+  display: flex;
+  gap: var(--space-1);
+}
+
+.file-info-panel__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.file-info-panel__nav:hover {
+  color: var(--color-text);
+}
+
+.file-info-panel__nav:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .file-info-panel__body {

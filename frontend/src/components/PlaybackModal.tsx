@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Copy, Link, PlayCircle, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Copy, Link, PlayCircle, X } from 'lucide-react'
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
+import { FolderQuickActions } from './FolderQuickActions'
 import './PlaybackModal.css'
 
 interface PlaybackModalProps {
   file: FileEntry
   onClose: () => void
+  onMoved?: () => void
+  hasPrev?: boolean
+  hasNext?: boolean
+  onPrev?: () => void
+  onNext?: () => void
 }
 
-export function PlaybackModal({ file, onClose }: PlaybackModalProps) {
+export function PlaybackModal({ file, onClose, onMoved, hasPrev, hasNext, onPrev, onNext }: PlaybackModalProps) {
   const { t } = useTranslation()
   const [info, setInfo] = useState<PlaybackInfo | null>(null)
   const [mode, setMode] = useState<PlaybackMode | null>(null)
@@ -44,11 +50,15 @@ export function PlaybackModal({ file, onClose }: PlaybackModalProps) {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         onClose()
+      } else if (event.key === 'ArrowLeft' && hasPrev && onPrev) {
+        onPrev()
+      } else if (event.key === 'ArrowRight' && hasNext && onNext) {
+        onNext()
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [onClose, hasPrev, hasNext, onPrev, onNext])
 
   async function handleCopyPath() {
     if (!info) {
@@ -72,6 +82,42 @@ export function PlaybackModal({ file, onClose }: PlaybackModalProps) {
       >
         <X size={20} />
       </button>
+
+      {onMoved && (
+        <div className="playback-overlay__folder-actions" onClick={(event) => event.stopPropagation()}>
+          <FolderQuickActions fileId={file.id} onMoved={onMoved} />
+        </div>
+      )}
+
+      {hasPrev && onPrev && (
+        <button
+          type="button"
+          className="playback-overlay__nav playback-overlay__nav--prev"
+          aria-label={t('playbackModal.previous')}
+          title={t('playbackModal.previous')}
+          onClick={(event) => {
+            event.stopPropagation()
+            onPrev()
+          }}
+        >
+          <ChevronLeft size={24} />
+        </button>
+      )}
+
+      {hasNext && onNext && (
+        <button
+          type="button"
+          className="playback-overlay__nav playback-overlay__nav--next"
+          aria-label={t('playbackModal.next')}
+          title={t('playbackModal.next')}
+          onClick={(event) => {
+            event.stopPropagation()
+            onNext()
+          }}
+        >
+          <ChevronRight size={24} />
+        </button>
+      )}
 
       {info && (
         <button

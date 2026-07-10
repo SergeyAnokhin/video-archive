@@ -84,6 +84,12 @@ class LocalBackend:
     def remote_remove(self, rel_path: str) -> None:
         self._abs(rel_path).unlink()
 
+    def remote_mkdir(self, rel_path: str) -> None:
+        self._abs(rel_path).mkdir()
+
+    def remote_rmdir(self, rel_path: str) -> None:
+        self._abs(rel_path).rmdir()
+
     def read_bytes(self, rel_path: str) -> bytes:
         return self._abs(rel_path).read_bytes()
 

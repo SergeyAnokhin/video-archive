@@ -455,6 +455,14 @@ MIGRATIONS: dict[int, list[str]] = {
     19: [
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_sources_single_active ON sources(is_active) WHERE is_active = 1",
     ],
+    # Favorite folders (user request): a short list of directories the user
+    # pins for quick "move this video here" access. Mirrors the
+    # has_folder_preview/folder_preview_generated_at pair already on this
+    # table (migration 2).
+    20: [
+        "ALTER TABLE directories ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE directories ADD COLUMN favorited_at TEXT",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

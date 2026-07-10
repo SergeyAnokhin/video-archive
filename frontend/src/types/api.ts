@@ -129,6 +129,12 @@ export interface DirectoryEntry {
   name: string
   status?: DirectoryStatus
   has_folder_preview: boolean
+  is_favorite: boolean
+}
+
+export interface FavoriteDirectory {
+  path: string
+  name: string
 }
 
 export interface VariantTag {

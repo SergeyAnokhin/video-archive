@@ -78,6 +78,12 @@ class SourceAccess:
     def remote_remove(self, rel_path: str) -> None:
         self._backend.remote_remove(rel_path)
 
+    def remote_mkdir(self, rel_path: str) -> None:
+        self._backend.remote_mkdir(rel_path)
+
+    def remote_rmdir(self, rel_path: str) -> None:
+        self._backend.remote_rmdir(rel_path)
+
     # -- playback --
 
     def read_bytes(self, rel_path: str) -> bytes:

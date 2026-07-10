@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Copy, Film, FolderInput, Images, SlidersHorizontal, Tags, Trash2, Wand2, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Film,
+  FolderInput,
+  Images,
+  SlidersHorizontal,
+  Tags,
+  Trash2,
+  Wand2,
+  X,
+} from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
 import type { FileEntry, FileMediaInfo } from '../types/api'
+import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
 import './ConvertDialog.css'
 import './FileInfoPanel.css'
@@ -19,6 +32,11 @@ interface FileInfoPanelProps {
   onSimilar: () => void
   onDelete: () => void
   onMove: () => void
+  onMoved?: () => void
+  hasPrev?: boolean
+  hasNext?: boolean
+  onPrev?: () => void
+  onNext?: () => void
 }
 
 export function FileInfoPanel({
@@ -33,6 +51,11 @@ export function FileInfoPanel({
   onSimilar,
   onDelete,
   onMove,
+  onMoved,
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
 }: FileInfoPanelProps) {
   const { t } = useTranslation()
   const showThumbnail = file.is_video_supported && file.has_preview_asset
@@ -104,6 +127,37 @@ export function FileInfoPanel({
         >
           <X size={20} />
         </button>
+
+        {onMoved && (
+          <div className="file-info-panel__folder-actions">
+            <FolderQuickActions fileId={file.id} onMoved={onMoved} />
+          </div>
+        )}
+
+        {(hasPrev || hasNext) && (
+          <div className="file-info-panel__nav-group">
+            <button
+              type="button"
+              className="file-info-panel__nav"
+              aria-label={t('playbackModal.previous')}
+              title={t('playbackModal.previous')}
+              onClick={onPrev}
+              disabled={!hasPrev || !onPrev}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              className="file-info-panel__nav"
+              aria-label={t('playbackModal.next')}
+              title={t('playbackModal.next')}
+              onClick={onNext}
+              disabled={!hasNext || !onNext}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
 
         <h2 className="convert-dialog__title">{file.file_name}</h2>
 
