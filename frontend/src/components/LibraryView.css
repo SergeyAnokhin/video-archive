@@ -173,7 +173,7 @@
 .library-view__grid {
   display: grid;
   grid-template-columns: repeat(1, 1fr);
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 @media (min-width: 640px) {
@@ -184,7 +184,7 @@
 
 @media (min-width: 1024px) {
   .library-view__grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }
 
@@ -192,14 +192,20 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  overflow: hidden;
   text-align: left;
   color: var(--color-text);
   cursor: default;
+}
+
+.library-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--space-2);
 }
 
 .library-card--folder {
@@ -226,7 +232,6 @@
   color: var(--color-text-muted);
   background: var(--color-bg);
   border: none;
-  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -246,6 +251,19 @@
   cursor: pointer;
 }
 
+.library-card__duration-badge {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  padding: 2px var(--space-1);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-family: monospace;
+  font-size: 10px;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
 .library-card__info-btn:hover {
   background: rgba(0, 0, 0, 0.75);
   color: var(--color-accent);
@@ -258,21 +276,11 @@
 }
 
 .library-card__name {
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.library-card__name-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
-.library-card__name-row .library-card__name {
-  flex: 1;
-  min-width: 0;
 }
 
 .library-card__meta {
@@ -280,14 +288,14 @@
   justify-content: space-between;
   gap: var(--space-2);
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--color-text-muted);
 }
 
 .library-card__badges {
   position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
+  bottom: var(--space-1);
+  right: var(--space-1);
   display: flex;
   gap: var(--space-1);
 }
@@ -323,17 +331,18 @@
 
 .library-card__variant-overlay {
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-1);
-  font-size: 26px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--space-2) var(--space-1) var(--space-1);
+  font-size: 13px;
   font-weight: 700;
+  line-height: 1.1;
   color: #fff;
-  text-align: center;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-  background: rgba(0, 0, 0, 0.25);
+  text-align: left;
+  text-transform: uppercase;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent);
   pointer-events: none;
 }
 
@@ -344,12 +353,12 @@
 }
 
 .library-card__tag {
-  padding: 1px var(--space-1);
-  font-size: 11px;
+  padding: 2px 6px;
+  font-size: 9.5px;
   color: var(--color-accent);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
 }
 
 .library-card__meta-size {

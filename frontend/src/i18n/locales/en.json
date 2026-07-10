@@ -17,7 +17,12 @@
   "theme": {
     "strict": "Strict",
     "playful": "Playful",
-    "casino": "Casino"
+    "casino": "Casino",
+    "neon": "Neon Night",
+    "toxic": "Toxic Arcade",
+    "cyber": "Cyber Violet",
+    "vivid": "Vivid Glam",
+    "mono": "Mono Ice"
   },
   "settings": {
     "title": "Settings",
@@ -102,6 +107,7 @@
     "loading": "Loading…",
     "loadError": "Could not load this folder: {{message}}",
     "empty": "This folder is empty.",
+    "folderFileCount": "{{count}} files",
     "rescan": "Rescan folder",
     "convert": "Convert folder",
     "convertFile": "Convert file",

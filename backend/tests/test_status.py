@@ -50,13 +50,14 @@ def _add_file(
     supported: bool = True,
     converted: bool = False,
     previewed: bool = False,
+    size_bytes: int = 1,
 ) -> None:
     conn.execute(
         text(
             "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
             "size_bytes, discovered_at, last_scanned_at, is_video_supported, converted_at, "
             "has_preview_asset, created_at, updated_at) "
-            "VALUES (:id, :sid, :did, :rel, :name, :ext, 1, :now, :now, :supported, :converted_at, "
+            "VALUES (:id, :sid, :did, :rel, :name, :ext, :size, :now, :now, :supported, :converted_at, "
             ":previewed, :now, :now)"
         ),
         {
@@ -69,6 +70,7 @@ def _add_file(
             "supported": 1 if supported else 0,
             "converted_at": _now() if converted else None,
             "previewed": 1 if previewed else 0,
+            "size": size_bytes,
             "now": _now(),
         },
     )
@@ -127,6 +129,37 @@ def test_compute_directory_status_empty_directory_counts_as_complete(engine, sou
     assert status["total_supported_files"] == 0
     assert status["conversion_complete"] is True
     assert status["preview_complete"] is True
+
+
+def test_compute_directory_status_total_size_bytes(engine, source):
+    _seed_library(engine, source["id"])
+    with engine.connect() as conn:
+        root_status = compute_directory_status(conn, source["id"], "")
+        a_status = compute_directory_status(conn, source["id"], "a")
+
+    # top.mp4, a/x.mp4, a/b/y.mp4, ab/z.mp4 -- each seeded with size_bytes=1;
+    # test-artifacts and unsupported files must not be counted (same
+    # exclusions as total_supported_files).
+    assert root_status["total_size_bytes"] == 4
+    assert a_status["total_size_bytes"] == 2
+
+
+def test_compute_directory_status_top_variant_tags(engine, source):
+    with engine.begin() as conn:
+        clips = _add_dir(conn, source["id"], "clips", "")
+        # Two sibling groups sweeping dimension: 1000px appears in both, so
+        # it must rank above the dimensions that only appear once.
+        _add_file(conn, source["id"], clips, "clips/a.variant-d1000.mp4")
+        _add_file(conn, source["id"], clips, "clips/a.variant-d1080.mp4")
+        _add_file(conn, source["id"], clips, "clips/b.variant-d1000.mp4")
+        _add_file(conn, source["id"], clips, "clips/b.variant-d720.mp4")
+
+    with engine.connect() as conn:
+        status = compute_directory_status(conn, source["id"], "clips")
+
+    top_tags = status["top_variant_tags"]
+    assert top_tags[0] == {"param": "dimension", "value": 1000}
+    assert len(top_tags) == 3
 
 
 def _client_with_seeded_source(tmp_path, monkeypatch) -> tuple[TestClient, str]:

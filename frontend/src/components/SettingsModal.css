@@ -126,7 +126,27 @@
 
 .settings-modal__options {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
+}
+
+/* Two-dot preview of a theme's accent pair, scoped via `data-theme` so each
+ * swatch reads that preset's own variables regardless of the theme actually
+ * applied to the document (InterfaceSection.tsx). */
+.settings-modal__theme-swatch {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.settings-modal__theme-swatch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+
+.settings-modal__theme-swatch-dot--2 {
+  background: var(--color-accent-2, var(--color-accent));
 }
 
 .settings-modal__option {

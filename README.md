@@ -1,6 +1,6 @@
 # video-archive
 
-Video Archive is a local-first, Windows-targeted web application for browsing a video directory source (local folder or SMB share), converting videos in bulk with ffmpeg, generating preview collages stored next to the videos, and tagging videos through external AI providers. A Vite + React + TypeScript frontend and a FastAPI + SQLite backend run together from the repository root; UI in English/Russian with three theme presets (Strict, Playful, Casino).
+Video Archive is a local-first, Windows-targeted web application for browsing a video directory source (local folder or SMB share), converting videos in bulk with ffmpeg, generating preview collages stored next to the videos, and tagging videos through external AI providers. A Vite + React + TypeScript frontend and a FastAPI + SQLite backend run together from the repository root; UI in English/Russian with eight theme presets (Strict, Playful, Casino, Neon Night, Toxic Arcade, Cyber Violet, Vivid Glam, Mono Ice).
 
 ## Capabilities
 

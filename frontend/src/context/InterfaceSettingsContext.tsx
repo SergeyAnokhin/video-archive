@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import i18n, { persistLanguage, SUPPORTED_LANGUAGES, type SupportedLanguage } from '../i18n'
-import type { InterfaceSettings, ThemePreset } from '../types/api'
+import { THEME_PRESETS, type InterfaceSettings, type ThemePreset } from '../types/api'
 
 const THEME_STORAGE_KEY = 'video-archive:theme'
 
 function detectInitialTheme(): ThemePreset {
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-  return stored === 'playful' || stored === 'casino' ? stored : 'strict'
+  return (THEME_PRESETS as readonly string[]).includes(stored ?? '') ? (stored as ThemePreset) : 'strict'
 }
 
 function applyTheme(theme: ThemePreset) {

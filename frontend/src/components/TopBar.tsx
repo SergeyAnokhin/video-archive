@@ -1,10 +1,11 @@
-import { Dices, Eye, EyeOff, ListChecks, Loader2, Menu, Palette, Settings, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, ListChecks, Loader2, Menu, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { useJobs } from '../context/JobsContext'
 import { LibrarySearchBox, type ActiveSearch } from './LibrarySearchBox'
-import { THEME_PRESETS, type ThemePreset } from '../types/api'
+import { THEME_PRESETS } from '../types/api'
+import { THEME_ICON } from '../themeIcons'
 import './TopBar.css'
 
 interface TopBarProps {
@@ -13,12 +14,6 @@ interface TopBarProps {
   onJobsToggle: () => void
   onSearch: (search: ActiveSearch) => void
   onClearSearch: () => void
-}
-
-const THEME_ICON: Record<ThemePreset, typeof Palette> = {
-  strict: Palette,
-  playful: Sparkles,
-  casino: Dices,
 }
 
 export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle, onSearch, onClearSearch }: TopBarProps) {

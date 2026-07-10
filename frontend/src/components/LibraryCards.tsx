@@ -40,45 +40,58 @@ export function FolderCard({
 
   return (
     <button type="button" className="library-card library-card--folder" onClick={onOpen}>
-      <div className="library-card__thumb">
-        {showThumbnail ? (
-          <img
-            src={`/api/directories/preview.gif?path=${encodeURIComponent(dir.path)}`}
-            alt=""
-            className="library-card__thumb-img"
-          />
-        ) : (
-          <Folder size={28} />
-        )}
-      </div>
-      <div className="library-card__name-row">
-        <span className="library-card__name" title={dir.name}>
-          {dir.name}
-        </span>
-        {status && <span className="library-card__meta">{status.total_supported_files}</span>}
-      </div>
-      {(showConversionDot || showPreviewDot) && (
-        <div className="library-card__badges">
-          {showConversionDot && (
-            <span
-              className="library-card__dot library-card__dot--conversion"
-              title={t('indicators.conversionIncomplete', {
-                converted: status?.converted_count,
-                total: status?.total_supported_files,
-              })}
+      <div className="library-card__thumb-frame">
+        <div className="library-card__thumb">
+          {showThumbnail ? (
+            <img
+              src={`/api/directories/preview.gif?path=${encodeURIComponent(dir.path)}`}
+              alt=""
+              className="library-card__thumb-img"
             />
-          )}
-          {showPreviewDot && (
-            <span
-              className="library-card__dot library-card__dot--preview"
-              title={t('indicators.previewIncomplete', {
-                generated: status?.preview_count,
-                total: status?.total_supported_files,
-              })}
-            />
+          ) : (
+            <Folder size={28} />
           )}
         </div>
-      )}
+        {(showConversionDot || showPreviewDot) && (
+          <div className="library-card__badges">
+            {showConversionDot && (
+              <span
+                className="library-card__dot library-card__dot--conversion"
+                title={t('indicators.conversionIncomplete', {
+                  converted: status?.converted_count,
+                  total: status?.total_supported_files,
+                })}
+              />
+            )}
+            {showPreviewDot && (
+              <span
+                className="library-card__dot library-card__dot--preview"
+                title={t('indicators.previewIncomplete', {
+                  generated: status?.preview_count,
+                  total: status?.total_supported_files,
+                })}
+              />
+            )}
+          </div>
+        )}
+      </div>
+      <div className="library-card__body">
+        <div className="library-card__name" title={dir.name}>
+          {dir.name}
+        </div>
+        {status && (
+          <div className="library-card__meta">
+            {t('library.folderFileCount', { count: status.total_supported_files })} • {formatSize(status.total_size_bytes)}
+          </div>
+        )}
+        {status && status.top_variant_tags.length > 0 && (
+          <div className="library-card__tag-row">
+            {status.top_variant_tags.map((tag, index) => (
+              <VariantTagChip key={index} tag={tag} />
+            ))}
+          </div>
+        )}
+      </div>
     </button>
   )
 }
@@ -129,71 +142,76 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo, onDelete }: Fi
         >
           <Info size={16} />
         </button>
+        {file.duration_seconds != null && (
+          <span className="library-card__duration-badge">{formatDuration(file.duration_seconds)}</span>
+        )}
+        {(showConversionDot || showPreviewDot || file.is_variant || file.is_original) && (
+          <div className="library-card__badges">
+            {showConversionDot && (
+              <span
+                className="library-card__dot library-card__dot--conversion"
+                title={t('indicators.fileNotConverted')}
+              />
+            )}
+            {showPreviewDot && (
+              <span
+                className="library-card__dot library-card__dot--preview"
+                title={t('indicators.fileNoPreview')}
+              />
+            )}
+            {file.is_variant && (
+              <span
+                className="library-card__marker library-card__marker--variant"
+                title={t('indicators.fileIsVariant')}
+              >
+                <SlidersHorizontal size={14} />
+              </span>
+            )}
+            {file.is_original && (
+              <span
+                className="library-card__marker library-card__marker--original"
+                title={t('indicators.fileIsOriginal')}
+              >
+                <Archive size={14} />
+              </span>
+            )}
+          </div>
+        )}
       </div>
-      <div className="library-card__name" title={file.file_name}>
-        {file.file_name}
-      </div>
-      {file.variant_tags && file.variant_tags.length > 0 && (
-        <div className="library-card__tag-row">
-          {file.variant_tags.map((tag, index) => (
-            <VariantTagChip key={index} tag={tag} />
-          ))}
+      <div className="library-card__body">
+        <div className="library-card__name" title={file.file_name}>
+          {file.file_name}
         </div>
-      )}
-      <div className="library-card__meta">
-        <span className="library-card__meta-size">
-          {formatSize(file.size_bytes)}
-          {file.is_variant && (
-            <button
-              type="button"
-              className="library-card__delete-btn"
-              aria-label={t('library.deleteFile')}
-              title={t('library.deleteFile')}
-              onClick={(event) => {
-                event.stopPropagation()
-                if (window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
-                  onDelete()
-                }
-              }}
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-        </span>
-        {file.duration_seconds != null && <span>{formatDuration(file.duration_seconds)}</span>}
-      </div>
-      {(showConversionDot || showPreviewDot || file.is_variant || file.is_original) && (
-        <div className="library-card__badges">
-          {showConversionDot && (
-            <span
-              className="library-card__dot library-card__dot--conversion"
-              title={t('indicators.fileNotConverted')}
-            />
-          )}
-          {showPreviewDot && (
-            <span
-              className="library-card__dot library-card__dot--preview"
-              title={t('indicators.fileNoPreview')}
-            />
-          )}
-          {file.is_variant && (
-            <span
-              className="library-card__marker library-card__marker--variant"
-              title={t('indicators.fileIsVariant')}
-            >
-              <SlidersHorizontal size={14} />
-            </span>
-          )}
-          {file.is_original && (
-            <span
-              className="library-card__marker library-card__marker--original"
-              title={t('indicators.fileIsOriginal')}
-            >
-              <Archive size={14} />
-            </span>
-          )}
+        <div className="library-card__meta">
+          <span className="library-card__meta-size">
+            {formatSize(file.size_bytes)}
+            {file.is_variant && (
+              <button
+                type="button"
+                className="library-card__delete-btn"
+                aria-label={t('library.deleteFile')}
+                title={t('library.deleteFile')}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
+                    onDelete()
+                  }
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </span>
+          {file.duration_seconds != null && <span>{formatDuration(file.duration_seconds)}</span>}
         </div>
-      )}
+        {file.variant_tags && file.variant_tags.length > 0 && (
+          <div className="library-card__tag-row">
+            {file.variant_tags.map((tag, index) => (
+              <VariantTagChip key={index} tag={tag} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

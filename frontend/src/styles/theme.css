@@ -220,3 +220,274 @@
       0 0 16px 2px color-mix(in srgb, #00ff9d 55%, transparent);
   }
 }
+
+/* Five additional presets imported from the "Видеоархив с минимализмом"
+ * Claude Design mockup (user request, 2026-07). Same strict/playful
+ * structure -- variables plus optional decorative rules -- with
+ * `--color-accent-2` added for the two-tone gradients the mockup uses on
+ * buttons, the logo mark and theme swatches (falls back to `--color-accent`
+ * everywhere it's read, so it's a no-op on the three presets above). */
+
+[data-theme='neon'] {
+  --color-bg: #100f18;
+  --color-surface: #1a1926;
+  --color-surface-raised: #211f30;
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-text: #f3f1f8;
+  --color-text-muted: #948fa8;
+  --color-accent: #ff5ecb;
+  --color-accent-2: #4dfff0;
+  --color-accent-contrast: #0b0a12;
+  --color-success: #34d399;
+  --color-danger: #ff4d6d;
+  --color-warning: #eab308;
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}
+
+[data-theme='toxic'] {
+  --color-bg: #0c1410;
+  --color-surface: #141f19;
+  --color-surface-raised: #1a2921;
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-text: #f1f7f3;
+  --color-text-muted: #8aa89b;
+  --color-accent: #eab308;
+  --color-accent-2: #34d399;
+  --color-accent-contrast: #0b0a12;
+  --color-success: #4ade80;
+  --color-danger: #ff3b3b;
+  --color-warning: #facc15;
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}
+
+[data-theme='cyber'] {
+  --color-bg: #120f1d;
+  --color-surface: #1b1730;
+  --color-surface-raised: #231e3d;
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-text: #f2eef9;
+  --color-text-muted: #9a90b8;
+  --color-accent: #a855f7;
+  --color-accent-2: #22d3ee;
+  --color-accent-contrast: #0b0a12;
+  --color-success: #34d399;
+  --color-danger: #f43f5e;
+  --color-warning: #eab308;
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}
+
+/* Vivid Glam: the mockup's `panel`/`panel2` are diagonal gradients. Keeping
+ * `--color-surface(-raised)` as flat colors (as every other preset does)
+ * avoids breaking `color-mix()` callers like `.tag-chip`
+ * (SettingsModal.css) that require a solid color operand -- the gradient
+ * feel is reproduced separately via the `body` background below, same
+ * technique as Casino. */
+[data-theme='vivid'] {
+  --color-bg: #1a0512;
+  --color-surface: #32081f;
+  --color-surface-raised: #40102e;
+  --color-border: rgba(255, 46, 196, 0.28);
+  --color-text: #fff2f9;
+  --color-text-muted: #e6a9c9;
+  --color-accent: #ff2ec4;
+  --color-accent-2: #ffd60a;
+  --color-accent-contrast: #0b0a12;
+  --color-success: #34d399;
+  --color-danger: #ff4d6d;
+  --color-warning: #ffd60a;
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}
+
+[data-theme='vivid'] body {
+  background:
+    radial-gradient(circle at 15% 100%, color-mix(in srgb, var(--color-accent) 22%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, #40102e 0%, var(--color-bg) 60%);
+}
+
+[data-theme='vivid'] .library-card,
+[data-theme='vivid'] .convert-dialog,
+[data-theme='vivid'] .top-bar,
+[data-theme='vivid'] .app-nav {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+[data-theme='vivid'] button,
+[data-theme='vivid'] [role='button'] {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='vivid'] button:hover,
+  [data-theme='vivid'] [role='button']:hover {
+    transform: translateY(-1px);
+  }
+
+  [data-theme='vivid'] button:active,
+  [data-theme='vivid'] [role='button']:active {
+    transform: translateY(0);
+  }
+}
+
+[data-theme='vivid'] [class$='--primary'] {
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 16px 0 color-mix(in srgb, var(--color-accent) 65%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='vivid'] [class$='--primary']:hover {
+    animation: vivid-pulse 1.4s ease-in-out infinite;
+  }
+
+  [data-theme='vivid'] .library-card:hover {
+    animation: vivid-card-glow 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes vivid-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--color-accent), 0 0 10px 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--color-accent),
+      0 0 22px 4px color-mix(in srgb, var(--color-accent) 80%, transparent);
+  }
+}
+
+@keyframes vivid-card-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 60%, transparent), 0 0 8px 0 color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-accent-2) 70%, transparent),
+      0 0 16px 2px color-mix(in srgb, var(--color-accent-2) 55%, transparent);
+  }
+}
+
+/* Mono Ice: deliberately calm and glow-free (the mockup marks it
+ * `glow: false`) -- same flat-color treatment as Strict, just an icy
+ * monochrome palette instead of blue. */
+[data-theme='mono'] {
+  --color-bg: #0d0d0f;
+  --color-surface: #1d1e20;
+  --color-surface-raised: #232427;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text: #f2f3f5;
+  --color-text-muted: #9a9ba0;
+  --color-accent: #4fd1ff;
+  --color-accent-2: #a9ecff;
+  --color-accent-contrast: #0b0a12;
+  --color-success: #7ee8c8;
+  --color-danger: #ff6b81;
+  --color-warning: #ffd166;
+  --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --topbar-height: 52px;
+  --touch-target-min: 40px;
+  --breakpoint-tablet: 640px;
+  --breakpoint-desktop: 1024px;
+}
+
+/* Neon / Toxic / Cyber: moderate glow on primary actions only (same
+ * treatment as Playful), no card pulsing -- reserved for the two loudest
+ * presets (Casino, Vivid). */
+[data-theme='neon'] button,
+[data-theme='neon'] [role='button'],
+[data-theme='toxic'] button,
+[data-theme='toxic'] [role='button'],
+[data-theme='cyber'] button,
+[data-theme='cyber'] [role='button'],
+[data-theme='mono'] button,
+[data-theme='mono'] [role='button'] {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='neon'] button:hover,
+  [data-theme='neon'] [role='button']:hover,
+  [data-theme='toxic'] button:hover,
+  [data-theme='toxic'] [role='button']:hover,
+  [data-theme='cyber'] button:hover,
+  [data-theme='cyber'] [role='button']:hover,
+  [data-theme='mono'] button:hover,
+  [data-theme='mono'] [role='button']:hover {
+    transform: translateY(-1px);
+  }
+
+  [data-theme='neon'] button:active,
+  [data-theme='neon'] [role='button']:active,
+  [data-theme='toxic'] button:active,
+  [data-theme='toxic'] [role='button']:active,
+  [data-theme='cyber'] button:active,
+  [data-theme='cyber'] [role='button']:active,
+  [data-theme='mono'] button:active,
+  [data-theme='mono'] [role='button']:active {
+    transform: translateY(0);
+  }
+}
+
+[data-theme='neon'] [class$='--primary'],
+[data-theme='toxic'] [class$='--primary'],
+[data-theme='cyber'] [class$='--primary'] {
+  box-shadow: 0 0 0 1px var(--color-accent), 0 0 12px 0 color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme='neon'] [class$='--primary']:hover,
+  [data-theme='toxic'] [class$='--primary']:hover,
+  [data-theme='cyber'] [class$='--primary']:hover {
+    animation: playful-pulse 1.6s ease-in-out infinite;
+  }
+}

@@ -1,14 +1,9 @@
-import { Dices, Languages, Palette, Sparkles } from 'lucide-react'
+import { Languages } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LANGUAGES } from '../i18n'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
-import { THEME_PRESETS, type ThemePreset } from '../types/api'
-
-const THEME_ICON: Record<ThemePreset, typeof Palette> = {
-  strict: Palette,
-  playful: Sparkles,
-  casino: Dices,
-}
+import { THEME_PRESETS } from '../types/api'
+import { THEME_ICON } from '../themeIcons'
 
 export function InterfaceSection() {
   const { t } = useTranslation()
@@ -60,6 +55,10 @@ export function InterfaceSection() {
                 aria-pressed={theme === option}
                 onClick={() => setTheme(option)}
               >
+                <span className="settings-modal__theme-swatch" data-theme={option} aria-hidden="true">
+                  <span className="settings-modal__theme-swatch-dot" />
+                  <span className="settings-modal__theme-swatch-dot settings-modal__theme-swatch-dot--2" />
+                </span>
                 <Icon size={14} /> {t(`theme.${option}`)}
               </button>
             )

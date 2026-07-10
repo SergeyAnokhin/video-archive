@@ -104,6 +104,8 @@ export interface DirectoryStatus {
   preview_count: number
   conversion_complete: boolean
   preview_complete: boolean
+  total_size_bytes: number
+  top_variant_tags: VariantTag[]
 }
 
 export interface TreeNode {
@@ -314,7 +316,16 @@ export interface PerformanceSettings {
 // Single source of truth for the theme list: both the top bar's cycle toggle
 // and the Settings picker iterate this value, so adding a preset here (plus
 // its icon entries and `theme.*` locale keys) surfaces it everywhere at once.
-export const THEME_PRESETS = ['strict', 'playful', 'casino'] as const
+export const THEME_PRESETS = [
+  'strict',
+  'playful',
+  'casino',
+  'neon',
+  'toxic',
+  'cyber',
+  'vivid',
+  'mono',
+] as const
 export type ThemePreset = (typeof THEME_PRESETS)[number]
 
 export interface InterfaceSettings {

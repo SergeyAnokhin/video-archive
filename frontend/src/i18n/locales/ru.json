@@ -17,7 +17,12 @@
   "theme": {
     "strict": "Строгая",
     "playful": "Игривая",
-    "casino": "Казино"
+    "casino": "Казино",
+    "neon": "Neon Night",
+    "toxic": "Toxic Arcade",
+    "cyber": "Cyber Violet",
+    "vivid": "Vivid Glam",
+    "mono": "Mono Ice"
   },
   "settings": {
     "title": "Настройки",
@@ -102,6 +107,7 @@
     "loading": "Загрузка…",
     "loadError": "Не удалось загрузить эту папку: {{message}}",
     "empty": "Эта папка пуста.",
+    "folderFileCount": "{{count}} файлов",
     "rescan": "Пересканировать папку",
     "convert": "Конвертировать папку",
     "convertFile": "Конвертировать файл",
