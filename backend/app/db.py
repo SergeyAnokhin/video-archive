@@ -410,6 +410,16 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Post-V1: animated preview saturation (user request) -- lets the user
+    # desaturate library-grid GIF/thumbnail previews (0 = grayscale, 100 =
+    # original colors) for a more uniform-looking grid without losing the
+    # image content itself. Applied client-side as a CSS filter, so this is
+    # just the persisted preference; no preview regeneration is triggered.
+    # Same singleton convention as the rest of interface_settings; ALTER
+    # TABLE backfills the existing row via its literal DEFAULT.
+    17: [
+        "ALTER TABLE interface_settings ADD COLUMN preview_saturation INTEGER NOT NULL DEFAULT 100",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

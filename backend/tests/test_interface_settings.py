@@ -15,10 +15,14 @@ def test_interface_settings_defaults_and_round_trip(engine):
     settings = interface_settings.get_settings(engine)
     assert settings["language"] == "en"
     assert settings["theme_preset"] == "strict"
+    assert settings["preview_saturation"] == 100
 
-    updated = interface_settings.update_settings(engine, {"language": "ru", "theme_preset": "playful"})
+    updated = interface_settings.update_settings(
+        engine, {"language": "ru", "theme_preset": "playful", "preview_saturation": 50}
+    )
     assert updated["language"] == "ru"
     assert updated["theme_preset"] == "playful"
+    assert updated["preview_saturation"] == 50
     assert interface_settings.get_settings(engine)["theme_preset"] == "playful"
 
 
@@ -29,11 +33,20 @@ def test_interface_settings_over_http(tmp_path, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/api/interface-settings")
         assert r.status_code == 200
-        assert r.json() == {"language": "en", "theme_preset": "strict", "updated_at": r.json()["updated_at"]}
+        assert r.json() == {
+            "language": "en",
+            "theme_preset": "strict",
+            "preview_saturation": 100,
+            "updated_at": r.json()["updated_at"],
+        }
 
-        r = client.put("/api/interface-settings", json={"language": "ru", "theme_preset": "playful"})
+        r = client.put(
+            "/api/interface-settings",
+            json={"language": "ru", "theme_preset": "playful", "preview_saturation": 0},
+        )
         assert r.status_code == 200
         assert r.json()["language"] == "ru"
         assert r.json()["theme_preset"] == "playful"
+        assert r.json()["preview_saturation"] == 0
 
         assert client.get("/api/interface-settings").json()["theme_preset"] == "playful"

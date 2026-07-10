@@ -16,6 +16,9 @@ LANGUAGES = ("en", "ru")
 THEME_PRESETS = ("strict", "playful", "casino", "neon", "toxic", "cyber", "vivid", "mono")
 DEFAULT_LANGUAGE = "en"
 DEFAULT_THEME_PRESET = "strict"
+DEFAULT_PREVIEW_SATURATION = 100
+MIN_PREVIEW_SATURATION = 0
+MAX_PREVIEW_SATURATION = 100
 
 
 def _now() -> str:
@@ -23,7 +26,12 @@ def _now() -> str:
 
 
 def _row_to_dict(row) -> dict:
-    return {"language": row.language, "theme_preset": row.theme_preset, "updated_at": row.updated_at}
+    return {
+        "language": row.language,
+        "theme_preset": row.theme_preset,
+        "preview_saturation": row.preview_saturation,
+        "updated_at": row.updated_at,
+    }
 
 
 def get_settings(engine) -> dict:
@@ -38,9 +46,14 @@ def update_settings(engine, data: dict) -> dict:
         conn.execute(
             text(
                 "UPDATE interface_settings SET language = :language, theme_preset = :theme_preset, "
-                "updated_at = :now WHERE id = 1"
+                "preview_saturation = :preview_saturation, updated_at = :now WHERE id = 1"
             ),
-            {"language": data["language"], "theme_preset": data["theme_preset"], "now": now},
+            {
+                "language": data["language"],
+                "theme_preset": data["theme_preset"],
+                "preview_saturation": data["preview_saturation"],
+                "now": now,
+            },
         )
     return get_settings(engine)
 

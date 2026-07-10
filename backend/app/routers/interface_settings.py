@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import interface_settings as service
 from app.db import get_engine
@@ -18,6 +18,11 @@ class InterfaceSettingsRequest(BaseModel):
     language: Literal["en", "ru"] = service.DEFAULT_LANGUAGE
     theme_preset: Literal["strict", "playful", "casino", "neon", "toxic", "cyber", "vivid", "mono"] = (
         service.DEFAULT_THEME_PRESET
+    )
+    preview_saturation: int = Field(
+        default=service.DEFAULT_PREVIEW_SATURATION,
+        ge=service.MIN_PREVIEW_SATURATION,
+        le=service.MAX_PREVIEW_SATURATION,
     )
 
 

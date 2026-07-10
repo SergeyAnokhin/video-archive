@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Home, Images, MoreVertical, RefreshCw, Tags, Wand2, X } from 'lucide-react'
+import { ArrowDownAZ, HardDrive, Home, Images, MoreVertical, RefreshCw, Tag, Tags, Wand2, X } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
@@ -25,6 +25,24 @@ interface LibraryViewProps {
 }
 
 type SortBy = 'name' | 'size' | 'tags'
+
+const SORT_OPTIONS: SortBy[] = ['name', 'size', 'tags']
+
+// Mirrors the top-bar theme cycle button (TopBar.tsx): a single icon button
+// that steps through a small fixed set of options on click, rather than a
+// dropdown -- avoids sitting a dropdown right next to the job-creating icon
+// buttons (convert/preview/tag).
+const SORT_ICON: Record<SortBy, typeof ArrowDownAZ> = {
+  name: ArrowDownAZ,
+  size: HardDrive,
+  tags: Tag,
+}
+
+const SORT_LABEL_KEY: Record<SortBy, string> = {
+  name: 'library.sortByName',
+  size: 'library.sortBySize',
+  tags: 'library.sortByTags',
+}
 
 function variantTagSortKey(tag: VariantTag): string {
   const value = typeof tag.value === 'number' ? tag.value.toString().padStart(8, '0') : tag.value
@@ -176,6 +194,10 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
 
   const segments = path ? path.split('/') : []
 
+  const nextSortBy = SORT_OPTIONS[(SORT_OPTIONS.indexOf(sortBy) + 1) % SORT_OPTIONS.length]
+  const SortIcon = SORT_ICON[sortBy]
+  const sortToggleLabel = t('library.sortToggle', { mode: t(SORT_LABEL_KEY[nextSortBy]) })
+
   const directoryActions = [
     { key: 'convert', label: t('library.convert'), icon: <Wand2 size={16} />, onClick: () => setConvertDirOpen(true) },
     { key: 'preview', label: t('library.preview'), icon: <Images size={16} />, onClick: () => setPreviewDirOpen(true) },
@@ -253,17 +275,17 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
         </nav>
 
         <div className="library-view__toolbar-actions">
-          <select
-            className="library-view__sort-select"
-            aria-label={t('library.sortBy')}
-            title={t('library.sortBy')}
-            value={sortBy}
-            onChange={(event) => setSortBy(event.target.value as SortBy)}
+          <button
+            type="button"
+            className="library-view__icon-btn"
+            aria-label={sortToggleLabel}
+            title={sortToggleLabel}
+            onClick={() => setSortBy(nextSortBy)}
           >
-            <option value="name">{t('library.sortByName')}</option>
-            <option value="size">{t('library.sortBySize')}</option>
-            <option value="tags">{t('library.sortByTags')}</option>
-          </select>
+            <SortIcon size={16} />
+          </button>
+
+          <span className="library-view__toolbar-divider" aria-hidden="true" />
 
           <button
             type="button"

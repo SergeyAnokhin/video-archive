@@ -7,7 +7,7 @@ import { THEME_ICON } from '../themeIcons'
 
 export function InterfaceSection() {
   const { t } = useTranslation()
-  const { language, setLanguage, theme, setTheme } = useInterfaceSettings()
+  const { language, setLanguage, theme, setTheme, previewSaturation, setPreviewSaturation } = useInterfaceSettings()
 
   return (
     <section className="settings-modal__section">
@@ -63,6 +63,23 @@ export function InterfaceSection() {
               </button>
             )
           })}
+        </div>
+      </div>
+      <div className="settings-modal__field settings-modal__field--column">
+        <span className="settings-modal__field-label">
+          {t('settings.previewSaturation')}
+        </span>
+        <div className="settings-modal__slider-row">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={previewSaturation}
+            className="settings-modal__slider"
+            aria-label={t('settings.previewSaturation')}
+            onChange={(event) => setPreviewSaturation(Number(event.target.value))}
+          />
+          <span className="settings-modal__slider-value">{previewSaturation}%</span>
         </div>
       </div>
     </section>

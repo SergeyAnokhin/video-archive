@@ -331,6 +331,7 @@ export type ThemePreset = (typeof THEME_PRESETS)[number]
 export interface InterfaceSettings {
   language: 'en' | 'ru'
   theme_preset: ThemePreset
+  preview_saturation: number
   updated_at: string
 }
 
