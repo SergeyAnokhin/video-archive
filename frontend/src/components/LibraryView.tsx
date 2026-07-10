@@ -14,7 +14,7 @@ import { PlaybackModal } from './PlaybackModal'
 import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
-import type { DirectoryChildrenResponse, FileEntry, JobSummary } from '../types/api'
+import type { DirectoryChildrenResponse, FileEntry, JobSummary, VariantTag } from '../types/api'
 import './LibraryView.css'
 
 interface LibraryViewProps {
@@ -22,6 +22,41 @@ interface LibraryViewProps {
   onNavigate: (path: string) => void
   activeSearch: ActiveSearch | null
   onClearSearch: () => void
+}
+
+type SortBy = 'name' | 'size' | 'tags'
+
+function variantTagSortKey(tag: VariantTag): string {
+  const value = typeof tag.value === 'number' ? tag.value.toString().padStart(8, '0') : tag.value
+  return `${tag.param}:${value}`
+}
+
+function compareByTags(a: FileEntry, b: FileEntry): number {
+  const aKeys = (a.variant_tags ?? []).map(variantTagSortKey).sort()
+  const bKeys = (b.variant_tags ?? []).map(variantTagSortKey).sort()
+  const length = Math.max(aKeys.length, bKeys.length)
+  for (let i = 0; i < length; i++) {
+    if (aKeys[i] === undefined) return bKeys[i] === undefined ? 0 : -1
+    if (bKeys[i] === undefined) return 1
+    if (aKeys[i] !== bKeys[i]) return aKeys[i] < bKeys[i] ? -1 : 1
+  }
+  return 0
+}
+
+function sortFiles(files: FileEntry[], sortBy: SortBy): FileEntry[] {
+  const sorted = [...files]
+  switch (sortBy) {
+    case 'name':
+      sorted.sort((a, b) => a.file_name.localeCompare(b.file_name))
+      break
+    case 'size':
+      sorted.sort((a, b) => a.size_bytes - b.size_bytes)
+      break
+    case 'tags':
+      sorted.sort(compareByTags)
+      break
+  }
+  return sorted
 }
 
 export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: LibraryViewProps) {
@@ -45,6 +80,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
   const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
+  const [sortBy, setSortBy] = useState<SortBy>('name')
   const [reloadTick, setReloadTick] = useState(0)
   const overflowRef = useRef<HTMLDivElement | null>(null)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
@@ -217,6 +253,18 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
         </nav>
 
         <div className="library-view__toolbar-actions">
+          <select
+            className="library-view__sort-select"
+            aria-label={t('library.sortBy')}
+            title={t('library.sortBy')}
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value as SortBy)}
+          >
+            <option value="name">{t('library.sortByName')}</option>
+            <option value="size">{t('library.sortBySize')}</option>
+            <option value="tags">{t('library.sortByTags')}</option>
+          </select>
+
           <button
             type="button"
             className="library-view__icon-btn"
@@ -299,7 +347,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
           )}
           {searchResults && searchResults.length > 0 && (
             <div className="library-view__grid">
-              {searchResults.map((file) => (
+              {sortFiles(searchResults, sortBy).map((file) => (
                 <FileCard
                   key={file.id}
                   file={file}
@@ -331,7 +379,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
               {data.directories.map((dir) => (
                 <FolderCard key={dir.path} dir={dir} previewsVisible={previewsVisible} onOpen={() => onNavigate(dir.path)} />
               ))}
-              {data.files.map((file) => (
+              {sortFiles(data.files, sortBy).map((file) => (
                 <FileCard
                   key={file.id}
                   file={file}

@@ -202,7 +202,6 @@ export function FileCard({ file, previewsVisible, onPlay, onInfo, onDelete }: Fi
               </button>
             )}
           </span>
-          {file.duration_seconds != null && <span>{formatDuration(file.duration_seconds)}</span>}
         </div>
         {file.variant_tags && file.variant_tags.length > 0 && (
           <div className="library-card__tag-row">
