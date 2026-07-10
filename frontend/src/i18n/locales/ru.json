@@ -466,6 +466,7 @@
     "copied": "Скопировано",
     "filterJob": "ID задания",
     "filterFile": "ID файла",
+    "filterByFile": "Фильтр по этому файлу",
     "filterLevelAll": "Все уровни",
     "level": {
       "debug": "Отладка",

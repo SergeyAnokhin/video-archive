@@ -27,7 +27,7 @@ _FINISH_EVENT_TYPES = {
 
 # See `log_event()`'s console-mirroring note below.
 _CONSOLE_INFO_EVENT_TYPES = frozenset(
-    {"job_item_started", "job_item_progress", "job_force_cancelled", "job_force_abandoned"}
+    {"job_item_started", "job_item_progress", "job_force_cancelled", "job_force_abandoned", "job_item_tags"}
 )
 
 
@@ -42,6 +42,60 @@ class JobConflictError(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# --- per-job file numbering (user request) ----------------------------------
+# Assigns each file a small, stable, per-job sequential number the first time
+# it appears in that job's event log -- in-memory only, like the cancel/pause
+# registries below, so it doesn't need to survive a restart. Lets a fast
+# multi-file job's console/Log Viewer output stay readable ("[#3] ..."
+# instead of a bare file UUID) and lets the Log Viewer filter by clicking
+# that number instead of typing a file id by hand (`payload.file_index`,
+# read by `LogViewerModal.tsx`).
+
+_file_index_lock = threading.Lock()
+_file_index_by_job: dict[str, dict[str, int]] = {}
+
+
+def _next_file_index(job_id: str, file_id: str) -> int:
+    with _file_index_lock:
+        indices = _file_index_by_job.setdefault(job_id, {})
+        if file_id not in indices:
+            indices[file_id] = len(indices) + 1
+        return indices[file_id]
+
+
+def _forget_file_indices(job_id: str) -> None:
+    with _file_index_lock:
+        _file_index_by_job.pop(job_id, None)
+
+
+# Purely cosmetic (user request): makes the event type visible at a glance in
+# the console and Log Viewer without reading the bracketed event name.
+_EVENT_EMOJI = {
+    "job_queued": "🕒",
+    "job_started": "▶️",
+    "job_completed": "✅",
+    "job_failed": "❌",
+    "job_cancelled": "🛑",
+    "job_cancel_requested": "🛑",
+    "job_cancel_honored": "🛑",
+    "job_force_cancelled": "🔨",
+    "job_force_abandoned": "🔨",
+    "job_paused": "⏸️",
+    "job_pause_requested": "⏸️",
+    "job_pause_honored": "⏸️",
+    "job_resumed": "▶️",
+    "job_item_started": "▶️",
+    "job_item_progress": "⏳",
+    "job_item_completed": "✅",
+    "job_item_failed": "❌",
+    "job_item_skipped": "⏭️",
+    "job_item_tags": "🏷️",
+    "job_item_batch_prep_failed": "⚠️",
+    "batch_submitted": "📦",
+    "batch_failed": "⚠️",
+}
 
 
 # --- cooperative cancellation registry -------------------------------------
@@ -180,6 +234,14 @@ def log_event(
     message: str,
     payload: dict | None = None,
 ) -> None:
+    file_index = _next_file_index(job_id, file_id) if job_id and file_id else None
+    if file_index is not None:
+        message = f"[#{file_index}] {message}"
+        payload = {**(payload or {}), "file_index": file_index}
+    emoji = _EVENT_EMOJI.get(event_type)
+    if emoji:
+        message = f"{emoji} {message}"
+
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -340,6 +402,7 @@ def finish_job(engine, job_id: str, status: str, summary_message: str | None = N
         )
     level = "error" if status == "failed" else "info"
     log_event(engine, job_id, None, level, _FINISH_EVENT_TYPES[status], summary_message or status)
+    _forget_file_indices(job_id)
 
 
 def set_job_total_items(engine, job_id: str, total: int) -> None:

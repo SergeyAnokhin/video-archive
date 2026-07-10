@@ -87,8 +87,21 @@ def _tag_one_file(
     top = ranked[: settings["top_tag_count"]]
     scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
 
+    if job_id is not None:
+        _log_tag_scores(engine, job_id, file_row, top)
     _assign_tags(engine, file_row.id, scored_tags, used_entry["provider_type"], used_entry["vision_model"])
     return f"{len(scored_tags)} tag(s) assigned"
+
+
+def _log_tag_scores(engine, job_id: str, file_row, ranked_top: list[tuple[dict, int]]) -> None:
+    """Logs each assigned tag with its match weight (user request -- make it
+    visible in the log how well the model thought each tag fit), as a
+    percentage the same way `FileInfoPanel.tsx`/`LibraryCards.tsx` already
+    display `file_tags.score` in the UI."""
+    summary = ", ".join(f"{tag['display_name']} {score}%" for tag, score in ranked_top) or "no tags matched"
+    service.log_event(
+        engine, job_id, file_row.id, "info", "job_item_tags", f"Tags for {file_row.relative_path}: {summary}"
+    )
 
 
 def run_tag_job(engine, job: dict) -> tuple[str, str]:

@@ -12,6 +12,24 @@ interface LogViewerModalProps {
 const LEVELS = ['debug', 'info', 'warning', 'error'] as const
 const MAX_EVENTS = 500
 
+// `service.log_event()` (backend) prepends this to the message text itself
+// so it also shows up in the console/copy-all output; stripped back off
+// here since the Log Viewer renders the same number as its own clickable
+// badge instead (`payload.file_index`).
+const FILE_INDEX_PREFIX = /^\[#\d+\]\s*/
+
+function stripFileIndexPrefix(message: string): string {
+  return message.replace(FILE_INDEX_PREFIX, '')
+}
+
+function formatElapsed(createdAt: string, baselineMs: number | null): string {
+  if (baselineMs === null) return new Date(createdAt).toLocaleTimeString()
+  const totalSeconds = Math.max(0, Math.floor((new Date(createdAt).getTime() - baselineMs) / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
 export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalProps) {
   const { t } = useTranslation()
   const [jobIdFilter, setJobIdFilter] = useState(initialJobId ?? '')
@@ -20,6 +38,7 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
   const [events, setEvents] = useState<LogEvent[]>([])
   const [copied, setCopied] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const baselineMs = events.length > 0 ? new Date(events[0].created_at).getTime() : null
 
   async function handleCopyAll() {
     if (events.length === 0) return
@@ -141,15 +160,27 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
 
         <div className="log-viewer__list" ref={listRef}>
           {events.length === 0 && <p className="log-viewer__empty">{t('logs.empty')}</p>}
-          {events.map((event) => (
-            <div key={event.id} className={`log-viewer__row log-viewer__row--${event.level}`}>
-              <span className="log-viewer__time">
-                {new Date(event.created_at).toLocaleTimeString()}
-              </span>
-              <span className="log-viewer__level">{event.level}</span>
-              <span className="log-viewer__message">{event.message}</span>
-            </div>
-          ))}
+          {events.map((event) => {
+            const fileIndex = typeof event.payload?.file_index === 'number' ? event.payload.file_index : null
+            const isActiveFileFilter = fileIndex !== null && fileIdFilter === event.file_id
+            return (
+              <div key={event.id} className={`log-viewer__row log-viewer__row--${event.level}`}>
+                <span className="log-viewer__time">{formatElapsed(event.created_at, baselineMs)}</span>
+                <span className="log-viewer__level">{event.level}</span>
+                {fileIndex !== null && (
+                  <button
+                    type="button"
+                    className={`log-viewer__file-badge${isActiveFileFilter ? ' log-viewer__file-badge--active' : ''}`}
+                    title={t('logs.filterByFile')}
+                    onClick={() => setFileIdFilter(isActiveFileFilter ? '' : (event.file_id ?? ''))}
+                  >
+                    #{fileIndex}
+                  </button>
+                )}
+                <span className="log-viewer__message">{stripFileIndexPrefix(event.message)}</span>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

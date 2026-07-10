@@ -29,7 +29,7 @@ from sqlalchemy import text
 
 from app import batch_submissions, provider_entries, tagging, tagging_settings, tags as tags_service
 from app.jobs import service
-from app.jobs.tag import _assign_tags, _process_pending_file
+from app.jobs.tag import _assign_tags, _log_tag_scores, _process_pending_file
 from app.providers import registry
 from app.providers.base import BatchPollResult, ProviderError
 from app.sources import SourceAccess
@@ -255,6 +255,7 @@ def _poll_and_apply(
             )
             top = ranked[: submission["top_tag_count"]]
             scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
+            _log_tag_scores(engine, job["id"], row, top)
             _assign_tags(engine, row.id, scored_tags, submission["provider_type"], submission["model_name"])
             message = f"{len(scored_tags)} tag(s) assigned (batch)"
             service.complete_job_item(engine, item_id, output_ref=None, message=message)

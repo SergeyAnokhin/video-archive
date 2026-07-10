@@ -466,6 +466,7 @@
     "copied": "Copied",
     "filterJob": "Job ID",
     "filterFile": "File ID",
+    "filterByFile": "Filter by this file",
     "filterLevelAll": "All levels",
     "level": {
       "debug": "Debug",
