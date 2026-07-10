@@ -98,6 +98,15 @@ export interface TestConnectionResult {
   message: string | null
 }
 
+export interface PreviewCacheStats {
+  size_bytes: number
+  file_count: number
+}
+
+export interface SavedSource extends SourceConfig {
+  preview_cache: PreviewCacheStats
+}
+
 export interface DirectoryStatus {
   total_supported_files: number
   converted_count: number

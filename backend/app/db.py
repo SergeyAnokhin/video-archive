@@ -444,6 +444,17 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE interface_settings ADD COLUMN profile_b_sepia INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE interface_settings ADD COLUMN profile_b_hue_rotate INTEGER NOT NULL DEFAULT 0",
     ],
+    # Post-V1: multiple saved sources (user request) -- `sources` already
+    # supported many rows, but only the destructive `PUT /source` handler
+    # ever wrote to it, which always left exactly one row. Now that sources
+    # can be listed/switched/forgotten independently, nothing else enforces
+    # "at most one active row" -- this partial unique index is a cheap
+    # belt-and-suspenders guard so a bug in the switch flow can't silently
+    # leave two active rows (which `GET /source`'s `LIMIT 1` would then pick
+    # between nondeterministically).
+    19: [
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sources_single_active ON sources(is_active) WHERE is_active = 1",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

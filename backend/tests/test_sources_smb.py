@@ -18,7 +18,7 @@ import pytest
 from smbprotocol.exceptions import SMBException
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles, preview_layouts, preview_settings, tags as tags_service
+from app import conversion, conversion_profiles, preview_cache, preview_layouts, preview_settings, tags as tags_service
 from app.jobs import convert, preview as preview_job, service, tag as tag_job
 from app.scan import scan_source_access
 from app.sources import get_source_access
@@ -194,7 +194,10 @@ def test_preview_file_over_smb(engine, smb_source, tmp_path):
     service.finish_job(engine, job["id"], status, message)
 
     assert status == "completed"
-    assert smb_source["fs"].exists("clips/movie.jpg")
+    # Previews are never written back to the source, SMB included (user
+    # request) -- they land in the local cache (`app/preview_cache.py`).
+    assert not smb_source["fs"].exists("clips/movie.jpg")
+    assert preview_cache.collage_path(smb_source["id"], "clips/movie.mp4").exists()
 
 
 @pytest.mark.skipif(not ffmpeg_available, reason="ffmpeg/ffprobe not on PATH")

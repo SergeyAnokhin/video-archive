@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 
+from app import preview_cache
 from app.db import get_engine
-from app.media import FOLDER_PREVIEW_FILENAME, ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags
+from app.media import ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags
 from app.source_access import get_active_source_or_404
-from app.sources import get_source_access
 from app.status import compute_directory_status
 
 router = APIRouter()
@@ -98,13 +98,12 @@ def get_directory_preview_gif(path: str = Query(default="")):
     with engine.connect() as conn:
         source = get_active_source_or_404(conn)
 
-    access = get_source_access(source)
-    preview_rel = f"{path}/{FOLDER_PREVIEW_FILENAME}" if path else FOLDER_PREVIEW_FILENAME
-    if not access.exists(preview_rel):
+    # Served from the local preview cache (`app/preview_cache.py`, user
+    # request) rather than the source itself.
+    folder_gif = preview_cache.folder_gif_path(source.id, path)
+    if not folder_gif.exists():
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No folder preview for this directory."}},
         )
-    if access.protocol == "local":
-        return FileResponse(access.direct_path(preview_rel), media_type="image/gif")
-    return Response(content=access.read_bytes(preview_rel), media_type="image/gif")
+    return FileResponse(folder_gif, media_type="image/gif")

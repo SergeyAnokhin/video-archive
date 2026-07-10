@@ -221,6 +221,40 @@ def test_backup_and_restore_provider_entries(engine, source):
     assert restored[0]["provider_type"] == "gemini"
 
 
+def test_restore_backup_with_include_global_false_skips_global_tables(engine, source):
+    """`include_global=False` (used by the source-switch flow,
+    `app/source_switch.py`) must restore only this source's own scoped data
+    and leave every global settings/entity table untouched, even though the
+    backup package still contains that global data -- app-wide settings are
+    shared across every saved source and must never change as a side effect
+    of switching (user request)."""
+    _seed_library(engine, source["id"])
+    provider_entries.create_entry(
+        engine,
+        {"provider_type": "gemini", "display_name": "My Gemini", "enabled": True, "vision_model": "gemini-2.5-flash"},
+    )
+    row = _source_row(engine, source["id"])
+    access = get_source_access(row)
+    backup.create_backup(engine, access, row)
+    backup_id = backup.list_backups(access)[0]["id"]
+
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM file_tags"))
+        conn.execute(text("DELETE FROM files"))
+        conn.execute(text("DELETE FROM directories"))
+        conn.execute(text("DELETE FROM provider_entries"))
+
+    result = backup.restore_backup(engine, access, row, backup_id, include_global=False)
+
+    assert result["counts"]["files"] == 1
+    with engine.connect() as conn:
+        files_left = conn.execute(
+            text("SELECT COUNT(*) FROM files WHERE source_id = :sid"), {"sid": source["id"]}
+        ).scalar()
+    assert files_left == 1
+    assert provider_entries.list_entries(engine) == []
+
+
 def test_create_and_restore_backup_over_smb(engine, smb_source):
     source_id = smb_source["id"]
     _seed_library(engine, source_id)

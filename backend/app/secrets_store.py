@@ -57,18 +57,53 @@ def get_entry_api_key_suffix(entry_id: str, length: int = 4) -> str | None:
     return api_key[-length:] if api_key else None
 
 
-# Source credentials (Specification §5, §18): only one active source exists
-# at a time, so a fixed key pair is enough — matches the `username_ref`/
-# `secret_ref` field names stored on the `sources` row (Data Model §1).
+# Source credentials (Specification §5, §18): historically only one active
+# source existed at a time, so a fixed key pair was enough. Multiple saved
+# sources now need distinct credentials, so new sources get a key pair keyed
+# by their own id (see `_source_username_key`/`_source_password_key` below);
+# these constants are kept only so rows created before that change keep
+# resolving via `get_source_credentials_for`.
 SOURCE_USERNAME_REF = "SOURCE_USERNAME"
 SOURCE_SECRET_REF = "SOURCE_PASSWORD"
 
 
-def get_source_credentials() -> tuple[str | None, str | None]:
-    if not SECRETS_PATH.exists():
+def _source_username_key(source_id: str) -> str:
+    return f"SOURCE_{source_id.replace('-', '_').upper()}_USERNAME"
+
+
+def _source_password_key(source_id: str) -> str:
+    return f"SOURCE_{source_id.replace('-', '_').upper()}_PASSWORD"
+
+
+def get_source_credentials_for(
+    username_ref: str | None, secret_ref: str | None
+) -> tuple[str | None, str | None]:
+    if not username_ref or not secret_ref or not SECRETS_PATH.exists():
         return None, None
     values = dotenv_values(SECRETS_PATH)
-    return values.get(SOURCE_USERNAME_REF) or None, values.get(SOURCE_SECRET_REF) or None
+    return values.get(username_ref) or None, values.get(secret_ref) or None
+
+
+def set_source_credentials_for(source_id: str, username: str, password: str) -> tuple[str, str]:
+    if not SECRETS_PATH.exists():
+        SECRETS_PATH.touch()
+    username_ref, secret_ref = _source_username_key(source_id), _source_password_key(source_id)
+    set_key(str(SECRETS_PATH), username_ref, username, quote_mode="never")
+    set_key(str(SECRETS_PATH), secret_ref, password, quote_mode="never")
+    return username_ref, secret_ref
+
+
+def delete_source_credentials_for(username_ref: str | None, secret_ref: str | None) -> None:
+    if not SECRETS_PATH.exists():
+        return
+    if username_ref:
+        unset_key(str(SECRETS_PATH), username_ref)
+    if secret_ref:
+        unset_key(str(SECRETS_PATH), secret_ref)
+
+
+def get_source_credentials() -> tuple[str | None, str | None]:
+    return get_source_credentials_for(SOURCE_USERNAME_REF, SOURCE_SECRET_REF)
 
 
 def set_source_credentials(username: str, password: str) -> None:
@@ -79,10 +114,7 @@ def set_source_credentials(username: str, password: str) -> None:
 
 
 def clear_source_credentials() -> None:
-    if not SECRETS_PATH.exists():
-        return
-    unset_key(str(SECRETS_PATH), SOURCE_USERNAME_REF)
-    unset_key(str(SECRETS_PATH), SOURCE_SECRET_REF)
+    delete_source_credentials_for(SOURCE_USERNAME_REF, SOURCE_SECRET_REF)
 
 
 def has_source_credentials() -> bool:

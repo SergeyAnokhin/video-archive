@@ -212,7 +212,13 @@ def delete_backup(access, backup_id: str) -> bool:
 # --- restore ------------------------------------------------------------
 
 
-def restore_backup(engine, access, source_row, backup_id: str) -> dict:
+def restore_backup(engine, access, source_row, backup_id: str, *, include_global: bool = True) -> dict:
+    """`include_global=False` restores only this source's own scoped data
+    (directories/files/file_tags) and leaves every global settings table and
+    the secrets file untouched -- used when auto-restoring during a source
+    switch (user request: app-wide settings are shared across all sources
+    and must never change as a side effect of switching). The default
+    (`True`) keeps the original manual "Restore from backup" behavior."""
     rel_path = f"{BACKUP_DIR}/{backup_id}.zip"
     if not access.exists(rel_path):
         raise RestoreError(f"Backup not found: {backup_id}")
@@ -250,14 +256,15 @@ def restore_backup(engine, access, source_row, backup_id: str) -> dict:
                 _insert_or_replace(conn, table, {**row, "source_id": source_id})
         for row in data.get("file_tags", []):
             _insert_or_replace(conn, "file_tags", row)
-        for table in _GLOBAL_MULTI_TABLES:
-            for row in data.get(table, []):
-                _insert_or_replace(conn, table, row)
-        for table in _GLOBAL_SINGLE_TABLES:
-            for row in data.get(table, []):
-                _insert_or_replace(conn, table, row)
+        if include_global:
+            for table in _GLOBAL_MULTI_TABLES:
+                for row in data.get(table, []):
+                    _insert_or_replace(conn, table, row)
+            for table in _GLOBAL_SINGLE_TABLES:
+                for row in data.get(table, []):
+                    _insert_or_replace(conn, table, row)
 
-    if secrets_bytes is not None:
+    if include_global and secrets_bytes is not None:
         secrets_store.SECRETS_PATH.write_bytes(secrets_bytes)
 
     counts = {key: len(value) for key, value in data.items()}

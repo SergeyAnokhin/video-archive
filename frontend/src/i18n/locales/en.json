@@ -58,7 +58,7 @@
     "cancel": "Cancel",
     "testOk": "Path is reachable.",
     "testFail": "Connection test failed: {{message}}",
-    "replaceWarning": "This replaces the current source and deletes all local library metadata (files, directories, job history). This cannot be undone.",
+    "replaceWarning": "Switching backs up this source's files and tags automatically before wiping the local copy — they're restored the next time you switch back to it. Job history is not preserved either way.",
     "noSourceYet": "No source configured yet. Enter a local folder path and connect.",
     "currentSource": "Connected: {{name}} ({{path}})",
     "lastScan": "Last scanned {{date}}.",
@@ -308,6 +308,19 @@
     "cleanupStale": "Clean up stale records",
     "optimizeDb": "Optimize database",
     "actionStarted": "Started as a background job — see Jobs for progress."
+  },
+  "savedSources": {
+    "title": "Saved sources",
+    "hint": "Switch between archives without losing each one's tags — its own data is backed up automatically when you switch away, and restored when you come back.",
+    "empty": "No saved sources yet.",
+    "active": "Active",
+    "cacheSummary": "Preview cache: {{size}} · {{count}} files",
+    "activate": "Switch to this source",
+    "clearCache": "Clear preview cache",
+    "forget": "Forget this source",
+    "cannotForgetActive": "Switch to a different source before forgetting this one.",
+    "confirmClearCache": "This removes all cached thumbnails for this source. They'll be regenerated next time they're needed. Continue?",
+    "confirmForget": "This removes the saved connection details (not the archive itself). Continue?"
   },
   "providerSettings": {
     "title": "AI providers",

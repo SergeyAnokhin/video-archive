@@ -101,7 +101,9 @@ def get_source_access(source_row) -> SourceAccess:
     if source_row.protocol == "smb":
         from app.sources.smb_backend import SMBBackend
 
-        username, password = secrets_store.get_source_credentials()
+        username, password = secrets_store.get_source_credentials_for(
+            source_row.username_ref, source_row.secret_ref
+        )
         backend = SMBBackend(source_row.host, source_row.port, source_row.root_path, username, password)
         return SourceAccess(backend, "smb")
 

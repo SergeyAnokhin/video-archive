@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import app.db as db_module
+from app import preview_cache
 from app.main import app
-from app.media import preview_gif_relative_path
 
 
 def _insert_source_and_folder(engine, root):
@@ -201,7 +201,9 @@ def test_file_preview_image_serving(tmp_path, monkeypatch):
         r = client.get(f"/api/files/{file_id}/preview.jpg")
         assert r.status_code == 404
 
-        (source_root / "clip_0.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        collage_path = preview_cache.collage_path(_source_id, "clip_0.mp4")
+        collage_path.parent.mkdir(parents=True, exist_ok=True)
+        collage_path.write_bytes(b"\xff\xd8\xff\xd9")
         with engine.begin() as conn:
             conn.execute(text("UPDATE files SET has_preview_asset = 1 WHERE id = :id"), {"id": file_id})
 
@@ -226,8 +228,7 @@ def test_file_preview_gif_serving(tmp_path, monkeypatch):
         r = client.get(f"/api/files/{file_id}/preview.gif")
         assert r.status_code == 404
 
-        gif_rel = preview_gif_relative_path("clip_0.mp4")
-        gif_path = source_root / gif_rel
+        gif_path = preview_cache.gif_path(_source_id, "clip_0.mp4")
         gif_path.parent.mkdir(parents=True, exist_ok=True)
         gif_path.write_bytes(b"GIF89a")
 
@@ -243,12 +244,14 @@ def test_directory_preview_image_serving(tmp_path, monkeypatch):
     with TestClient(app) as client:
         engine = db_module.get_engine()
         source_root = tmp_path / "source"
-        _insert_source_and_folder(engine, source_root)
+        source_id, _file_id = _insert_source_and_folder(engine, source_root)
 
         r = client.get("/api/directories/preview.gif", params={"path": ""})
         assert r.status_code == 404
 
-        (source_root / "folder-preview.gif").write_bytes(b"GIF89a")
+        folder_gif = preview_cache.folder_gif_path(source_id, "")
+        folder_gif.parent.mkdir(parents=True, exist_ok=True)
+        folder_gif.write_bytes(b"GIF89a")
         r = client.get("/api/directories/preview.gif", params={"path": ""})
         assert r.status_code == 200
         assert r.headers["content-type"] == "image/gif"

@@ -12,10 +12,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import backup, secrets_store
+from app import secrets_store
 from app.config import BACKEND_DIR
 from app.db import get_engine
-from app.scan import scan_source, scan_source_access
+from app.source_switch import switch_active_source
 from app.sources import get_source_access
 from app.sources.smb_backend import test_connection as smb_test_connection
 
@@ -98,12 +98,19 @@ def test_source_connection(body: SourceRequest):
 
 @router.put("/source")
 def put_source(body: SourceRequest):
+    """Configure a source and switch to it. If `(protocol, host, port,
+    root_path)` already matches a previously saved source, that saved row is
+    reused (and its credentials/name updated) instead of creating a
+    duplicate -- resubmitting the same connection is how a saved source is
+    renamed or has its credentials refreshed. Switching itself (backup of
+    whatever was active, wipe, auto-restore of the new source's own data,
+    rescan) is handled by `switch_active_source()`, shared with
+    `POST /sources/{id}/activate`."""
     if body.protocol not in SUPPORTED_PROTOCOLS:
         raise _unsupported_protocol_error()
 
     engine = get_engine()
     now = datetime.now(timezone.utc).isoformat()
-    new_id = str(uuid.uuid4())
 
     if body.protocol == "local":
         path = _resolve_local_path(body.root_path)
@@ -118,7 +125,7 @@ def put_source(body: SourceRequest):
                 },
             )
         root_path = str(path)
-        host, port, username_ref, secret_ref = None, None, None, None
+        host, port = None, None
     else:
         if not body.host:
             raise HTTPException(
@@ -127,69 +134,80 @@ def put_source(body: SourceRequest):
             )
         root_path = (body.root_path or "").strip("/\\")
         host, port = body.host, body.port
-        username_ref, secret_ref = secrets_store.SOURCE_USERNAME_REF, secrets_store.SOURCE_SECRET_REF
-
-    with engine.begin() as conn:
-        # Replacing the active source is destructive: the frontend warns
-        # first, then the backend wipes all previous library metadata
-        # (Specification §5.2, Data Model §1) -- files, directories, assigned
-        # tags, cached similarity signatures, and job history. Global settings
-        # (conversion profiles, the tag vocabulary itself,
-        # preview/tagging/provider/playback/backup settings) are not
-        # source-specific and survive the switch; a backup taken beforehand
-        # can restore the wiped rows once reconnected to the same source
-        # (see `detected_backups` below).
-        conn.execute(text("DELETE FROM file_tags"))
-        conn.execute(text("DELETE FROM file_similarity_signatures"))
-        conn.execute(text("DELETE FROM app_events"))
-        conn.execute(text("DELETE FROM job_items"))
-        conn.execute(text("DELETE FROM jobs"))
-        conn.execute(text("DELETE FROM files"))
-        conn.execute(text("DELETE FROM directories"))
-        conn.execute(text("DELETE FROM sources"))
-
-        conn.execute(
-            text(
-                """
-                INSERT INTO sources
-                    (id, name, protocol, host, port, root_path, username_ref, secret_ref,
-                     is_active, created_at, updated_at, last_connected_at)
-                VALUES (:id, :name, :protocol, :host, :port, :root_path, :username_ref, :secret_ref,
-                        1, :now, :now, :now)
-                """
-            ),
-            {
-                "id": new_id,
-                "name": body.name,
-                "protocol": body.protocol,
-                "host": host,
-                "port": port,
-                "root_path": root_path,
-                "username_ref": username_ref,
-                "secret_ref": secret_ref,
-                "now": now,
-            },
-        )
-
-    if body.protocol == "smb":
-        if body.username or body.password:
-            secrets_store.set_source_credentials(body.username or "", body.password or "")
-        with engine.connect() as conn:
-            new_row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": new_id}).fetchone()
-        scan_source_access(engine, new_id, get_source_access(new_row))
-    else:
-        scan_source(engine, new_id, path)
 
     with engine.connect() as conn:
-        row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": new_id}).fetchone()
+        existing = conn.execute(
+            text(
+                """
+                SELECT * FROM sources
+                WHERE protocol = :protocol AND root_path = :root_path
+                  AND COALESCE(host, '') = COALESCE(:host, '') AND COALESCE(port, -1) = COALESCE(:port, -1)
+                """
+            ),
+            {"protocol": body.protocol, "root_path": root_path, "host": host, "port": port},
+        ).fetchone()
 
-    # A source freshly connected via this endpoint may still carry backups
-    # from a previous connection to the same disk (Specification §5.2): the
-    # technical folder lives on the source itself and survives the metadata
-    # wipe above. Surface them so the UI can offer to restore one.
-    access = get_source_access(row)
-    detected_backups = backup.list_backups(access)
-    return {**_source_row_to_dict(row), "detected_backups": detected_backups}
+    if existing is not None:
+        source_id = existing.id
+        username_ref, secret_ref = existing.username_ref, existing.secret_ref
+        if body.protocol == "smb" and (body.username or body.password):
+            username_ref, secret_ref = secrets_store.set_source_credentials_for(
+                source_id, body.username or "", body.password or ""
+            )
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE sources SET name = :name, username_ref = :username_ref, "
+                    "secret_ref = :secret_ref, updated_at = :now WHERE id = :id"
+                ),
+                {
+                    "name": body.name,
+                    "username_ref": username_ref,
+                    "secret_ref": secret_ref,
+                    "now": now,
+                    "id": source_id,
+                },
+            )
+    else:
+        source_id = str(uuid.uuid4())
+        username_ref, secret_ref = None, None
+        if body.protocol == "smb":
+            username_ref, secret_ref = secrets_store.set_source_credentials_for(
+                source_id, body.username or "", body.password or ""
+            )
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sources
+                        (id, name, protocol, host, port, root_path, username_ref, secret_ref,
+                         is_active, created_at, updated_at, last_connected_at)
+                    VALUES (:id, :name, :protocol, :host, :port, :root_path, :username_ref, :secret_ref,
+                            0, :now, :now, :now)
+                    """
+                ),
+                {
+                    "id": source_id,
+                    "name": body.name,
+                    "protocol": body.protocol,
+                    "host": host,
+                    "port": port,
+                    "root_path": root_path,
+                    "username_ref": username_ref,
+                    "secret_ref": secret_ref,
+                    "now": now,
+                },
+            )
+
+    with engine.connect() as conn:
+        new_row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": source_id}).fetchone()
+
+    result = switch_active_source(engine, new_row)
+    return {
+        **_source_row_to_dict(result["row"]),
+        "detected_backups": result["detected_backups"],
+        "auto_restored": result["auto_restored"],
+    }
 
 
 @router.post("/source/reconnect")

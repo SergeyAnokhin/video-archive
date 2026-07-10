@@ -25,6 +25,7 @@ from app.routers import (
     preview_settings,
     providers,
     source,
+    sources,
     tagging_settings,
     tags,
     tree,
@@ -54,6 +55,7 @@ app = FastAPI(title="Video Archive API", version=APP_VERSION, lifespan=lifespan)
 app.include_router(health.router, prefix="/api")
 app.include_router(app_info.router, prefix="/api")
 app.include_router(source.router, prefix="/api")
+app.include_router(sources.router, prefix="/api")
 app.include_router(tree.router, prefix="/api")
 app.include_router(directories.router, prefix="/api")
 app.include_router(files.router, prefix="/api")

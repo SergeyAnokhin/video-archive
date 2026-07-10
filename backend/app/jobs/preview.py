@@ -24,17 +24,20 @@ snapshot at launch time").
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import text
 
-from app import performance_settings, preview, preview_layouts, preview_settings, similarity
+from app import performance_settings, preview, preview_cache, preview_layouts, preview_settings, similarity
 from app.jobs import service
-from app.media import is_test_artifact, preview_gif_relative_path, sibling_relative_path
+from app.media import is_test_artifact, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
 
 
@@ -89,6 +92,7 @@ def _generate_one_file(
     engine,
     job_id: str,
     access: SourceAccess,
+    source_id: str,
     file_row,
     layout: dict,
     aspect_ratio: float,
@@ -102,21 +106,31 @@ def _generate_one_file(
         service.log_event(engine, job_id, file_row.id, "info", "job_item_progress", message)
 
     with access.local_copy(file_row.relative_path) as video_path:
-        local_dest = video_path.with_suffix(".jpg")
-        local_gif = video_path.parent / f"{video_path.stem}.preview.gif"
-        duration_seconds = preview.generate_file_preview(
-            video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
-            gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
-            animated_source_mode=settings["animated_source_mode"],
-            animated_segment_seconds=settings["animated_segment_seconds"],
-            animated_transition=settings["animated_transition"],
-            max_workers=max_workers,
-            on_stage=on_stage,
-        )
-        dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
-        access.commit_new_file(local_dest, dest_rel)
-        if local_gif.exists():
-            access.commit_new_file(local_gif, preview_gif_relative_path(file_row.relative_path))
+        # Generated into a scratch dir rather than next to `video_path` --
+        # for a `local` source `local_copy()` yields the real on-disk file,
+        # so writing there would put previews back on the source (user
+        # request: previews live in the local cache, `app/preview_cache.py`,
+        # never on the source itself).
+        with tempfile.TemporaryDirectory(prefix="va_preview_out_") as stage_dir:
+            local_dest = Path(stage_dir) / f"{video_path.stem}.jpg"
+            local_gif = Path(stage_dir) / f"{video_path.stem}.preview.gif"
+            duration_seconds = preview.generate_file_preview(
+                video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
+                gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
+                animated_source_mode=settings["animated_source_mode"],
+                animated_segment_seconds=settings["animated_segment_seconds"],
+                animated_transition=settings["animated_transition"],
+                max_workers=max_workers,
+                on_stage=on_stage,
+            )
+            dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
+            collage_dest = preview_cache.collage_path(source_id, file_row.relative_path)
+            collage_dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(local_dest, collage_dest)
+            if local_gif.exists():
+                gif_dest = preview_cache.gif_path(source_id, file_row.relative_path)
+                gif_dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(local_gif, gif_dest)
         _try_store_similarity_signature(engine, job_id, file_row.id, video_path)
     return dest_rel, duration_seconds
 
@@ -135,7 +149,7 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, access, params, layout, aspect_ratio, settings, worker_count)
+        return _run_file_scope(engine, job, access, source_row.id, params, layout, aspect_ratio, settings, worker_count)
     return _run_directory_scope(engine, job, access, params, layout, aspect_ratio, settings, worker_count)
 
 
@@ -143,6 +157,7 @@ def _run_file_scope(
     engine,
     job: dict,
     access: SourceAccess,
+    source_id: str,
     params: dict,
     layout: dict,
     aspect_ratio: float,
@@ -167,7 +182,7 @@ def _run_file_scope(
         # file's own independent frame extractions instead (see
         # `preview.generate_file_preview()`'s `max_workers`).
         output_ref, duration_seconds = _generate_one_file(
-            engine, job["id"], access, row, layout, aspect_ratio, settings, max_workers=worker_count
+            engine, job["id"], access, source_id, row, layout, aspect_ratio, settings, max_workers=worker_count
         )
         _mark_file_previewed(engine, row.id, duration_seconds)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
@@ -185,7 +200,7 @@ def _run_file_scope(
 
 
 def _process_preview_file(
-    engine, job_id: str, access: SourceAccess, row, layout: dict, aspect_ratio: float, settings: dict
+    engine, job_id: str, access: SourceAccess, source_id: str, row, layout: dict, aspect_ratio: float, settings: dict
 ) -> bool:
     """One directory-scope file, run from inside a batch's thread pool.
     Returns whether it succeeded; failures are recorded through the normal
@@ -203,7 +218,9 @@ def _process_preview_file(
         # own frame extraction sequential (max_workers=1, the default) --
         # spending the configured parallelism on both axes at once would
         # spawn `files-in-flight x max_workers` ffmpeg processes together.
-        output_ref, duration_seconds = _generate_one_file(engine, job_id, access, row, layout, aspect_ratio, settings)
+        output_ref, duration_seconds = _generate_one_file(
+            engine, job_id, access, source_id, row, layout, aspect_ratio, settings
+        )
         _mark_file_previewed(engine, row.id, duration_seconds)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
@@ -273,7 +290,9 @@ def _run_directory_scope(
         with ThreadPoolExecutor(max_workers=len(pending)) as executor:
             results = list(
                 executor.map(
-                    lambda r: _process_preview_file(engine, job["id"], access, r, layout, aspect_ratio, settings),
+                    lambda r: _process_preview_file(
+                        engine, job["id"], access, source_id, r, layout, aspect_ratio, settings
+                    ),
                     pending,
                 )
             )
@@ -289,7 +308,13 @@ def _run_directory_scope(
             stop_status = "cancelled" if stop == "cancel" else "paused"
             break
 
-        if skip_processed and row.has_preview_asset:
+        # Also checks the cache file itself, not just the DB flag: it can be
+        # cleared independently (per-source preview cache management, user
+        # request) while this source is inactive, which a later-restored
+        # metadata snapshot wouldn't know about -- this makes regeneration
+        # self-healing instead of permanently skipping a file whose cached
+        # preview is actually gone.
+        if skip_processed and row.has_preview_asset and preview_cache.collage_path(source_id, row.relative_path).exists():
             item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
             service.skip_job_item(engine, item_id, "Already has a preview; skipped.")
             service.log_event(
@@ -400,7 +425,6 @@ def _generate_folder_previews(
         # where materializing means a network download per video.
         path_counts = Counter(plan)
         dest_name = "folder-preview.gif"
-        dest_rel = f"{directory.relative_path}/{dest_name}" if directory.relative_path else dest_name
         dir_label = directory.relative_path or "(root)"
 
         service.log_event(
@@ -434,7 +458,7 @@ def _generate_folder_previews(
                 )
 
                 t0 = time.monotonic()
-                stage_dir = stack.enter_context(access.stage_output_dir(directory.relative_path))
+                stage_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="va_preview_out_")))
                 local_dest = stage_dir / dest_name
                 preview.render_gif(
                     images, local_dest, aspect_ratio,
@@ -444,7 +468,9 @@ def _generate_folder_previews(
                 )
                 if not local_dest.exists():
                     raise preview.PreviewError("Could not extract any frames for the folder preview.")
-                access.commit_new_file(local_dest, dest_rel)
+                cache_dest = preview_cache.folder_gif_path(source_id, directory.relative_path)
+                cache_dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(local_dest, cache_dest)
                 service.log_event(
                     engine, job["id"], None, "info", "job_item_progress",
                     f"Rendered folder preview GIF for {dir_label} in {time.monotonic() - t0:.2f}s",

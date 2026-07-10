@@ -1,7 +1,8 @@
-import { X, HardDrive, Wand2, Images, PlayCircle, Tags, Bot, Archive, Palette, Cpu } from 'lucide-react'
+import { X, HardDrive, Layers, Wand2, Images, PlayCircle, Tags, Bot, Archive, Palette, Cpu } from 'lucide-react'
 import { useEffect, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SourceSection } from './SourceSection'
+import { SavedSourcesSection } from './SavedSourcesSection'
 import { ConversionProfilesSection } from './ConversionProfilesSection'
 import { PreviewSettingsSection } from './PreviewSettingsSection'
 import { TaggingSettingsSection } from './TaggingSettingsSection'
@@ -18,6 +19,7 @@ interface SettingsModalProps {
 
 type TabId =
   | 'source'
+  | 'savedSources'
   | 'profiles'
   | 'preview'
   | 'playback'
@@ -36,6 +38,7 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { id: 'source', icon: HardDrive, labelKey: 'settings.sourceSection', Component: SourceSection },
+  { id: 'savedSources', icon: Layers, labelKey: 'savedSources.title', Component: SavedSourcesSection },
   { id: 'profiles', icon: Wand2, labelKey: 'conversionProfiles.title', Component: ConversionProfilesSection },
   { id: 'preview', icon: Images, labelKey: 'previewSettings.title', Component: PreviewSettingsSection },
   { id: 'playback', icon: PlayCircle, labelKey: 'playbackSettings.title', Component: PlaybackSettingsSection },

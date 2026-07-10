@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import text
 
 import app.db as db_module
+import app.preview_cache as preview_cache_module
 import app.secrets_store as secrets_store_module
 
 
@@ -22,6 +23,16 @@ def isolated_secrets_file(tmp_path, monkeypatch):
     """Every test gets its own secrets file, never the developer's real
     `backend/secrets.env` (Stage 6 tagging/provider tests write API keys)."""
     monkeypatch.setattr(secrets_store_module, "SECRETS_PATH", tmp_path / "secrets.env")
+
+
+@pytest.fixture(autouse=True)
+def isolated_preview_cache(tmp_path, monkeypatch):
+    """Every test gets its own preview-cache directory, never the developer's
+    real `backend/preview_cache/`. `app/preview_cache.py` imports
+    `PREVIEW_CACHE_DIR` by value (same convention as `SECRETS_PATH`, see
+    `app/secrets_store.py`'s docstring), so the module itself must be
+    patched, not `app.config`."""
+    monkeypatch.setattr(preview_cache_module, "PREVIEW_CACHE_DIR", tmp_path / "preview_cache")
 
 
 @pytest.fixture()

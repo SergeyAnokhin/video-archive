@@ -8,11 +8,14 @@ server is available in this environment.
 from __future__ import annotations
 
 import time
+import uuid
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import app.db as db_module
+from app import secrets_store, tags as tags_service
 from app.main import app
 
 _FINISHED_STATUSES = {"completed", "failed", "cancelled"}
@@ -94,6 +97,46 @@ def test_smb_source_test_connection_and_connect(tmp_path, monkeypatch, fake_smb)
         assert r.json()["ok"] is True
 
 
+def test_smb_sources_keep_independent_credentials(tmp_path, monkeypatch, fake_smb):
+    """Regression: SMB credentials used to be stored under one fixed key
+    pair (`secrets_store.SOURCE_USERNAME_REF`/`SOURCE_SECRET_REF`), so
+    saving a second SMB source would silently overwrite the first one's
+    password. Each saved source now gets its own key pair via
+    `set_source_credentials_for`."""
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS1", "protocol": "smb", "host": fake_smb.host, "port": 445,
+                "root_path": f"{fake_smb.share}/one", "username": "user1", "password": "pass1",
+            },
+        )
+        assert r.status_code == 200
+        source_1_id = r.json()["id"]
+
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS2", "protocol": "smb", "host": fake_smb.host, "port": 445,
+                "root_path": f"{fake_smb.share}/two", "username": "user2", "password": "pass2",
+            },
+        )
+        assert r.status_code == 200
+        source_2_id = r.json()["id"]
+
+        engine = db_module.get_engine()
+        with engine.connect() as conn:
+            row1 = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": source_1_id}).fetchone()
+            row2 = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": source_2_id}).fetchone()
+
+        assert row1.username_ref != row2.username_ref
+        assert secrets_store.get_source_credentials_for(row1.username_ref, row1.secret_ref) == ("user1", "pass1")
+        assert secrets_store.get_source_credentials_for(row2.username_ref, row2.secret_ref) == ("user2", "pass2")
+
+
 def test_smb_source_requires_host(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
     monkeypatch.setattr(db_module, "_engine", None)
@@ -104,7 +147,73 @@ def test_smb_source_requires_host(tmp_path, monkeypatch):
         assert r.json()["detail"]["error"]["code"] == "host_required"
 
 
-def test_replacing_source_wipes_full_metadata_and_offers_detected_backups(tmp_path, monkeypatch):
+def test_switching_sources_backs_up_and_auto_restores_from_saved_backup(tmp_path, monkeypatch):
+    """Switching to a different source (Specification §5.2, updated for
+    multiple saved sources): the outgoing source's own metadata (here, a
+    file tag -- expensive to regenerate) is auto-backed-up to its own disk
+    before the local wipe, and auto-restored (scoped tables only) the next
+    time that same source becomes active again. Job history itself is
+    never part of a backup (`app/backup.py`), so it's gone for good either
+    way -- only re-checked here to confirm the wipe still happens."""
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    root_a = tmp_path / "library_a"
+    root_a.mkdir()
+    (root_a / "clip.mp4").write_bytes(b"0")
+    root_b = tmp_path / "library_b"
+    root_b.mkdir()
+    (root_b / "other.mp4").write_bytes(b"0")
+
+    with TestClient(app) as client:
+        r = client.put("/api/source", json={"name": "A", "protocol": "local", "root_path": str(root_a)})
+        assert r.status_code == 200
+
+        engine = db_module.get_engine()
+        with engine.connect() as conn:
+            file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clip.mp4'")).fetchone()
+        tag = tags_service.create_tag(engine, {"display_name": "sunset"})
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at) "
+                    "VALUES (:id, :fid, :tid, 90, 'openrouter', 'test-model', :now)"
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "fid": file_row.id,
+                    "tid": tag["id"],
+                    "now": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+
+        r = client.post("/api/jobs/cleanup-stale-records")
+        _wait_for_job(client, r.json()["id"])
+        assert client.get("/api/jobs").json()["jobs"]
+
+        # Switching to B backs A up (onto A's own disk) before wiping.
+        r = client.put("/api/source", json={"name": "B", "protocol": "local", "root_path": str(root_b)})
+        assert r.status_code == 200
+        assert r.json()["root_path"] == str(root_b.resolve())
+        assert client.get("/api/jobs").json()["jobs"] == []
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT COUNT(*) FROM file_tags")).scalar() == 0
+
+        # Switching back to A auto-restores its tag from that backup.
+        r = client.put("/api/source", json={"name": "A", "protocol": "local", "root_path": str(root_a)})
+        assert r.status_code == 200
+        assert r.json()["auto_restored"] is not None
+        assert client.get("/api/jobs").json()["jobs"] == []
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT COUNT(*) FROM file_tags")).scalar() == 1
+
+
+def test_resubmitting_the_active_source_is_a_noop(tmp_path, monkeypatch):
+    """Resubmitting the identical (protocol, host, port, root_path) while
+    it's already the active source is how a saved source is renamed or has
+    its credentials refreshed (see `put_source()`'s dedupe match) -- not a
+    switch, so nothing gets backed up/wiped/restored and job history
+    survives."""
     monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
     monkeypatch.setattr(db_module, "_engine", None)
 
@@ -116,27 +225,14 @@ def test_replacing_source_wipes_full_metadata_and_offers_detected_backups(tmp_pa
         r = client.put("/api/source", json={"name": "L", "protocol": "local", "root_path": str(root)})
         assert r.status_code == 200
 
-        # Build up job history and a backup while this source is active.
         r = client.post("/api/jobs/cleanup-stale-records")
-        _wait_for_job(client, r.json()["id"])
-
-        r = client.post("/api/backups", json={})
         _wait_for_job(client, r.json()["id"])
         assert client.get("/api/jobs").json()["jobs"]
 
-        # Replacing the source (even with the same root path, as happens
-        # when reconnecting after switching away and back) must wipe job
-        # history/tags (Data Model §1) and surface the backup just made for
-        # restore (Specification §5.2).
-        r = client.put("/api/source", json={"name": "L", "protocol": "local", "root_path": str(root)})
+        r = client.put("/api/source", json={"name": "L (renamed)", "protocol": "local", "root_path": str(root)})
         assert r.status_code == 200
-        assert len(r.json()["detected_backups"]) == 1
-
-        assert client.get("/api/jobs").json()["jobs"] == []
-        engine = db_module.get_engine()
-        with engine.connect() as conn:
-            assert conn.execute(text("SELECT COUNT(*) FROM app_events")).scalar() == 0
-            assert conn.execute(text("SELECT COUNT(*) FROM job_items")).scalar() == 0
+        assert r.json()["name"] == "L (renamed)"
+        assert client.get("/api/jobs").json()["jobs"]
 
 
 def test_unsupported_protocol_rejected(tmp_path, monkeypatch):

@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 from math import gcd
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion, file_ops, similarity
+from app import conversion, file_ops, preview_cache, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
-from app.media import (
-    ORIGINAL_MARKER,
-    VARIANT_MARKER,
-    compute_variant_tags,
-    preview_gif_relative_path,
-    variant_base_stem,
-)
+from app.media import ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags, variant_base_stem
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 
@@ -231,10 +225,6 @@ def get_file_media_info(file_id: str):
     }
 
 
-def _preview_rel(row) -> str:
-    return str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
-
-
 def _preview_lookup(conn, file_id: str):
     row = conn.execute(
         text(
@@ -284,9 +274,9 @@ def get_file_preview_metadata(file_id: str):
         if row is None:
             raise _file_not_found_error(file_id)
         source_row = _preview_source_row(conn, row)
-    access = get_source_access(row)
+    collage_path = preview_cache.collage_path(row.id, source_row.relative_path)
     return {
-        "has_preview_asset": bool(row.has_preview_asset) and access.exists(_preview_rel(source_row)),
+        "has_preview_asset": bool(row.has_preview_asset) and collage_path.exists(),
         "preview_generated_at": row.preview_generated_at,
     }
 
@@ -299,42 +289,33 @@ def get_file_preview_image(file_id: str):
             raise _file_not_found_error(file_id)
         source_row = _preview_source_row(conn, row)
 
-    access = get_source_access(row)
-    preview_rel = _preview_rel(source_row)
-    if not access.exists(preview_rel):
+    collage_path = preview_cache.collage_path(row.id, source_row.relative_path)
+    if not collage_path.exists():
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No preview asset for this file."}},
         )
-    if access.protocol == "local":
-        return FileResponse(access.direct_path(preview_rel), media_type="image/jpeg")
-    # SMB previews are small JPEGs; buffering the whole file in memory keeps
-    # this endpoint simple instead of needing a streamed-download-then-serve
-    # dance for an asset that's typically a few hundred KB.
-    return Response(content=access.read_bytes(preview_rel), media_type="image/jpeg")
+    return FileResponse(collage_path, media_type="image/jpeg")
 
 
 @router.get("/files/{file_id}/preview.gif")
 def get_file_preview_gif(file_id: str):
     """Animated GIF companion to the JPEG collage (user request), used for
-    grid/list-view hover previews. Stored in `.video-archive/previews/`
-    rather than next to the video (`media.preview_gif_relative_path()`)."""
+    grid/list-view hover previews. Served from the local preview cache
+    (`app/preview_cache.py`, user request) rather than the source itself."""
     with get_engine().connect() as conn:
         row = _preview_lookup(conn, file_id)
         if row is None:
             raise _file_not_found_error(file_id)
         source_row = _preview_source_row(conn, row)
 
-    access = get_source_access(row)
-    gif_rel = preview_gif_relative_path(source_row.relative_path)
-    if not access.exists(gif_rel):
+    gif_path = preview_cache.gif_path(row.id, source_row.relative_path)
+    if not gif_path.exists():
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No GIF preview for this file."}},
         )
-    if access.protocol == "local":
-        return FileResponse(access.direct_path(gif_rel), media_type="image/gif")
-    return Response(content=access.read_bytes(gif_rel), media_type="image/gif")
+    return FileResponse(gif_path, media_type="image/gif")
 
 
 @router.get("/files/{file_id}/similar")
