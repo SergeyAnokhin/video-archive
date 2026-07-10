@@ -84,7 +84,7 @@ def _tag_one_file(
     )
 
     ranked = sorted(zip(vocabulary, scores), key=lambda pair: pair[1], reverse=True)
-    top = ranked[: settings["top_tag_count"]]
+    top = [pair for pair in ranked if pair[1] > 0][: settings["top_tag_count"]]
     scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
 
     if job_id is not None:

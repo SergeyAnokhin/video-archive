@@ -136,6 +136,20 @@ def test_list_top_tags_for_files_orders_by_score_and_caps_per_file(engine, sourc
     assert result["f1"][0]["score"] == 90
 
 
+def test_list_top_tags_for_files_excludes_zero_score_tags(engine, source):
+    """A 0% score means the model doesn't consider the tag applicable at all
+    (user request), so it shouldn't be surfaced even if it was persisted by
+    an older tag run predating the `_tag_one_file()` filter."""
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    snow = tags_service.create_tag(engine, {"display_name": "Snow"})
+
+    _insert_file_and_tags(engine, source, "f1", [(beach["id"], 80), (snow["id"], 0)])
+
+    result = tags_service.list_top_tags_for_files(engine, ["f1"])
+
+    assert [tag["display_name"] for tag in result["f1"]] == ["Beach"]
+
+
 def test_list_top_tags_for_files_groups_by_file_and_skips_untagged(engine, source):
     beach = tags_service.create_tag(engine, {"display_name": "Beach"})
     _insert_file_and_tags(engine, source, "f1", [(beach["id"], 70)])
@@ -323,6 +337,51 @@ def test_tag_job_file_scope_assigns_top_n_tags(engine, source, stub_provider):
     assert [row.display_name for row in rows] == ["Beach", "Birthday"]
     assert rows[0].provider_name == "openrouter"
     assert updated_file.tagged_at is not None
+
+
+@pytest.fixture()
+def stub_provider_with_zero_scores(monkeypatch):
+    """Only the first tag gets a non-zero score -- the rest are scored 0,
+    meaning the model doesn't consider them applicable at all (user request:
+    a tag with a 0% match shouldn't be assigned, even if `top_tag_count`
+    hasn't been reached yet)."""
+
+    def fake_fallback(engine, entries, images, tags, dead_entry_ids, **_kwargs):
+        scores = [90] + [0] * (len(tags) - 1)
+        return scores, entries[0]
+
+    monkeypatch.setattr(registry, "score_tags_with_fallback", fake_fallback)
+    return fake_fallback
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_tag_job_excludes_zero_score_tags(engine, source, stub_provider_with_zero_scores):
+    _enable_openrouter(engine)  # top_tag_count = 2
+    for name in ("Beach", "Birthday", "Snow", "Dog"):
+        tags_service.create_tag(engine, {"display_name": name})
+
+    make_video(source["root"] / "clips" / "movie.mp4", duration=2.0, size="320x240")
+    scan_source(engine, source["id"], source["root"])
+
+    with engine.connect() as conn:
+        file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clips/movie.mp4'")).fetchone()
+
+    job = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
+    service.start_job(engine, job["id"])
+    status, message = tag_job.run_tag_job(engine, job)
+
+    assert status == "completed"
+    assert "1 tag(s)" in message
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT tc.display_name FROM file_tags ft JOIN tag_catalog tc ON tc.id = ft.tag_id "
+                "WHERE ft.file_id = :fid"
+            ),
+            {"fid": file_row.id},
+        ).all()
+    assert [row.display_name for row in rows] == ["Beach"]
 
 
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")

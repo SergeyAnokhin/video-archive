@@ -241,22 +241,15 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
             )}
           </span>
         </div>
-        {file.variant_tags && file.variant_tags.length > 0 && (
-          <div className="library-card__tag-row">
-            {file.variant_tags.map((tag, index) => (
-              <VariantTagChip key={index} tag={tag} />
-            ))}
-          </div>
-        )}
         {file.ai_tags && file.ai_tags.length > 0 && (
           <div className="library-card__tag-row">
             {file.ai_tags.map((tag) => (
               <span
                 key={tag.tag_id}
                 className="library-card__tag library-card__tag--ai"
-                title={tag.model_name ?? tag.provider_name ?? undefined}
+                title={[`${tag.score}%`, tag.model_name ?? tag.provider_name].filter(Boolean).join(' · ')}
               >
-                {tag.display_name} · {tag.score}%
+                {tag.display_name}
               </span>
             ))}
           </div>

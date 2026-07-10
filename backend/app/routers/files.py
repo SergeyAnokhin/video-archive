@@ -13,7 +13,14 @@ from sqlalchemy import text
 from app import conversion, file_ops, preview_cache, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
-from app.media import ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags, file_row_to_dict, variant_base_stem
+from app.media import (
+    ORIGINAL_MARKER,
+    VARIANT_MARKER,
+    compute_variant_tags,
+    file_row_to_dict,
+    resolve_variant_preview_flags,
+    variant_base_stem,
+)
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 from app.tags import list_top_tags_for_files
@@ -104,7 +111,7 @@ def list_files(
         rows = conn.execute(
             text(
                 f"""
-                SELECT id, relative_path, file_name, extension, size_bytes, modified_at,
+                SELECT id, directory_id, relative_path, file_name, extension, size_bytes, modified_at,
                        is_video_supported, has_preview_asset, converted_at, tagged_at
                 FROM files
                 WHERE {where_sql}
@@ -118,9 +125,13 @@ def list_files(
     files = [file_row_to_dict(row, relative_path=row.relative_path) for row in rows]
     variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in rows])
     ai_tags = list_top_tags_for_files(engine, [row.id for row in rows])
+    preview_flags = resolve_variant_preview_flags(
+        [(row.id, row.directory_id, row.file_name, row.has_preview_asset) for row in rows]
+    )
     for entry in files:
         entry["variant_tags"] = variant_tags.get(entry["id"], [])
         entry["ai_tags"] = ai_tags.get(entry["id"], [])
+        entry["has_preview_asset"] = preview_flags.get(entry["id"], entry["has_preview_asset"])
 
     return {"files": files}
 
@@ -329,7 +340,7 @@ def get_file_tags(file_id: str):
                 SELECT tc.id AS tag_id, tc.display_name, ft.score, ft.provider_name, ft.model_name, ft.assigned_at
                 FROM file_tags ft
                 JOIN tag_catalog tc ON tc.id = ft.tag_id
-                WHERE ft.file_id = :file_id
+                WHERE ft.file_id = :file_id AND ft.score > 0
                 ORDER BY ft.score DESC
                 """
             ),

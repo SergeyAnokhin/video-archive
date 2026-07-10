@@ -111,6 +111,35 @@ def parse_variant_suffix(file_name: str) -> dict:
     return parsed
 
 
+def resolve_variant_preview_flags(rows: list[tuple[str, str, str, bool]]) -> dict[str, bool]:
+    """Given `(file_id, directory_id, file_name, has_preview_asset)` tuples,
+    returns each file's *effective* preview-availability flag for display
+    purposes. A variant-sweep output never gets its own preview generated
+    (Specification §8.3) -- it's visually near-identical to the original it
+    was tuned from -- so it borrows its original sibling's flag whenever
+    that sibling is present in `rows` (same directory, matching base stem);
+    `routers/files.py`'s `_preview_source_row` already serves the borrowed
+    asset itself when `/preview.jpg`/`/preview.gif` is requested, this just
+    lets listing endpoints know a thumbnail is actually available so they
+    render it instead of a fallback icon. Non-variant files and variants
+    that do have their own generated preview pass their own flag through
+    unchanged."""
+    originals_by_key: dict[tuple[str, str], bool] = {}
+    for _, directory_id, file_name, has_preview_asset in rows:
+        if variant_base_stem(file_name) is None:
+            stem = PurePosixPath(file_name).stem
+            originals_by_key.setdefault((directory_id, stem), bool(has_preview_asset))
+
+    result: dict[str, bool] = {}
+    for file_id, directory_id, file_name, has_preview_asset in rows:
+        base_stem = variant_base_stem(file_name)
+        if base_stem is None or has_preview_asset:
+            result[file_id] = bool(has_preview_asset)
+        else:
+            result[file_id] = originals_by_key.get((directory_id, base_stem), False)
+    return result
+
+
 _VARIANT_TAG_ORDER = ("codec", "dimension", "crf")
 
 

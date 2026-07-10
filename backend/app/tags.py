@@ -179,7 +179,7 @@ def list_top_tags_for_files(engine, file_ids: list[str], limit_per_file: int = 4
                        ft.provider_name, ft.model_name
                 FROM file_tags ft
                 JOIN tag_catalog tc ON tc.id = ft.tag_id
-                WHERE ft.file_id IN ({placeholders})
+                WHERE ft.file_id IN ({placeholders}) AND ft.score > 0
                 ORDER BY ft.file_id, ft.score DESC
                 """
             ),

@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app import directory_ops, preview_cache
 from app.db import get_engine
-from app.media import compute_variant_tags, file_row_to_dict
+from app.media import compute_variant_tags, file_row_to_dict, resolve_variant_preview_flags
 from app.source_access import get_active_source_or_404
 from app.status import compute_directory_status
 from app.tags import list_top_tags_for_files
@@ -87,9 +87,13 @@ def get_directory_children(
         files = [file_row_to_dict(row, duration_seconds=row.duration_seconds) for row in file_rows]
         variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in file_rows])
         ai_tags = list_top_tags_for_files(engine, [row.id for row in file_rows])
+        preview_flags = resolve_variant_preview_flags(
+            [(row.id, directory_row.id, row.file_name, row.has_preview_asset) for row in file_rows]
+        )
         for entry in files:
             entry["variant_tags"] = variant_tags.get(entry["id"], [])
             entry["ai_tags"] = ai_tags.get(entry["id"], [])
+            entry["has_preview_asset"] = preview_flags.get(entry["id"], entry["has_preview_asset"])
 
     return {"path": path, "directories": directories, "files": files}
 

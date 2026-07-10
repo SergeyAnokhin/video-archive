@@ -116,3 +116,33 @@ def test_directory_children_tags_variant_files_with_the_swept_parameter(engine, 
 
     assert by_id[variant_a]["variant_tags"] == [{"param": "dimension", "value": 960}]
     assert by_id[variant_b]["variant_tags"] == [{"param": "dimension", "value": 1920}]
+
+
+def test_directory_children_variant_borrows_original_has_preview_asset(engine, source):
+    """A variant-sweep output never gets its own preview generated
+    (Specification §8.3); the listing should report `has_preview_asset` as
+    true for it whenever its original sibling has one, so the grid shows a
+    thumbnail instead of a fallback icon (user request)."""
+    dir_id = str(uuid.uuid4())
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO directories (id, source_id, relative_path, name, parent_relative_path, "
+                "has_folder_preview, last_scanned_at, created_at, updated_at) "
+                "VALUES (:id, :sid, '', 'Root', NULL, 0, :now, :now, :now)"
+            ),
+            {"id": dir_id, "sid": source["id"], "now": now},
+        )
+    original_id = _insert_video_file(engine, source["id"], dir_id, "clip.mp4")
+    variant_id = _insert_video_file(engine, source["id"], dir_id, "clip.variant-crf28.mp4")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE files SET has_preview_asset = 1 WHERE id = :id"), {"id": original_id})
+
+    with TestClient(app) as client:
+        res = client.get("/api/directories/children", params={"path": ""})
+        assert res.status_code == 200
+        by_id = {f["id"]: f for f in res.json()["files"]}
+
+    assert by_id[original_id]["has_preview_asset"] is True
+    assert by_id[variant_id]["has_preview_asset"] is True
