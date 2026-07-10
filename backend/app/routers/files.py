@@ -23,7 +23,7 @@ from app.media import (
 )
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
-from app.tags import list_top_tags_for_files
+from app.tags import assign_file_tag, get_or_create_tag, list_top_tags_for_files, remove_file_tag
 
 router = APIRouter()
 
@@ -360,6 +360,49 @@ def get_file_tags(file_id: str):
             for row in rows
         ]
     }
+
+
+class AssignTagRequest(BaseModel):
+    tag_id: str | None = None
+    display_name: str | None = None
+
+
+@router.post("/files/{file_id}/tags")
+def add_file_tag(file_id: str, body: AssignTagRequest):
+    """Manually assign a tag to a file (user request -- editable tags in
+    `FileInfoPanel`): either an existing vocabulary entry by `tag_id`, or a
+    typed `display_name` that's matched against the existing vocabulary
+    (case/whitespace-insensitive) or created as a new entry if no match
+    exists. See `tags.assign_file_tag()` for the full-confidence/`manual`
+    provider convention this uses."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        exists = conn.execute(text("SELECT 1 FROM files WHERE id = :id"), {"id": file_id}).fetchone()
+    if exists is None:
+        raise _file_not_found_error(file_id)
+
+    if body.tag_id:
+        tag_id = body.tag_id
+    elif body.display_name and body.display_name.strip():
+        tag_id = get_or_create_tag(engine, body.display_name)["id"]
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": "tag_required", "message": "tag_id or display_name is required."}},
+        )
+
+    assign_file_tag(engine, file_id, tag_id)
+    return {"assigned": True}
+
+
+@router.delete("/files/{file_id}/tags/{tag_id}")
+def delete_file_tag(file_id: str, tag_id: str):
+    if not remove_file_tag(get_engine(), file_id, tag_id):
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "tag_assignment_not_found", "message": "Tag is not assigned to this file."}},
+        )
+    return {"deleted": True}
 
 
 @router.delete("/files/{file_id}")

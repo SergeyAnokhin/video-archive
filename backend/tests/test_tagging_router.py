@@ -127,6 +127,60 @@ def test_get_file_tags_and_tag_filtered_listing_over_http(tmp_path, monkeypatch)
         assert r.status_code == 404
 
 
+def test_manual_tag_assign_and_remove_over_http(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        engine = db_module.get_engine()
+        _source_id, file_id = _insert_source_and_folder(engine, tmp_path / "source")
+
+        # Assign an existing vocabulary entry by id -- full confidence,
+        # provider "manual" rather than an AI model.
+        tag_id = client.post("/api/tags", json={"display_name": "Beach"}).json()["id"]
+        r = client.post(f"/api/files/{file_id}/tags", json={"tag_id": tag_id})
+        assert r.status_code == 200
+        r = client.get(f"/api/files/{file_id}/tags")
+        assert r.json()["tags"] == [
+            {
+                "tag_id": tag_id,
+                "display_name": "Beach",
+                "score": 100,
+                "provider_name": "manual",
+                "model_name": None,
+                "assigned_at": r.json()["tags"][0]["assigned_at"],
+            }
+        ]
+
+        # Typing a name that already exists (case/whitespace-insensitive)
+        # reuses the existing tag rather than duplicating the assignment.
+        r = client.post(f"/api/files/{file_id}/tags", json={"display_name": "  beach  "})
+        assert r.status_code == 200
+        assert len(client.get(f"/api/files/{file_id}/tags").json()["tags"]) == 1
+
+        # Typing a brand-new name creates a vocabulary entry and assigns it.
+        r = client.post(f"/api/files/{file_id}/tags", json={"display_name": "Sunset"})
+        assert r.status_code == 200
+        names = {t["display_name"] for t in client.get(f"/api/files/{file_id}/tags").json()["tags"]}
+        assert names == {"Beach", "Sunset"}
+        assert {t["display_name"] for t in client.get("/api/tags").json()["tags"]} == {"Beach", "Sunset"}
+
+        # Neither tag_id nor display_name -> 422.
+        r = client.post(f"/api/files/{file_id}/tags", json={})
+        assert r.status_code == 422
+
+        # Unknown file -> 404.
+        r = client.post(f"/api/files/{uuid.uuid4()}/tags", json={"tag_id": tag_id})
+        assert r.status_code == 404
+
+        # Remove one assignment; the other stays.
+        r = client.delete(f"/api/files/{file_id}/tags/{tag_id}")
+        assert r.status_code == 200
+        names = {t["display_name"] for t in client.get(f"/api/files/{file_id}/tags").json()["tags"]}
+        assert names == {"Sunset"}
+
+        # Removing an assignment that no longer exists -> 404.
+        r = client.delete(f"/api/files/{file_id}/tags/{tag_id}")
+        assert r.status_code == 404
+
+
 def test_tagging_settings_roundtrip_over_http(tmp_path, monkeypatch):
     with _fresh_client(tmp_path, monkeypatch) as client:
         r = client.get("/api/tagging-settings")

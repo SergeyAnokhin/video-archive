@@ -112,23 +112,33 @@ def test_compute_variant_tags_tags_every_varying_axis_when_sweeps_accumulate():
     assert tags["b"] == [{"param": "dimension", "value": 1920}, {"param": "crf", "value": 30}]
 
 
-def test_compute_variant_tags_ignores_lone_variants():
-    # A single variant has no siblings to compare against.
-    assert compute_variant_tags([("a", "clip.variant-crf28.mp4")]) == {}
+def test_compute_variant_tags_tags_lone_variant_with_its_own_params():
+    # A single variant has no siblings to compare against, but it's still
+    # tagged with its own tuning parameters (user request -- e.g. the last
+    # surviving output after deleting the rest of a comparison group), not
+    # left unlabeled.
+    assert compute_variant_tags([("a", "clip.variant-crf28.mp4")]) == {
+        "a": [{"param": "crf", "value": 28}]
+    }
 
-    # Non-variant files and files without siblings are simply left out.
+    # Non-variant files are simply left out of grouping entirely, but a lone
+    # variant next to one is still tagged with its own parameters.
     rows = [("a", "clip.mp4"), ("b", "clip.variant-crf28.mp4")]
-    assert compute_variant_tags(rows) == {}
+    assert compute_variant_tags(rows) == {"b": [{"param": "crf", "value": 28}]}
 
 
 def test_compute_variant_tags_scopes_groups_to_their_directory():
     # Same stem in two different directories must not be compared to each
-    # other -- each is a lone variant within its own folder.
+    # other -- each is a lone variant within its own folder, so each is
+    # tagged with its own parameters rather than against the other's.
     rows = [
         ("a", "movies/clip.variant-crf22.mp4"),
         ("b", "clips/clip.variant-crf30.mp4"),
     ]
-    assert compute_variant_tags(rows) == {}
+    assert compute_variant_tags(rows) == {
+        "a": [{"param": "crf", "value": 22}],
+        "b": [{"param": "crf", "value": 30}],
+    }
 
 
 # --- conversion: resize decision, variant naming, command construction ---

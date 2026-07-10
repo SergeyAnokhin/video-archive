@@ -149,8 +149,11 @@ def compute_variant_tags(rows: list[tuple[str, str]]) -> dict[str, list[dict]]:
     each variant from its sibling variants (i.e. the axis/axes the user
     swept in `FileTuneModal`), so the UI can badge "this is the CRF-26 one"
     etc. Only variants sharing the same directory and original stem are
-    compared against each other; a lone variant (no siblings) is left
-    untagged since there's nothing to compare it against.
+    compared against each other; a lone variant (no siblings left in its
+    group, e.g. every other comparison output was deleted after review) is
+    still tagged with all of its own tuning parameters instead of being left
+    unlabeled (user request) — there's nothing to compare it against, but
+    the parameters it was generated with are informative on their own.
 
     A group can vary on more than one axis at once — e.g. a dimension sweep
     and a later CRF sweep both left siblings next to the same source file —
@@ -172,6 +175,10 @@ def compute_variant_tags(rows: list[tuple[str, str]]) -> dict[str, list[dict]]:
     tags: dict[str, list[dict]] = {}
     for members in groups.values():
         if len(members) < 2:
+            for file_id, _, parsed in members:
+                file_tags = [{"param": key, "value": parsed[key]} for key in _VARIANT_TAG_ORDER if key in parsed]
+                if file_tags:
+                    tags[file_id] = file_tags
             continue
         keys = {key for _, _, parsed in members for key in parsed}
         varying = {key for key in keys if len({parsed.get(key) for _, _, parsed in members}) > 1}

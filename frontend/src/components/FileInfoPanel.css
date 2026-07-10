@@ -105,8 +105,8 @@
   flex-direction: column;
   gap: var(--space-2);
   min-height: 0;
-  min-width: 220px;
-  max-width: 320px;
+  min-width: 110px;
+  max-width: 160px;
   overflow-y: auto;
 }
 
@@ -209,7 +209,6 @@
 .file-info-panel__tags-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
   padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
@@ -218,6 +217,8 @@
 }
 
 .file-info-panel__tags-name {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -230,10 +231,77 @@
   font-variant-numeric: tabular-nums;
 }
 
+.file-info-panel__tags-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.file-info-panel__tags-remove:hover {
+  color: var(--color-danger);
+}
+
 .file-info-panel__tags-model {
   margin: 0;
   font-size: 11px;
   color: var(--color-text-muted);
+}
+
+.file-info-panel__tags-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 2px;
+}
+
+.file-info-panel__tags-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px var(--space-2);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.file-info-panel__tags-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.file-info-panel__tags-add-btn:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.file-info-panel__tags-add-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.file-info-panel__tags-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-danger);
 }
 
 .file-info-panel__media-grid {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ChevronLeft,
@@ -7,6 +7,7 @@ import {
   Film,
   FolderInput,
   Images,
+  Plus,
   SlidersHorizontal,
   Tags,
   Trash2,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
 import type { FileEntry, FileMediaInfo, FileTagAssignment } from '../types/api'
+import { useTags } from '../context/TagsContext'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
 import './ConvertDialog.css'
@@ -58,11 +60,15 @@ export function FileInfoPanel({
   onNext,
 }: FileInfoPanelProps) {
   const { t } = useTranslation()
+  const { tags: vocabularyTags, refresh: refreshVocabulary } = useTags()
   const showThumbnail = file.is_video_supported && file.has_preview_asset
   const [mediaInfo, setMediaInfo] = useState<FileMediaInfo | null>(null)
   const [mediaInfoLoading, setMediaInfoLoading] = useState(true)
   const [tags, setTags] = useState<FileTagAssignment[]>([])
   const [tagsLoading, setTagsLoading] = useState(true)
+  const [tagInput, setTagInput] = useState('')
+  const [addingTag, setAddingTag] = useState(false)
+  const [tagError, setTagError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -106,8 +112,64 @@ export function FileInfoPanel({
     }
   }, [file.id])
 
+  const refetchTags = useCallback(async () => {
+    setTagsLoading(true)
+    try {
+      const res = await fetch(`/api/files/${file.id}/tags`)
+      const data: { tags: FileTagAssignment[] } | null = res.ok ? await res.json() : null
+      setTags(data?.tags ?? [])
+    } finally {
+      setTagsLoading(false)
+    }
+  }, [file.id])
+
+  async function handleAddTag(event: FormEvent) {
+    event.preventDefault()
+    const displayName = tagInput.trim()
+    if (!displayName) {
+      return
+    }
+    setAddingTag(true)
+    setTagError(null)
+    try {
+      const res = await fetch(`/api/files/${file.id}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: displayName }),
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+      setTagInput('')
+      await refetchTags()
+      void refreshVocabulary()
+    } catch {
+      setTagError(t('library.tagsAddError'))
+    } finally {
+      setAddingTag(false)
+    }
+  }
+
+  async function handleRemoveTag(tagId: string) {
+    setTagError(null)
+    try {
+      const res = await fetch(`/api/files/${file.id}/tags/${tagId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+      setTags((current) => current.filter((tag) => tag.tag_id !== tagId))
+    } catch {
+      setTagError(t('library.tagsRemoveError'))
+    }
+  }
+
   const tagModels = Array.from(
-    new Set(tags.map((tag) => tag.model_name ?? tag.provider_name).filter((value): value is string => Boolean(value))),
+    new Set(
+      tags
+        .filter((tag) => tag.provider_name !== 'manual')
+        .map((tag) => tag.model_name ?? tag.provider_name)
+        .filter((value): value is string => Boolean(value)),
+    ),
   )
 
   function handleDelete() {
@@ -227,13 +289,6 @@ export function FileInfoPanel({
                 <li className="file-info-panel__status-item">
                   <span className="file-info-panel__dot file-info-panel__dot--done" />
                   {t('indicators.fileIsVariant')}
-                  {file.variant_tags && file.variant_tags.length > 0 && (
-                    <span className="file-info-panel__variant-tags">
-                      {file.variant_tags.map((tag, index) => (
-                        <VariantTagChip key={index} tag={tag} />
-                      ))}
-                    </span>
-                  )}
                 </li>
               )}
               {file.is_original && (
@@ -243,6 +298,17 @@ export function FileInfoPanel({
                 </li>
               )}
             </ul>
+
+            {file.is_variant && file.variant_tags && file.variant_tags.length > 0 && (
+              <div className="file-info-panel__tags-section">
+                <h3 className="file-info-panel__tags-title">{t('library.tuningSectionTitle')}</h3>
+                <div className="file-info-panel__variant-tags">
+                  {file.variant_tags.map((tag, index) => (
+                    <VariantTagChip key={index} tag={tag} />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="file-info-panel__tags-section">
               <h3 className="file-info-panel__tags-title">{t('library.tagsSectionTitle')}</h3>
@@ -255,7 +321,21 @@ export function FileInfoPanel({
                     {tags.map((tag) => (
                       <li key={tag.tag_id} className="file-info-panel__tags-row">
                         <span className="file-info-panel__tags-name">{tag.display_name}</span>
-                        <span className="file-info-panel__tags-score">{tag.score}%</span>
+                        <span
+                          className="file-info-panel__tags-score"
+                          title={tag.provider_name === 'manual' ? t('library.tagsManualLabel') : undefined}
+                        >
+                          {tag.score}%
+                        </span>
+                        <button
+                          type="button"
+                          className="file-info-panel__tags-remove"
+                          aria-label={t('library.tagsRemove', { name: tag.display_name })}
+                          title={t('library.tagsRemove', { name: tag.display_name })}
+                          onClick={() => handleRemoveTag(tag.tag_id)}
+                        >
+                          <X size={12} />
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -266,6 +346,33 @@ export function FileInfoPanel({
                   )}
                 </>
               )}
+              <form className="file-info-panel__tags-add" onSubmit={handleAddTag}>
+                <input
+                  type="text"
+                  list="file-info-panel-tag-options"
+                  className="file-info-panel__tags-input"
+                  placeholder={t('library.tagsAddPlaceholder')}
+                  value={tagInput}
+                  onChange={(event) => setTagInput(event.target.value)}
+                />
+                <datalist id="file-info-panel-tag-options">
+                  {vocabularyTags
+                    .filter((vocabularyTag) => vocabularyTag.is_active)
+                    .map((vocabularyTag) => (
+                      <option key={vocabularyTag.id} value={vocabularyTag.display_name} />
+                    ))}
+                </datalist>
+                <button
+                  type="submit"
+                  className="file-info-panel__tags-add-btn"
+                  disabled={!tagInput.trim() || addingTag}
+                  aria-label={t('library.tagsAddButton')}
+                  title={t('library.tagsAddButton')}
+                >
+                  <Plus size={14} />
+                </button>
+              </form>
+              {tagError && <p className="file-info-panel__tags-error">{tagError}</p>}
             </div>
 
             <dl className={`file-info-panel__media-grid ${mediaInfoLoading ? 'file-info-panel__media-grid--loading' : ''}`}>

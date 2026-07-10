@@ -155,6 +155,60 @@ def update_tag(engine, tag_id: str, data: dict) -> dict | None:
     return get_tag(engine, tag_id)
 
 
+def get_or_create_tag(engine, display_name: str) -> dict:
+    """Resolve `display_name` to an existing vocabulary entry (case/
+    whitespace-insensitive match on `tag_key`), or create a new one -- used
+    when a user types a tag by hand in `FileInfoPanel` instead of picking
+    one from the existing vocabulary list, so either path ends up assigning
+    a real `tag_catalog` row."""
+    tag_key = normalize_tag_key(display_name)
+    with engine.connect() as conn:
+        existing = _get_by_key(conn, tag_key)
+    if existing is not None:
+        return _row_to_dict(existing)
+    return create_tag(engine, {"display_name": display_name})
+
+
+def assign_file_tag(engine, file_id: str, tag_id: str) -> None:
+    """Manually assign `tag_id` to `file_id` (user request -- editable tags
+    in `FileInfoPanel`), replacing any existing assignment of the same tag
+    on that file rather than duplicating it (`file_tags` has no unique
+    constraint on `(file_id, tag_id)`). A human explicitly picking/typing a
+    tag is treated as full confidence (`score=100`), unlike a provider's
+    scored guess -- `provider_name="manual"` distinguishes it from an AI
+    assignment in the UI."""
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM file_tags WHERE file_id = :file_id AND tag_id = :tag_id"),
+            {"file_id": file_id, "tag_id": tag_id},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at)
+                VALUES (:id, :file_id, :tag_id, 100, 'manual', NULL, :now)
+                """
+            ),
+            {"id": str(uuid.uuid4()), "file_id": file_id, "tag_id": tag_id, "now": now},
+        )
+        conn.execute(
+            text("UPDATE files SET tagged_at = :now, updated_at = :now WHERE id = :id"),
+            {"now": now, "id": file_id},
+        )
+
+
+def remove_file_tag(engine, file_id: str, tag_id: str) -> bool:
+    """Un-assign `tag_id` from `file_id` (user request -- editable tags in
+    `FileInfoPanel`). Returns whether an assignment actually existed."""
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("DELETE FROM file_tags WHERE file_id = :file_id AND tag_id = :tag_id"),
+            {"file_id": file_id, "tag_id": tag_id},
+        )
+    return result.rowcount > 0
+
+
 def delete_tag(engine, tag_id: str) -> bool:
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM file_tags WHERE tag_id = :id"), {"id": tag_id})
