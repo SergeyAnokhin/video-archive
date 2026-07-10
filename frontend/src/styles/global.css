@@ -30,3 +30,32 @@ button,
   min-width: var(--touch-target-min);
   min-height: var(--touch-target-min);
 }
+
+/* Themed scrollbars (user request) — browsers default to a plain white/grey
+   scrollbar regardless of `data-theme`, which stands out against every dark
+   preset. Firefox via `scrollbar-color`, Chromium/Safari/Edge via the
+   `::-webkit-scrollbar-*` pseudo-elements; both read the active theme's own
+   variables so the scrollbar follows theme switches automatically. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) var(--color-surface);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 999px;
+  border: 2px solid var(--color-surface);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-muted);
+}

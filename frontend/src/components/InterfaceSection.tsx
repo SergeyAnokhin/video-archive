@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Languages } from 'lucide-react'
+import { Languages, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LANGUAGES } from '../i18n'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { THEME_PRESETS } from '../types/api'
 import { THEME_ICON } from '../themeIcons'
 import { loadPreviewSampleFileIds } from '../utils/recentlyViewed'
-import { previewFilterCss, type PreviewStyleProfile } from '../utils/previewStyle'
+import { DEFAULT_PREVIEW_PROFILE_A, previewFilterCss, type PreviewStyleProfile } from '../utils/previewStyle'
 
 const SLIDER_FIELDS: { key: keyof PreviewStyleProfile; labelKey: string; min: number; max: number; unit: string }[] = [
   { key: 'saturation', labelKey: 'settings.previewSaturation', min: 0, max: 100, unit: '%' },
@@ -50,26 +50,39 @@ function PreviewProfileEditor({
           ))}
         </div>
       )}
-      {SLIDER_FIELDS.map(({ key, labelKey, min, max, unit }) => (
-        <div className="settings-modal__field settings-modal__field--column" key={key}>
-          <span className="settings-modal__field-label">{t(labelKey)}</span>
-          <div className="settings-modal__slider-row">
-            <input
-              type="range"
-              min={min}
-              max={max}
-              value={profile[key]}
-              className="settings-modal__slider"
-              aria-label={t(labelKey)}
-              onChange={(event) => onChange({ ...profile, [key]: Number(event.target.value) })}
-            />
-            <span className="settings-modal__slider-value">
-              {profile[key]}
-              {unit}
-            </span>
+      {SLIDER_FIELDS.map(({ key, labelKey, min, max, unit }) => {
+        const neutral = DEFAULT_PREVIEW_PROFILE_A[key]
+        return (
+          <div className="settings-modal__field settings-modal__field--column" key={key}>
+            <span className="settings-modal__field-label">{t(labelKey)}</span>
+            <div className="settings-modal__slider-row">
+              <input
+                type="range"
+                min={min}
+                max={max}
+                value={profile[key]}
+                className="settings-modal__slider"
+                aria-label={t(labelKey)}
+                onChange={(event) => onChange({ ...profile, [key]: Number(event.target.value) })}
+              />
+              <span className="settings-modal__slider-value">
+                {profile[key]}
+                {unit}
+              </span>
+              <button
+                type="button"
+                className="settings-modal__option settings-modal__option--icon"
+                onClick={() => onChange({ ...profile, [key]: neutral })}
+                disabled={profile[key] === neutral}
+                aria-label={t('settings.resetToDefault')}
+                title={t('settings.resetToDefault')}
+              >
+                <RotateCcw size={14} />
+              </button>
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

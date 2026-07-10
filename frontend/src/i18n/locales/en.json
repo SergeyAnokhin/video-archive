@@ -39,6 +39,7 @@
     "previewContrast": "Contrast",
     "previewSepia": "Sepia",
     "previewHueRotate": "Hue rotate",
+    "resetToDefault": "Reset",
     "sourceSection": "Source",
     "sourceName": "Source name",
     "sourcePath": "Local folder path",
