@@ -1,5 +1,6 @@
-"""Interface settings singleton tests (Stage 9, Settings §9): language +
-theme preset, service-level round trip plus the HTTP endpoint.
+"""Interface settings singleton tests (Stage 9, Settings §9; post-V1 preview
+profiles): language + theme preset + the two preview-stylization profiles,
+service-level round trip plus the HTTP endpoint.
 """
 
 from __future__ import annotations
@@ -11,18 +12,32 @@ from app import interface_settings
 from app.main import app
 
 
+def _profile_payload(saturation: int) -> dict:
+    payload = {}
+    for profile in ("a", "b"):
+        defaults = interface_settings.DEFAULT_PROFILE_A if profile == "a" else interface_settings.DEFAULT_PROFILE_B
+        for field, value in defaults.items():
+            payload[f"profile_{profile}_{field}"] = saturation if field == "saturation" else value
+    return payload
+
+
 def test_interface_settings_defaults_and_round_trip(engine):
     settings = interface_settings.get_settings(engine)
     assert settings["language"] == "en"
     assert settings["theme_preset"] == "strict"
-    assert settings["preview_saturation"] == 100
+    assert settings["profile_a_saturation"] == 100
+    assert settings["profile_a_blur"] == 0
+    assert settings["profile_b_saturation"] == 20
+    assert settings["profile_b_blur"] == 16
 
     updated = interface_settings.update_settings(
-        engine, {"language": "ru", "theme_preset": "playful", "preview_saturation": 50}
+        engine,
+        {"language": "ru", "theme_preset": "playful", **_profile_payload(50)},
     )
     assert updated["language"] == "ru"
     assert updated["theme_preset"] == "playful"
-    assert updated["preview_saturation"] == 50
+    assert updated["profile_a_saturation"] == 50
+    assert updated["profile_b_saturation"] == 50
     assert interface_settings.get_settings(engine)["theme_preset"] == "playful"
 
 
@@ -33,20 +48,24 @@ def test_interface_settings_over_http(tmp_path, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/api/interface-settings")
         assert r.status_code == 200
-        assert r.json() == {
-            "language": "en",
-            "theme_preset": "strict",
-            "preview_saturation": 100,
-            "updated_at": r.json()["updated_at"],
-        }
+        body = r.json()
+        assert body["language"] == "en"
+        assert body["theme_preset"] == "strict"
+        assert body["profile_a_saturation"] == 100
+        assert body["profile_b_blur"] == 16
 
         r = client.put(
             "/api/interface-settings",
-            json={"language": "ru", "theme_preset": "playful", "preview_saturation": 0},
+            json={"language": "ru", "theme_preset": "playful", **_profile_payload(0)},
         )
         assert r.status_code == 200
         assert r.json()["language"] == "ru"
         assert r.json()["theme_preset"] == "playful"
-        assert r.json()["preview_saturation"] == 0
+        assert r.json()["profile_a_saturation"] == 0
+        assert r.json()["profile_b_saturation"] == 0
 
         assert client.get("/api/interface-settings").json()["theme_preset"] == "playful"
+
+        # out-of-range values are rejected (ge/le constraints from PROFILE_RANGES)
+        r = client.put("/api/interface-settings", json={**_profile_payload(0), "profile_a_blur": 999})
+        assert r.status_code == 422

@@ -331,7 +331,18 @@ export type ThemePreset = (typeof THEME_PRESETS)[number]
 export interface InterfaceSettings {
   language: 'en' | 'ru'
   theme_preset: ThemePreset
-  preview_saturation: number
+  profile_a_saturation: number
+  profile_a_blur: number
+  profile_a_brightness: number
+  profile_a_contrast: number
+  profile_a_sepia: number
+  profile_a_hue_rotate: number
+  profile_b_saturation: number
+  profile_b_blur: number
+  profile_b_brightness: number
+  profile_b_contrast: number
+  profile_b_sepia: number
+  profile_b_hue_rotate: number
   updated_at: string
 }
 

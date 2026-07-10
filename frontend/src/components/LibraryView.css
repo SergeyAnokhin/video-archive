@@ -285,7 +285,13 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: saturate(var(--preview-saturation, 1));
+  filter: var(--preview-filter-a, none);
+}
+
+/* Set by PreviewVisibilityContext.tsx's toggle (the top-bar "hide previews"
+   button) -- switches every thumbnail from style profile A to profile B. */
+[data-preview-profile='b'] .library-card__thumb-img {
+  filter: var(--preview-filter-b, none);
 }
 
 .library-card__name {

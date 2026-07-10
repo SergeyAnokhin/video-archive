@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowDownAZ, HardDrive, Home, Images, MoreVertical, RefreshCw, Tag, Tags, Wand2, X } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
-import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
@@ -15,6 +14,7 @@ import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
 import type { DirectoryChildrenResponse, FileEntry, JobSummary, VariantTag } from '../types/api'
+import { recordRecentlyViewed } from '../utils/recentlyViewed'
 import './LibraryView.css'
 
 interface LibraryViewProps {
@@ -80,7 +80,6 @@ function sortFiles(files: FileEntry[], sortBy: SortBy): FileEntry[] {
 export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: LibraryViewProps) {
   const { t } = useTranslation()
   const { activeJob, refresh: refreshJobs } = useJobs()
-  const { previewsVisible } = usePreviewVisibility()
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rescanning, setRescanning] = useState(false)
@@ -373,8 +372,10 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
                 <FileCard
                   key={file.id}
                   file={file}
-                  previewsVisible={previewsVisible}
-                  onPlay={() => setPlayingFile(file)}
+                  onPlay={() => {
+                    recordRecentlyViewed(file.id)
+                    setPlayingFile(file)
+                  }}
                   onInfo={() => setInfoFile(file)}
                   onDelete={() => void handleDeleteFile(file.id)}
                 />
@@ -399,14 +400,16 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
           {data && (data.directories.length > 0 || data.files.length > 0) && (
             <div className="library-view__grid">
               {data.directories.map((dir) => (
-                <FolderCard key={dir.path} dir={dir} previewsVisible={previewsVisible} onOpen={() => onNavigate(dir.path)} />
+                <FolderCard key={dir.path} dir={dir} onOpen={() => onNavigate(dir.path)} />
               ))}
               {sortFiles(data.files, sortBy).map((file) => (
                 <FileCard
                   key={file.id}
                   file={file}
-                  previewsVisible={previewsVisible}
-                  onPlay={() => setPlayingFile(file)}
+                  onPlay={() => {
+                    recordRecentlyViewed(file.id)
+                    setPlayingFile(file)
+                  }}
                   onInfo={() => setInfoFile(file)}
                   onDelete={() => void handleDeleteFile(file.id)}
                 />
@@ -461,7 +464,6 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
       {infoFile && (
         <FileInfoPanel
           file={infoFile}
-          previewsVisible={previewsVisible}
           previewing={previewingFileId === infoFile.id}
           tagging={taggingFileId === infoFile.id}
           onClose={() => setInfoFile(null)}

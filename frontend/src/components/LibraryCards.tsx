@@ -25,18 +25,16 @@ function useVariantTagLabel(tag: VariantTag): string {
 
 export function FolderCard({
   dir,
-  previewsVisible,
   onOpen,
 }: {
   dir: DirectoryEntry
-  previewsVisible: boolean
   onOpen: () => void
 }) {
   const { t } = useTranslation()
   const status = dir.status
   const showConversionDot = Boolean(status && !status.conversion_complete)
   const showPreviewDot = Boolean(status && !status.preview_complete)
-  const showThumbnail = previewsVisible && dir.has_folder_preview
+  const showThumbnail = dir.has_folder_preview
 
   return (
     <button type="button" className="library-card library-card--folder" onClick={onOpen}>
@@ -98,18 +96,17 @@ export function FolderCard({
 
 interface FileCardProps {
   file: FileEntry
-  previewsVisible: boolean
   onPlay: () => void
   onInfo: () => void
   onDelete: () => void
 }
 
-export function FileCard({ file, previewsVisible, onPlay, onInfo, onDelete }: FileCardProps) {
+export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
   const { t } = useTranslation()
   const [gifFailed, setGifFailed] = useState(false)
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
-  const showThumbnail = previewsVisible && file.is_video_supported && file.has_preview_asset
+  const showThumbnail = file.is_video_supported && file.has_preview_asset
 
   return (
     <div className="library-card">

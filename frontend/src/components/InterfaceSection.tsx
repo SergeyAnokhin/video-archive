@@ -1,13 +1,93 @@
+import { useEffect, useState } from 'react'
 import { Languages } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LANGUAGES } from '../i18n'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { THEME_PRESETS } from '../types/api'
 import { THEME_ICON } from '../themeIcons'
+import { loadPreviewSampleFileIds } from '../utils/recentlyViewed'
+import { previewFilterCss, type PreviewStyleProfile } from '../utils/previewStyle'
+
+const SLIDER_FIELDS: { key: keyof PreviewStyleProfile; labelKey: string; min: number; max: number; unit: string }[] = [
+  { key: 'saturation', labelKey: 'settings.previewSaturation', min: 0, max: 100, unit: '%' },
+  { key: 'blur', labelKey: 'settings.previewBlur', min: 0, max: 20, unit: 'px' },
+  { key: 'brightness', labelKey: 'settings.previewBrightness', min: 50, max: 150, unit: '%' },
+  { key: 'contrast', labelKey: 'settings.previewContrast', min: 50, max: 150, unit: '%' },
+  { key: 'sepia', labelKey: 'settings.previewSepia', min: 0, max: 100, unit: '%' },
+  { key: 'hueRotate', labelKey: 'settings.previewHueRotate', min: 0, max: 360, unit: '°' },
+]
+
+function PreviewProfileEditor({
+  titleKey,
+  profile,
+  onChange,
+  sampleFileIds,
+}: {
+  titleKey: string
+  profile: PreviewStyleProfile
+  onChange: (next: PreviewStyleProfile) => void
+  sampleFileIds: string[]
+}) {
+  const { t } = useTranslation()
+  const filterCss = previewFilterCss(profile)
+
+  return (
+    <div className="settings-modal__preview-profile">
+      <h4 className="settings-modal__subheading">{t(titleKey)}</h4>
+      {sampleFileIds.length > 0 && (
+        <div className="settings-modal__preview-sample-row">
+          {sampleFileIds.map((id) => (
+            <img
+              key={id}
+              src={`/api/files/${id}/preview.gif`}
+              alt=""
+              className="settings-modal__preview-sample"
+              style={{ filter: filterCss }}
+              onError={(event) => {
+                event.currentTarget.style.visibility = 'hidden'
+              }}
+            />
+          ))}
+        </div>
+      )}
+      {SLIDER_FIELDS.map(({ key, labelKey, min, max, unit }) => (
+        <div className="settings-modal__field settings-modal__field--column" key={key}>
+          <span className="settings-modal__field-label">{t(labelKey)}</span>
+          <div className="settings-modal__slider-row">
+            <input
+              type="range"
+              min={min}
+              max={max}
+              value={profile[key]}
+              className="settings-modal__slider"
+              aria-label={t(labelKey)}
+              onChange={(event) => onChange({ ...profile, [key]: Number(event.target.value) })}
+            />
+            <span className="settings-modal__slider-value">
+              {profile[key]}
+              {unit}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function InterfaceSection() {
   const { t } = useTranslation()
-  const { language, setLanguage, theme, setTheme, previewSaturation, setPreviewSaturation } = useInterfaceSettings()
+  const { language, setLanguage, theme, setTheme, previewProfiles, setPreviewProfile } = useInterfaceSettings()
+  const [sampleFileIds, setSampleFileIds] = useState<string[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadPreviewSampleFileIds().then((ids) => {
+      if (!cancelled) setSampleFileIds(ids)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <section className="settings-modal__section">
@@ -65,23 +145,20 @@ export function InterfaceSection() {
           })}
         </div>
       </div>
-      <div className="settings-modal__field settings-modal__field--column">
-        <span className="settings-modal__field-label">
-          {t('settings.previewSaturation')}
-        </span>
-        <div className="settings-modal__slider-row">
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={previewSaturation}
-            className="settings-modal__slider"
-            aria-label={t('settings.previewSaturation')}
-            onChange={(event) => setPreviewSaturation(Number(event.target.value))}
-          />
-          <span className="settings-modal__slider-value">{previewSaturation}%</span>
-        </div>
-      </div>
+
+      <p className="settings-modal__hint">{t('settings.previewStyleHint')}</p>
+      <PreviewProfileEditor
+        titleKey="settings.previewProfileA"
+        profile={previewProfiles.a}
+        onChange={(next) => setPreviewProfile('a', next)}
+        sampleFileIds={sampleFileIds}
+      />
+      <PreviewProfileEditor
+        titleKey="settings.previewProfileB"
+        profile={previewProfiles.b}
+        onChange={(next) => setPreviewProfile('b', next)}
+        sampleFileIds={sampleFileIds}
+      />
     </section>
   )
 }

@@ -420,6 +420,30 @@ MIGRATIONS: dict[int, list[str]] = {
     17: [
         "ALTER TABLE interface_settings ADD COLUMN preview_saturation INTEGER NOT NULL DEFAULT 100",
     ],
+    # Post-V1: two-profile preview stylization (user request, supersedes
+    # migration 17's single `preview_saturation` field after the same
+    # session's follow-up request) -- the "hide previews" top-bar toggle
+    # (`PreviewVisibilityContext.tsx`) no longer swaps the thumbnail for a
+    # folder/film icon; it now switches which of these two named style
+    # profiles is applied to the (always-visible) preview image via CSS
+    # `filter`. Profile A defaults to a no-op (matches original colors);
+    # profile B defaults to heavily blurred + desaturated, standing in for
+    # the old "hidden" state, but every field is user-editable in Settings.
+    18: [
+        "ALTER TABLE interface_settings DROP COLUMN preview_saturation",
+        "ALTER TABLE interface_settings ADD COLUMN profile_a_saturation INTEGER NOT NULL DEFAULT 100",
+        "ALTER TABLE interface_settings ADD COLUMN profile_a_blur INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE interface_settings ADD COLUMN profile_a_brightness INTEGER NOT NULL DEFAULT 100",
+        "ALTER TABLE interface_settings ADD COLUMN profile_a_contrast INTEGER NOT NULL DEFAULT 100",
+        "ALTER TABLE interface_settings ADD COLUMN profile_a_sepia INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE interface_settings ADD COLUMN profile_a_hue_rotate INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE interface_settings ADD COLUMN profile_b_saturation INTEGER NOT NULL DEFAULT 20",
+        "ALTER TABLE interface_settings ADD COLUMN profile_b_blur INTEGER NOT NULL DEFAULT 16",
+        "ALTER TABLE interface_settings ADD COLUMN profile_b_brightness INTEGER NOT NULL DEFAULT 100",
+        "ALTER TABLE interface_settings ADD COLUMN profile_b_contrast INTEGER NOT NULL DEFAULT 100",
+        "ALTER TABLE interface_settings ADD COLUMN profile_b_sepia INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE interface_settings ADD COLUMN profile_b_hue_rotate INTEGER NOT NULL DEFAULT 0",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

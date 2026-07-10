@@ -154,6 +154,32 @@
   gap: var(--space-1);
 }
 
+.settings-modal__preview-profile {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.settings-modal__subheading {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.settings-modal__preview-sample-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.settings-modal__preview-sample {
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
 /* Two-dot preview of a theme's accent pair, scoped via `data-theme` so each
  * swatch reads that preset's own variables regardless of the theme actually
  * applied to the document (InterfaceSection.tsx). */

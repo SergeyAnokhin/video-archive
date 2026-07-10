@@ -1,29 +1,41 @@
-"""Global interface settings endpoint (Settings §9): UI language + theme
-preset."""
+"""Global interface settings endpoint (Settings §9): UI language, theme
+preset, and the two preview-stylization profiles."""
 
 from __future__ import annotations
 
 from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from app import interface_settings as service
 from app.db import get_engine
 
 router = APIRouter()
 
+_profile_fields = {
+    f"profile_{profile}_{field}": (
+        int,
+        Field(
+            default=(service.DEFAULT_PROFILE_A if profile == "a" else service.DEFAULT_PROFILE_B)[field],
+            ge=service.PROFILE_RANGES[field][0],
+            le=service.PROFILE_RANGES[field][1],
+        ),
+    )
+    for profile in ("a", "b")
+    for field in service.PROFILE_FIELDS
+}
 
-class InterfaceSettingsRequest(BaseModel):
-    language: Literal["en", "ru"] = service.DEFAULT_LANGUAGE
-    theme_preset: Literal["strict", "playful", "casino", "neon", "toxic", "cyber", "vivid", "mono"] = (
-        service.DEFAULT_THEME_PRESET
-    )
-    preview_saturation: int = Field(
-        default=service.DEFAULT_PREVIEW_SATURATION,
-        ge=service.MIN_PREVIEW_SATURATION,
-        le=service.MAX_PREVIEW_SATURATION,
-    )
+InterfaceSettingsRequest = create_model(
+    "InterfaceSettingsRequest",
+    __base__=BaseModel,
+    language=(Literal["en", "ru"], service.DEFAULT_LANGUAGE),
+    theme_preset=(
+        Literal["strict", "playful", "casino", "neon", "toxic", "cyber", "vivid", "mono"],
+        service.DEFAULT_THEME_PRESET,
+    ),
+    **_profile_fields,
+)
 
 
 @router.get("/interface-settings")
@@ -32,5 +44,5 @@ def get_interface_settings():
 
 
 @router.put("/interface-settings")
-def update_interface_settings(body: InterfaceSettingsRequest):
+def update_interface_settings(body: InterfaceSettingsRequest):  # type: ignore[valid-type]
     return service.update_settings(get_engine(), body.model_dump())

@@ -9,7 +9,6 @@ import './FileInfoPanel.css'
 
 interface FileInfoPanelProps {
   file: FileEntry
-  previewsVisible: boolean
   previewing: boolean
   tagging: boolean
   onClose: () => void
@@ -24,7 +23,6 @@ interface FileInfoPanelProps {
 
 export function FileInfoPanel({
   file,
-  previewsVisible,
   previewing,
   tagging,
   onClose,
@@ -37,7 +35,7 @@ export function FileInfoPanel({
   onMove,
 }: FileInfoPanelProps) {
   const { t } = useTranslation()
-  const showThumbnail = previewsVisible && file.is_video_supported && file.has_preview_asset
+  const showThumbnail = file.is_video_supported && file.has_preview_asset
   const [mediaInfo, setMediaInfo] = useState<FileMediaInfo | null>(null)
   const [mediaInfoLoading, setMediaInfoLoading] = useState(true)
 
