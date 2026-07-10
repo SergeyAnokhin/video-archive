@@ -1,4 +1,4 @@
-import { Eraser, Pause, Play, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
+import { Bot, Eraser, Pause, Play, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
@@ -27,6 +27,15 @@ export function JobsModal({ onClose }: JobsModalProps) {
   const { jobs, jobItemsById, refresh } = useJobs()
   const [logJobId, setLogJobId] = useState<string | null>(null)
   const [busyJobId, setBusyJobId] = useState<string | null>(null)
+  const [batches, setBatches] = useState<Array<{ id: string; provider_name: string; model_name: string | null; item_count: number; submitted_at: string }>>([])
+  const [showBatches, setShowBatches] = useState(false)
+
+  async function showExternalBatches() {
+    const response = await fetch('/api/external-batches')
+    const data = response.ok ? await response.json() : { batches: [] }
+    setBatches(data.batches ?? [])
+    setShowBatches(true)
+  }
 
   async function handleCancel(jobId: string) {
     setBusyJobId(jobId)
@@ -102,6 +111,15 @@ export function JobsModal({ onClose }: JobsModalProps) {
             <button
               type="button"
               className="jobs-modal__icon-btn"
+              aria-label={t('jobs.externalBatches')}
+              title={t('jobs.externalBatches')}
+              onClick={() => void showExternalBatches()}
+            >
+              <Bot size={18} />
+            </button>
+            <button
+              type="button"
+              className="jobs-modal__icon-btn"
               aria-label={t('logs.title')}
               title={t('logs.title')}
               onClick={() => setLogJobId('')}
@@ -161,6 +179,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
             <Eraser size={14} /> {t('jobs.clearFinished')}
           </button>
         </div>
+        {showBatches && <div className="convert-dialog-overlay" onClick={() => setShowBatches(false)}><div className="convert-dialog" onClick={(event) => event.stopPropagation()}><button type="button" className="file-info-panel__close" onClick={() => setShowBatches(false)}><X size={18} /></button><h3 className="convert-dialog__title">{t('jobs.externalBatches')}</h3>{batches.length === 0 ? <p>{t('jobs.externalBatchesEmpty')}</p> : <ul>{batches.map((batch) => <li key={batch.id}>{batch.provider_name} / {batch.model_name ?? t('library.providerDefault')} — {t('jobs.externalBatchFiles', { count: batch.item_count })}</li>)}</ul>}</div></div>}
       </div>
 
       {logJobId !== null && (

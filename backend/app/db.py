@@ -463,6 +463,66 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE directories ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE directories ADD COLUMN favorited_at TEXT",
     ],
+    # Durable provider-side tagging batches.  The provider has already
+    # accepted the request at this point, so its identity and the immutable
+    # tag vocabulary must survive an application restart while we poll it.
+    21: [
+        """
+        CREATE TABLE external_batch_runs (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id),
+            provider_entry_id TEXT NOT NULL REFERENCES provider_entries(id),
+            provider_name TEXT NOT NULL,
+            model_name TEXT,
+            external_id TEXT NOT NULL,
+            tag_ids_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'submitted',
+            item_count INTEGER NOT NULL,
+            submitted_at TEXT NOT NULL,
+            last_polled_at TEXT,
+            completed_at TEXT,
+            error_message TEXT
+        )
+        """,
+        "CREATE INDEX idx_external_batch_runs_status ON external_batch_runs(status, submitted_at)",
+        """
+        CREATE TABLE external_batch_items (
+            id TEXT PRIMARY KEY,
+            batch_run_id TEXT NOT NULL REFERENCES external_batch_runs(id),
+            file_id TEXT NOT NULL REFERENCES files(id),
+            job_item_id TEXT NOT NULL REFERENCES job_items(id),
+            UNIQUE(batch_run_id, file_id)
+        )
+        """,
+        """
+        CREATE TABLE tag_runs (
+            id TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL REFERENCES files(id),
+            provider_name TEXT NOT NULL,
+            model_name TEXT,
+            execution_mode TEXT NOT NULL,
+            response_payload TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX idx_tag_runs_file_created ON tag_runs(file_id, created_at DESC)",
+        """
+        CREATE TABLE model_usage (
+            provider_name TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            request_count INTEGER NOT NULL DEFAULT 0,
+            file_count INTEGER NOT NULL DEFAULT 0,
+            batch_count INTEGER NOT NULL DEFAULT 0,
+            last_used_at TEXT NOT NULL,
+            PRIMARY KEY(provider_name, model_name)
+        )
+        """,
+    ],
+    # Zero-confidence assignments are not tags.  Remove any rows written by
+    # older workers before the central writer starts filtering new results.
+    22: [
+        "DELETE FROM file_tags WHERE score <= 0",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

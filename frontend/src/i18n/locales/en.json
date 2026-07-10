@@ -184,6 +184,10 @@
     "folderHistory": "Recently viewed folders",
     "moveMenuHere": "Move here",
     "moveMenuBack": "Back"
+    ,"detectedTags": "Detected tags"
+    ,"taggedBy": "Tagged by {{provider}} / {{model}} ({{mode}})"
+    ,"providerDefault": "provider default"
+    ,"modelResponse": "Model response"
   },
   "playbackModal": {
     "title": "Playback",
@@ -309,6 +313,7 @@
     "combineIntoCollage": "Combine frames into one collage image",
     "topTagCount": "Top tag count to keep"
   },
+  "modelUsage": { "title": "Model usage", "empty": "No model requests have been recorded yet.", "model": "Provider / model", "requests": "Requests", "files": "Files", "batches": "Batches" },
   "backupMaintenance": {
     "title": "Backup & Maintenance",
     "empty": "No backups yet.",
@@ -384,6 +389,9 @@
     "title": "Jobs",
     "close": "Close",
     "empty": "No jobs yet.",
+    "externalBatches": "External AI batches",
+    "externalBatchesEmpty": "No Gemini or Mistral batches are currently running.",
+    "externalBatchFiles": "{{count}} files",
     "clearFinished": "Clear finished",
     "cancel": "Cancel",
     "pause": "Pause",

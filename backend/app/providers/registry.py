@@ -30,6 +30,7 @@ _BATCH_CLIENTS = {
     "gemini": gemini.submit_batch,
     "mistral": mistral.submit_batch,
 }
+_BATCH_POLL_CLIENTS = {"gemini": gemini.poll_batch, "mistral": mistral.poll_batch}
 
 # Providers with a real model-listing API, for the "Load models" flow. FAL is
 # intentionally excluded -- it has no fixed vision-chat schema and its
@@ -81,13 +82,20 @@ def entry_supports_batch(entry: dict) -> bool:
 
 def score_tags_batch_with_entry(
     engine, entry: dict, items: list[tuple[str, list[bytes]]], tags: list[str]
-) -> dict[str, list[int] | None]:
+) -> str:
     client = _BATCH_CLIENTS.get(entry["provider_type"])
     if client is None:
         raise ProviderNotConfiguredError(f"Provider entry does not support batch submission: {entry['display_name']}")
 
     api_key = _resolve_entry_api_key(entry)
     return client(items, tags, entry["vision_model"], api_key)
+
+
+def poll_tags_batch_with_entry(engine, entry: dict, external_id: str, item_keys: list[str], tags: list[str]) -> tuple[bool, dict[str, list[int] | None]]:
+    client = _BATCH_POLL_CLIENTS.get(entry["provider_type"])
+    if client is None:
+        raise ProviderNotConfiguredError(f"Provider entry does not support batch polling: {entry['display_name']}")
+    return client(external_id, item_keys, tags, entry["vision_model"], _resolve_entry_api_key(entry))
 
 
 def list_models_for_provider_type(provider_type: str, api_key: str) -> list[str]:
@@ -124,6 +132,7 @@ __all__ = [
     "score_tags_with_entry",
     "entry_supports_batch",
     "score_tags_batch_with_entry",
+    "poll_tags_batch_with_entry",
     "list_models_for_provider_type",
     "score_tags_with_fallback",
     "ProviderNotConfiguredError",

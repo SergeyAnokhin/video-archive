@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from app import conversion, file_ops, preview_cache, similarity
 from app.conversion_profiles import get_profile
@@ -57,6 +57,7 @@ def _file_row_to_dict(row) -> dict:
         "is_variant": VARIANT_MARKER in row.file_name,
         "is_original": ORIGINAL_MARKER in row.file_name,
         "variant_tags": [],
+        "tag_labels": [],
     }
 
 
@@ -134,8 +135,19 @@ def list_files(
 
     files = [_file_row_to_dict(row) for row in rows]
     variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in rows])
+    file_ids = [row.id for row in rows]
+    labels_by_file: dict[str, list[str]] = {file_id: [] for file_id in file_ids}
+    if file_ids:
+        with engine.connect() as conn:
+            tag_rows = conn.execute(
+                text("SELECT ft.file_id, tc.display_name FROM file_tags ft JOIN tag_catalog tc ON tc.id = ft.tag_id WHERE ft.score > 0 AND ft.file_id IN :ids ORDER BY ft.score DESC")
+                .bindparams(bindparam("ids", expanding=True)), {"ids": file_ids}
+            ).all()
+        for tag_row in tag_rows:
+            labels_by_file[tag_row.file_id].append(tag_row.display_name)
     for entry in files:
         entry["variant_tags"] = variant_tags.get(entry["id"], [])
+        entry["tag_labels"] = labels_by_file.get(entry["id"], [])
 
     return {"files": files}
 
@@ -344,12 +356,16 @@ def get_file_tags(file_id: str):
                 SELECT tc.id AS tag_id, tc.display_name, ft.score, ft.provider_name, ft.model_name, ft.assigned_at
                 FROM file_tags ft
                 JOIN tag_catalog tc ON tc.id = ft.tag_id
-                WHERE ft.file_id = :file_id
+                WHERE ft.file_id = :file_id AND ft.score > 0
                 ORDER BY ft.score DESC
                 """
             ),
             {"file_id": file_id},
         ).all()
+        run = conn.execute(
+            text("SELECT provider_name, model_name, execution_mode, response_payload, created_at FROM tag_runs WHERE file_id = :file_id ORDER BY created_at DESC LIMIT 1"),
+            {"file_id": file_id},
+        ).fetchone()
 
     return {
         "tags": [
@@ -362,7 +378,8 @@ def get_file_tags(file_id: str):
                 "assigned_at": row.assigned_at,
             }
             for row in rows
-        ]
+        ],
+        "run": dict(run._mapping) if run else None,
     }
 
 

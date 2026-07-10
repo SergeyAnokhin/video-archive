@@ -211,3 +211,8 @@
   color: var(--color-text);
   overflow-wrap: anywhere;
 }
+
+.file-info-panel__tags { padding: var(--space-2); background: var(--color-surface-raised); border-radius: var(--radius-sm); font-size: 12px; }
+.file-info-panel__tag-list { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
+.file-info-panel__tag-source { color: var(--color-text-muted); margin: var(--space-1) 0; }
+.file-info-panel__tags pre { max-height: 100px; overflow: auto; white-space: pre-wrap; }

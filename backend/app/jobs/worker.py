@@ -48,10 +48,12 @@ from app.jobs.preview import run_preview_job
 from app.jobs.rescan import run_rescan_job
 from app.jobs.restore import run_restore_job
 from app.jobs.tag import run_tag_job
+from app.external_batches import poll_pending_batches
 
 _POLL_INTERVAL_SECONDS = 0.3
 _RETENTION_INTERVAL_SECONDS = 60.0
 _ABANDON_CHECK_SECONDS = 0.5
+_BATCH_POLL_INTERVAL_SECONDS = 30.0
 
 _HANDLERS = {
     "rescan": run_rescan_job,
@@ -79,18 +81,36 @@ class _Lane:
         self._job_types = job_types
         self._run_retention = run_retention
         self._thread: threading.Thread | None = None
+        self._batch_poll_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
     def start(self) -> None:
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, name=f"job-worker-{self._name}", daemon=True)
         self._thread.start()
+        if self._name == "network":
+            self._batch_poll_thread = threading.Thread(target=self._poll_batches, name="batch-poller", daemon=True)
+            self._batch_poll_thread.start()
 
     def stop(self) -> None:
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
+        if self._batch_poll_thread is not None:
+            self._batch_poll_thread.join(timeout=5)
+            self._batch_poll_thread = None
+
+    def _poll_batches(self) -> None:
+        engine = get_engine()
+        # Check immediately on startup, then every 30 seconds.  This is what
+        # resumes provider work after the backend was restarted.
+        while not self._stop_event.is_set():
+            try:
+                poll_pending_batches(engine)
+            except Exception:
+                pass
+            self._stop_event.wait(_BATCH_POLL_INTERVAL_SECONDS)
 
     def _run(self) -> None:
         engine = get_engine()
@@ -164,6 +184,8 @@ class _Lane:
         message = outcome.get("message")
         if status == "paused":
             service.mark_job_paused(engine, job_id, message)
+        elif status == "waiting_external":
+            service.mark_job_waiting_external(engine, job_id, message or "Waiting for external batch.")
         else:
             service.finish_job(engine, job_id, status, message)
         service.clear_cancel_request(job_id)

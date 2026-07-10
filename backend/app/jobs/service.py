@@ -289,8 +289,8 @@ def get_current_job_summary(engine) -> dict | None:
         row = conn.execute(
             text(
                 """
-                SELECT * FROM jobs WHERE status IN ('queued', 'running')
-                ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END, created_at
+                SELECT * FROM jobs WHERE status IN ('queued', 'running', 'waiting_external')
+                ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'waiting_external' THEN 1 ELSE 2 END, created_at
                 LIMIT 1
                 """
             )
@@ -402,6 +402,15 @@ def mark_job_paused(engine, job_id: str, message: str | None = None) -> None:
             {"now": now, "msg": message, "id": job_id},
         )
     log_event(engine, job_id, None, "info", "job_paused", message or "Job paused.")
+
+
+def mark_job_waiting_external(engine, job_id: str, message: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE jobs SET status = 'waiting_external', updated_at = :now, summary_message = :msg WHERE id = :id"),
+            {"now": _now(), "msg": message, "id": job_id},
+        )
+    log_event(engine, job_id, None, "info", "batch_waiting", message)
 
 
 def pause_job(engine, job_id: str) -> dict | None:

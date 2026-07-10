@@ -17,8 +17,6 @@ in this environment; a submission failure is caught by the caller
 
 from __future__ import annotations
 
-import time
-
 import httpx
 
 from app.providers.base import ProviderError, build_prompt, encode_image_base64, parse_scores
@@ -29,8 +27,6 @@ BATCH_POLL_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/{nam
 MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_MODEL = "gemini-2.5-flash"
 TIMEOUT_SECONDS = 60
-BATCH_POLL_INTERVAL_SECONDS = 5
-BATCH_POLL_TIMEOUT_SECONDS = 1800
 SUPPORTS_BATCH = True
 
 
@@ -81,10 +77,10 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
 
 def submit_batch(
     items: list[tuple[str, list[bytes]]], tags: list[str], model: str | None, api_key: str
-) -> dict[str, list[int] | None]:
+) -> str:
     """Scores every `(key, images)` pair in `items` in a single Gemini Batch
-    API job (inlined-requests mode). Returns `None` for a key whose result
-    couldn't be parsed -- the caller falls back to `score_tags()` for those."""
+    API job (inlined-requests mode).  It returns immediately with the durable
+    operation name; `poll_batch()` owns later status/result retrieval."""
     prompt = build_prompt(tags)
     inline_requests = []
     for key, images in items:
@@ -109,38 +105,33 @@ def submit_batch(
             timeout=TIMEOUT_SECONDS,
         )
         create.raise_for_status()
-        operation_name = create.json()["name"]
-
-        deadline = time.monotonic() + BATCH_POLL_TIMEOUT_SECONDS
-        poll_data: dict = {}
-        while True:
-            poll = httpx.get(
-                BATCH_POLL_URL_TEMPLATE.format(name=operation_name),
-                params={"key": api_key},
-                timeout=TIMEOUT_SECONDS,
-            )
-            poll.raise_for_status()
-            poll_data = poll.json()
-            if poll_data.get("done"):
-                break
-            if time.monotonic() > deadline:
-                raise ProviderError("Gemini batch job timed out while polling for completion.")
-            time.sleep(BATCH_POLL_INTERVAL_SECONDS)
-
-        if "error" in poll_data:
-            raise ProviderError(f"Gemini batch job failed: {poll_data['error']}")
-
-        inlined_responses = poll_data["response"]["inlinedResponses"]["inlinedResponses"]
+        return create.json()["name"]
     except httpx.HTTPError as exc:
         raise ProviderError(f"Gemini batch request failed: {exc}") from exc
     except (KeyError, TypeError) as exc:
         raise ProviderError(f"Unexpected Gemini batch response shape: {exc}") from exc
 
+def poll_batch(external_id: str, items: list[str], tags: list[str], model: str | None, api_key: str) -> tuple[bool, dict[str, list[int] | None]]:
+    """Returns `(done, results)`.  Pending operations make no result claim."""
+    try:
+        poll = httpx.get(BATCH_POLL_URL_TEMPLATE.format(name=external_id), params={"key": api_key}, timeout=TIMEOUT_SECONDS)
+        poll.raise_for_status()
+        poll_data = poll.json()
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"Gemini batch poll failed: {exc}") from exc
+    if not poll_data.get("done"):
+        return False, {}
+    if "error" in poll_data:
+        raise ProviderError(f"Gemini batch job failed: {poll_data['error']}")
+    try:
+        inlined_responses = poll_data["response"]["inlinedResponses"]["inlinedResponses"]
+    except (KeyError, TypeError) as exc:
+        raise ProviderError(f"Unexpected Gemini batch response shape: {exc}") from exc
     results: dict[str, list[int] | None] = {}
-    for (key, _images), entry in zip(items, inlined_responses):
+    for key, entry in zip(items, inlined_responses):
         try:
             text_reply = entry["response"]["candidates"][0]["content"]["parts"][0]["text"]
             results[key] = parse_scores(text_reply, len(tags))
         except (KeyError, IndexError, TypeError, ProviderError):
             results[key] = None
-    return results
+    return True, results

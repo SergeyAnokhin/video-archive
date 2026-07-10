@@ -21,8 +21,6 @@ failing the whole tagging job.
 from __future__ import annotations
 
 import json
-import time
-
 import httpx
 
 from app.providers.base import ProviderError, build_prompt, encode_image_base64, parse_scores
@@ -33,8 +31,6 @@ BATCH_JOBS_URL = "https://api.mistral.ai/v1/batch/jobs"
 MODELS_URL = "https://api.mistral.ai/v1/models"
 DEFAULT_MODEL = "pixtral-12b-2409"
 TIMEOUT_SECONDS = 60
-BATCH_POLL_INTERVAL_SECONDS = 5
-BATCH_POLL_TIMEOUT_SECONDS = 1800
 SUPPORTS_BATCH = True
 _DONE_STATUSES = {"SUCCESS", "FAILED", "TIMEOUT_EXCEEDED", "CANCELLED", "CANCELLATION_REQUESTED"}
 
@@ -99,11 +95,11 @@ def _build_batch_request_line(key: str, images: list[bytes], prompt: str, model:
 
 def submit_batch(
     items: list[tuple[str, list[bytes]]], tags: list[str], model: str | None, api_key: str
-) -> dict[str, list[int] | None]:
+) -> str:
     """Scores every `(key, images)` pair in `items` in a single Mistral Batch
     API job, keyed by `key` (the caller's file id) via the JSONL `custom_id`
-    field. Returns `None` for a key whose result couldn't be parsed -- the
-    caller falls back to `score_tags()` for those, one file at a time."""
+    field. Returns the durable batch id; `poll_batch()` is intentionally
+    separate so service restarts do not discard a provider-side job."""
     prompt = build_prompt(tags)
     auth_headers = {"Authorization": f"Bearer {api_key}"}
     jsonl_body = ("\n".join(_build_batch_request_line(key, images, prompt, model) for key, images in items) + "\n")
@@ -126,35 +122,33 @@ def submit_batch(
             timeout=TIMEOUT_SECONDS,
         )
         create.raise_for_status()
-        job_id = create.json()["id"]
-
-        deadline = time.monotonic() + BATCH_POLL_TIMEOUT_SECONDS
-        status_data: dict = {}
-        while True:
-            status_resp = httpx.get(f"{BATCH_JOBS_URL}/{job_id}", headers=auth_headers, timeout=TIMEOUT_SECONDS)
-            status_resp.raise_for_status()
-            status_data = status_resp.json()
-            if status_data.get("status") in _DONE_STATUSES:
-                break
-            if time.monotonic() > deadline:
-                raise ProviderError("Mistral batch job timed out while polling for completion.")
-            time.sleep(BATCH_POLL_INTERVAL_SECONDS)
-
-        if status_data.get("status") != "SUCCESS":
-            raise ProviderError(f"Mistral batch job ended with status: {status_data.get('status')}")
-
-        output_file_id = status_data.get("output_file")
-        if not output_file_id:
-            raise ProviderError("Mistral batch job succeeded but returned no output file.")
-
-        content_resp = httpx.get(f"{FILES_URL}/{output_file_id}/content", headers=auth_headers, timeout=TIMEOUT_SECONDS)
-        content_resp.raise_for_status()
+        return create.json()["id"]
     except httpx.HTTPError as exc:
         raise ProviderError(f"Mistral batch request failed: {exc}") from exc
     except (KeyError, TypeError) as exc:
         raise ProviderError(f"Unexpected Mistral batch response shape: {exc}") from exc
 
-    results: dict[str, list[int] | None] = {}
+def poll_batch(external_id: str, items: list[str], tags: list[str], model: str | None, api_key: str) -> tuple[bool, dict[str, list[int] | None]]:
+    auth_headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        status_resp = httpx.get(f"{BATCH_JOBS_URL}/{external_id}", headers=auth_headers, timeout=TIMEOUT_SECONDS)
+        status_resp.raise_for_status()
+        status_data = status_resp.json()
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"Mistral batch poll failed: {exc}") from exc
+    if status_data.get("status") not in _DONE_STATUSES:
+        return False, {}
+    if status_data.get("status") != "SUCCESS":
+        raise ProviderError(f"Mistral batch job ended with status: {status_data.get('status')}")
+    output_file_id = status_data.get("output_file")
+    if not output_file_id:
+        raise ProviderError("Mistral batch job succeeded but returned no output file.")
+    try:
+        content_resp = httpx.get(f"{FILES_URL}/{output_file_id}/content", headers=auth_headers, timeout=TIMEOUT_SECONDS)
+        content_resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"Mistral batch output download failed: {exc}") from exc
+    results: dict[str, list[int] | None] = {key: None for key in items}
     for line in content_resp.text.splitlines():
         if not line.strip():
             continue
@@ -167,4 +161,4 @@ def submit_batch(
             results[key] = parse_scores(text_reply, len(tags))
         except (KeyError, IndexError, TypeError, ProviderError):
             results[key] = None
-    return results
+    return True, results

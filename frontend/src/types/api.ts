@@ -13,7 +13,7 @@ export interface DatabaseInfo {
   schema_version: number | null
 }
 
-export type JobStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
+export type JobStatus = 'queued' | 'running' | 'waiting_external' | 'paused' | 'completed' | 'failed' | 'cancelled'
 export type JobItemStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped'
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 
@@ -156,6 +156,7 @@ export interface FileEntry {
   is_original: boolean
   duration_seconds: number | null
   variant_tags?: VariantTag[]
+  tag_labels?: string[]
 }
 
 export interface DirectoryChildrenResponse {
@@ -267,6 +268,23 @@ export interface FileTagAssignment {
   provider_name: string | null
   model_name: string | null
   assigned_at: string
+}
+
+export interface TagRun {
+  provider_name: string
+  model_name: string | null
+  execution_mode: string
+  response_payload: string
+  created_at: string
+}
+
+export interface ModelUsage {
+  provider_name: string
+  model_name: string
+  request_count: number
+  file_count: number
+  batch_count: number
+  last_used_at: string
 }
 
 export interface TaggingSettings {

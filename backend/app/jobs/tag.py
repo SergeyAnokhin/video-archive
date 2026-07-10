@@ -16,12 +16,14 @@ fails once.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from app import provider_entries, tagging, tagging_settings, tags as tags_service
+from app import model_usage, provider_entries, tagging, tagging_settings, tags as tags_service
+from app.external_batches import create_run
 from app.jobs import service
 from app.media import is_test_artifact
 from app.providers import registry
@@ -32,7 +34,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_type: str, model_name: str | None) -> None:
+def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_type: str, model_name: str | None, *, execution_mode: str = "direct", response_payload: str | None = None, record_request: bool = True) -> None:
+    scored_tags = [entry for entry in scored_tags if float(entry.get("score", 0)) > 0]
     now = _now()
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM file_tags WHERE file_id = :file_id"), {"file_id": file_id})
@@ -58,6 +61,12 @@ def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_type: s
             text("UPDATE files SET tagged_at = :now, updated_at = :now WHERE id = :id"),
             {"now": now, "id": file_id},
         )
+        conn.execute(
+            text("INSERT INTO tag_runs (id, file_id, provider_name, model_name, execution_mode, response_payload, created_at) VALUES (:id, :file_id, :provider, :model, :mode, :payload, :now)"),
+            {"id": str(uuid.uuid4()), "file_id": file_id, "provider": provider_type, "model": model_name, "mode": execution_mode, "payload": response_payload or json.dumps([entry["score"] for entry in scored_tags]), "now": now},
+        )
+    if record_request:
+        model_usage.record(engine, provider_type, model_name, requests=1, files=1)
 
 
 def _tag_one_file(
@@ -78,7 +87,7 @@ def _tag_one_file(
     top = ranked[: settings["top_tag_count"]]
     scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
 
-    _assign_tags(engine, file_row.id, scored_tags, used_entry["provider_type"], used_entry["vision_model"])
+    _assign_tags(engine, file_row.id, scored_tags, used_entry["provider_type"], used_entry["vision_model"], response_payload=json.dumps(scores))
     return f"{len(scored_tags)} tag(s) assigned"
 
 
@@ -222,9 +231,12 @@ def _run_directory_scope(
             pending.append((row, item_id))
 
         if stop_status is None and pending:
-            batch_processed, pending = _run_batch(
+            batch_outcome = _run_batch(
                 engine, job, access, pending, vocabulary, settings, batch_entry, dead_entries
             )
+            if batch_outcome is None:
+                return "waiting_external", f"Submitted {len(pending)} file(s) to {batch_entry['display_name']}; polling every 30 seconds."
+            batch_processed, pending = batch_outcome
             processed += batch_processed
 
         remaining = pending
@@ -282,7 +294,7 @@ def _run_directory_scope(
 def _run_batch(
     engine, job: dict, access: SourceAccess, pending: list[tuple], vocabulary: list[dict], settings: dict,
     batch_entry: dict, dead_entries: set[str],
-) -> tuple[int, list[tuple]]:
+) -> tuple[int, list[tuple]] | None:
     """Attempts to score every `(row, item_id)` in `pending` via one
     `batch_entry` batch request. Returns `(processed_count,
     fallback_pending)`: files the batch pass didn't resolve are returned
@@ -327,7 +339,7 @@ def _run_batch(
             engine, job["id"], None, "info", "batch_submitted",
             f"Submitting {len(items)} file(s) to {batch_entry['display_name']} for batch tagging.",
         )
-        results = registry.score_tags_batch_with_entry(engine, batch_entry, items, display_names)
+        external_id = registry.score_tags_batch_with_entry(engine, batch_entry, items, display_names)
     except Exception as exc:  # noqa: BLE001 - batch failure falls back to the per-file loop for every file
         dead_entries.add(batch_entry["id"])
         service.log_event(
@@ -336,26 +348,12 @@ def _run_batch(
         )
         return 0, unresolved + [keyed_rows[key] for key, _images in items]
 
-    processed = 0
-    fallback_pending: list[tuple] = list(unresolved)
-    for key, _images in items:
-        row, item_id = keyed_rows[key]
-        scores = results.get(key)
-        if scores is None:
-            fallback_pending.append((row, item_id))
-            continue
-        try:
-            ranked = sorted(zip(vocabulary, scores), key=lambda pair: pair[1], reverse=True)
-            top = ranked[: settings["top_tag_count"]]
-            scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
-            _assign_tags(engine, row.id, scored_tags, batch_entry["provider_type"], batch_entry["vision_model"])
-            message = f"{len(scored_tags)} tag(s) assigned (batch)"
-            service.complete_job_item(engine, item_id, output_ref=None, message=message)
-            service.log_event(
-                engine, job["id"], row.id, "info", "job_item_completed", f"Tagged {row.relative_path}: {message}"
-            )
-            processed += 1
-        except Exception:  # noqa: BLE001 - fall back to a per-file attempt for this one file
-            fallback_pending.append((row, item_id))
-
-    return processed, fallback_pending
+    # A provider batch is now external, asynchronous work.  Its id and every
+    # file/job-item mapping are committed before this worker releases its
+    # network lane; the poller can safely continue after a service restart.
+    if unresolved:
+        # Keep correctness over partial split execution: all files fall back
+        # together if we could not prepare the complete provider request.
+        return 0, unresolved + [keyed_rows[key] for key, _images in items]
+    create_run(engine, job["id"], batch_entry, external_id, vocabulary, [keyed_rows[key] for key, _images in items])
+    return None

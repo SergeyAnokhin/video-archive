@@ -248,6 +248,11 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
             ))}
           </div>
         )}
+        {file.tag_labels && file.tag_labels.length > 0 && (
+          <div className="library-card__tag-row" title={file.tag_labels.join(', ')}>
+            {file.tag_labels.slice(0, 4).map((label) => <span key={label} className="library-card__tag">{label}</span>)}
+          </div>
+        )}
       </div>
     </div>
   )

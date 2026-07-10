@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
-import type { FileEntry, FileMediaInfo } from '../types/api'
+import type { FileEntry, FileMediaInfo, FileTagAssignment, TagRun } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
 import './ConvertDialog.css'
@@ -61,6 +61,8 @@ export function FileInfoPanel({
   const showThumbnail = file.is_video_supported && file.has_preview_asset
   const [mediaInfo, setMediaInfo] = useState<FileMediaInfo | null>(null)
   const [mediaInfoLoading, setMediaInfoLoading] = useState(true)
+  const [tags, setTags] = useState<FileTagAssignment[]>([])
+  const [tagRun, setTagRun] = useState<TagRun | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -81,6 +83,13 @@ export function FileInfoPanel({
     return () => {
       cancelled = true
     }
+  }, [file.id])
+
+  useEffect(() => {
+    fetch(`/api/files/${file.id}/tags`).then((res) => (res.ok ? res.json() : null)).then((data) => {
+      setTags(data?.tags ?? [])
+      setTagRun(data?.run ?? null)
+    })
   }, [file.id])
 
   function handleDelete() {
@@ -225,6 +234,16 @@ export function FileInfoPanel({
                 </div>
               ))}
             </dl>
+            {tags.length > 0 && (
+              <section className="file-info-panel__tags">
+                <strong>{t('library.detectedTags')}</strong>
+                <div className="file-info-panel__tag-list">
+                  {tags.map((tag) => <span key={tag.tag_id} className="library-card__tag">{tag.display_name}</span>)}
+                </div>
+                {tagRun && <p className="file-info-panel__tag-source">{t('library.taggedBy', { provider: tagRun.provider_name, model: tagRun.model_name || t('library.providerDefault'), mode: tagRun.execution_mode })}</p>}
+                {tagRun && <details><summary>{t('library.modelResponse')}</summary><pre>{tagRun.response_payload}</pre></details>}
+              </section>
+            )}
           </div>
         </div>
 

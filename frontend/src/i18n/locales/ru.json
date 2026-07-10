@@ -184,6 +184,10 @@
     "folderHistory": "Недавно просмотренные папки",
     "moveMenuHere": "Переместить сюда",
     "moveMenuBack": "Назад"
+    ,"detectedTags": "Определённые теги"
+    ,"taggedBy": "Теги: {{provider}} / {{model}} ({{mode}})"
+    ,"providerDefault": "модель по умолчанию"
+    ,"modelResponse": "Ответ модели"
   },
   "playbackModal": {
     "title": "Воспроизведение",
@@ -309,6 +313,7 @@
     "combineIntoCollage": "Объединять кадры в один коллаж",
     "topTagCount": "Сколько лучших тегов сохранять"
   },
+  "modelUsage": { "title": "Использование моделей", "empty": "Вызовы моделей пока не записаны.", "model": "Провайдер / модель", "requests": "Запросы", "files": "Файлы", "batches": "Пакеты" },
   "backupMaintenance": {
     "title": "Резервные копии и обслуживание",
     "empty": "Резервных копий пока нет.",
@@ -384,6 +389,9 @@
     "title": "Задания",
     "close": "Закрыть",
     "empty": "Заданий пока нет.",
+    "externalBatches": "Внешние AI-пакеты",
+    "externalBatchesEmpty": "Сейчас нет выполняющихся пакетов Gemini или Mistral.",
+    "externalBatchFiles": "{{count}} файлов",
     "clearFinished": "Очистить завершённые",
     "cancel": "Отменить",
     "pause": "Пауза",
