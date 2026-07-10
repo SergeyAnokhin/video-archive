@@ -58,5 +58,5 @@ Verifying a `navigator.clipboard.writeText()` button (see `code-map-frontend.md`
 ## Housekeeping
 
 - Update the matching part of the [code map](code-map.md) whenever files are added, moved, or removed.
-- Keep `frontend/src/i18n/locales/en.json` and `ru.json` in parity when touching UI copy.
+- Keep `frontend/src/i18n/locales/en.json` and `ru.json` in parity when touching UI copy — key-set parity is enforced by [`frontend/src/i18n/localeParity.test.ts`](../frontend/src/i18n/localeParity.test.ts) (vitest), so `npm test` fails if a key is added to one file only.
 - Do not read [`spec/`](spec/README.md) (frozen V1 specification) unless explicitly asked.
