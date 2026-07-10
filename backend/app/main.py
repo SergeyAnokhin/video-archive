@@ -3,8 +3,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app import batch_submissions
 from app.config import APP_VERSION
-from app.db import init_db
+from app.db import get_engine, init_db
 from app.ffmpeg import check_ffmpeg
 from app.jobs.worker import JobWorker
 from app.routers import (
@@ -45,6 +46,13 @@ async def lifespan(app: FastAPI):
     init_db()
     app.state.app_version = APP_VERSION
     app.state.ffmpeg_status = check_ffmpeg()
+    # A `tag` job stuck `running` with an unresolved batch submission was
+    # mid-poll when this process last stopped -- nothing else will ever pick
+    # it back up (post-V1, user request "the batch task should survive a
+    # service restart"), so put it back on the queue before the worker
+    # starts; `app/jobs/tag.py::run_tag_job()` detects the pending
+    # submission and resumes polling it instead of re-scanning the directory.
+    batch_submissions.requeue_stalled_jobs(get_engine())
     _worker.start()
     yield
     _worker.stop()

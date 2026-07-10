@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
-import type { FileEntry, FileMediaInfo } from '../types/api'
+import type { FileEntry, FileMediaInfo, FileTagAssignment } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
 import './ConvertDialog.css'
@@ -61,6 +61,8 @@ export function FileInfoPanel({
   const showThumbnail = file.is_video_supported && file.has_preview_asset
   const [mediaInfo, setMediaInfo] = useState<FileMediaInfo | null>(null)
   const [mediaInfoLoading, setMediaInfoLoading] = useState(true)
+  const [tags, setTags] = useState<FileTagAssignment[]>([])
+  const [tagsLoading, setTagsLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -82,6 +84,31 @@ export function FileInfoPanel({
       cancelled = true
     }
   }, [file.id])
+
+  useEffect(() => {
+    let cancelled = false
+    setTags([])
+    setTagsLoading(true)
+    fetch(`/api/files/${file.id}/tags`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { tags: FileTagAssignment[] } | null) => {
+        if (!cancelled) {
+          setTags(data?.tags ?? [])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTagsLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [file.id])
+
+  const tagModels = Array.from(
+    new Set(tags.map((tag) => tag.model_name ?? tag.provider_name).filter((value): value is string => Boolean(value))),
+  )
 
   function handleDelete() {
     if (window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
@@ -216,6 +243,30 @@ export function FileInfoPanel({
                 </li>
               )}
             </ul>
+
+            <div className="file-info-panel__tags-section">
+              <h3 className="file-info-panel__tags-title">{t('library.tagsSectionTitle')}</h3>
+              {!tagsLoading && tags.length === 0 && (
+                <p className="file-info-panel__tags-empty">{t('library.tagsEmpty')}</p>
+              )}
+              {tags.length > 0 && (
+                <>
+                  <ul className="file-info-panel__tags-list">
+                    {tags.map((tag) => (
+                      <li key={tag.tag_id} className="file-info-panel__tags-row">
+                        <span className="file-info-panel__tags-name">{tag.display_name}</span>
+                        <span className="file-info-panel__tags-score">{tag.score}%</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {tagModels.length > 0 && (
+                    <p className="file-info-panel__tags-model">
+                      {t('library.tagsModelLabel', { model: tagModels.join(', ') })}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
 
             <dl className={`file-info-panel__media-grid ${mediaInfoLoading ? 'file-info-panel__media-grid--loading' : ''}`}>
               {mediaFields.map((field) => (

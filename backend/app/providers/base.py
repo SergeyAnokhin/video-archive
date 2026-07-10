@@ -13,12 +13,41 @@ from __future__ import annotations
 import base64
 import json
 import re
+from dataclasses import dataclass
 
 
 class ProviderError(Exception):
     """Raised when a provider request fails or its response can't be parsed
     into scores. Callers (the tagging job) treat this as a failed job item,
     never as something that should invent placeholder tags."""
+
+
+@dataclass
+class UsageInfo:
+    """Token usage for one provider call, parsed from whatever usage
+    metadata that provider's response exposes (user request -- usage
+    statistics with tokens/cost per model). `None` fields mean the provider
+    didn't report that count (e.g. FAL, which has no fixed response schema
+    to parse one from) rather than a real zero."""
+
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+
+
+@dataclass
+class BatchPollResult:
+    """One poll of a persisted batch submission (user request -- batch
+    tagging must survive a service restart). `done=False` means keep
+    waiting; a caller polls again later rather than treating this as an
+    error. `done=True` with `error` set means the provider-side job itself
+    failed (as opposed to individual files not being resolved, which is
+    represented in `results` the same way `submit_batch()` always has: a
+    `None` value for that key)."""
+
+    done: bool
+    results: dict[str, list[int] | None] | None = None
+    usage: UsageInfo | None = None
+    error: str | None = None
 
 
 def encode_image_base64(image_bytes: bytes) -> str:

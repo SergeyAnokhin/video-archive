@@ -45,6 +45,7 @@ backend (FastAPI :8000)
 | UI strings exist in both `en.json` and `ru.json`, always in parity | `frontend/src/i18n/locales/` |
 | Incomplete-state "lamp" dots share one visual convention: 8px circle, colored per category when incomplete (`--color-warning` conversion, `--color-accent` preview, `--color-danger` tags), `--color-success` once done | `directory-tree__dot`/`library-card__dot`/`file-info-panel__dot` in `frontend/src/components/*.css` |
 | Settings are grouped into singletons (preview, tagging, playback, backup, interface) with `GET`/`PUT` endpoints applied immediately | `backend/app/*_settings.py` |
+| A literal-path route (e.g. `GET /jobs/batch-submissions`) must be declared *before* a same-method `/{id}`-style route in the same router, or FastAPI/Starlette matches the `{id}` route first and swallows the literal path as an id value | `backend/app/routers/jobs.py` (`batch-submissions` routes sit above `GET /jobs/{job_id}`) |
 
 ## Key flows
 

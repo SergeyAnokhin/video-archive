@@ -72,6 +72,24 @@ def get_tag(engine, tag_id: str) -> dict | None:
     return _row_to_dict(row) if row else None
 
 
+def list_tags_by_ids(engine, tag_ids: list[str]) -> list[dict | None]:
+    """Fetches tags by id, preserving `tag_ids`' given order and length
+    (a `None` entry for an id that no longer exists) -- used to reconstruct
+    a batch tagging submission's exact vocabulary snapshot so its scores
+    (positionally correlated with the tag order sent to the provider) still
+    line up correctly even if the live vocabulary changed while the batch
+    was in flight (post-V1, user request -- batch tagging survives a
+    service restart, see `app/batch_submissions.py`/`app/jobs/tag.py`)."""
+    if not tag_ids:
+        return []
+    placeholders = ", ".join(f":id_{i}" for i in range(len(tag_ids)))
+    params = {f"id_{i}": tag_id for i, tag_id in enumerate(tag_ids)}
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"SELECT * FROM tag_catalog WHERE id IN ({placeholders})"), params).all()
+    by_id = {row.id: _row_to_dict(row) for row in rows}
+    return [by_id.get(tag_id) for tag_id in tag_ids]
+
+
 def _get_by_key(conn, tag_key: str):
     return conn.execute(text("SELECT * FROM tag_catalog WHERE tag_key = :key"), {"key": tag_key}).fetchone()
 
@@ -142,3 +160,43 @@ def delete_tag(engine, tag_id: str) -> bool:
         conn.execute(text("DELETE FROM file_tags WHERE tag_id = :id"), {"id": tag_id})
         result = conn.execute(text("DELETE FROM tag_catalog WHERE id = :id"), {"id": tag_id})
     return result.rowcount > 0
+
+
+def list_top_tags_for_files(engine, file_ids: list[str], limit_per_file: int = 4) -> dict[str, list[dict]]:
+    """Batch-fetch each file's top-scored assigned tags (Data Model §8), for
+    card badges in the library grid — mirrors `compute_variant_tags()`'s
+    `{file_id: [...]}` shape so the router can attach it the same way."""
+    if not file_ids:
+        return {}
+    placeholders = ", ".join(f":id_{i}" for i in range(len(file_ids)))
+    params = {f"id_{i}": file_id for i, file_id in enumerate(file_ids)}
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT ft.file_id, tc.id AS tag_id, tc.display_name, ft.score,
+                       ft.provider_name, ft.model_name
+                FROM file_tags ft
+                JOIN tag_catalog tc ON tc.id = ft.tag_id
+                WHERE ft.file_id IN ({placeholders})
+                ORDER BY ft.file_id, ft.score DESC
+                """
+            ),
+            params,
+        ).all()
+
+    result: dict[str, list[dict]] = {}
+    for row in rows:
+        bucket = result.setdefault(row.file_id, [])
+        if len(bucket) < limit_per_file:
+            bucket.append(
+                {
+                    "tag_id": row.tag_id,
+                    "display_name": row.display_name,
+                    "score": row.score,
+                    "provider_name": row.provider_name,
+                    "model_name": row.model_name,
+                }
+            )
+    return result

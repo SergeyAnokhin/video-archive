@@ -42,6 +42,31 @@ def preview_gif_relative_path(rel_path: str) -> str:
     return f"{PREVIEW_GIF_DIR}/{encoded}"
 
 
+def file_row_to_dict(row, **extra) -> dict:
+    """Common file summary fields shared by the `files` and `directories`
+    listing endpoints (`app/routers/files.py`, `app/routers/directories.py`),
+    which otherwise each hand-rolled this dict and had to be patched
+    separately for the same field. `extra` covers the few fields that
+    genuinely differ between the two endpoints (e.g. `relative_path` vs.
+    `duration_seconds`)."""
+    return {
+        "id": row.id,
+        "file_name": row.file_name,
+        "extension": row.extension,
+        "size_bytes": row.size_bytes,
+        "modified_at": row.modified_at,
+        "is_video_supported": bool(row.is_video_supported),
+        "has_preview_asset": bool(row.has_preview_asset),
+        "converted_at": row.converted_at,
+        "tagged_at": row.tagged_at,
+        "is_variant": VARIANT_MARKER in row.file_name,
+        "is_original": ORIGINAL_MARKER in row.file_name,
+        "variant_tags": [],
+        "ai_tags": [],
+        **extra,
+    }
+
+
 def is_test_artifact(file_name: str) -> bool:
     """True for preserved originals and variant outputs, excluded from bulk
     conversion/preview/tag runs (Job Model "Skip-Processed Rule")."""

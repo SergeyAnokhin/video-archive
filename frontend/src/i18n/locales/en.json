@@ -169,6 +169,9 @@
     "mediaInfoProfile": "Conversion profile",
     "mediaInfoLoading": "Loading technical info…",
     "mediaInfoUnavailable": "—",
+    "tagsSectionTitle": "Tags",
+    "tagsEmpty": "No tags assigned yet.",
+    "tagsModelLabel": "Detected by: {{model}}",
     "createFolder": "Create folder",
     "createFolderTitle": "Create folder",
     "createFolderNameLabel": "Folder name",
@@ -379,6 +382,27 @@
     "gemini": "Google Gemini",
     "fal": "FAL",
     "mistral": "Mistral"
+  },
+  "batchSubmissions": {
+    "title": "Batch jobs",
+    "hint": "Requests submitted in batch to Gemini/Mistral and still awaiting a result. These keep being polled even after the service restarts.",
+    "empty": "No batch jobs are currently in progress.",
+    "itemCount": "{{count}} file(s)",
+    "forget": "Forget locally",
+    "confirmForget": "Forget this batch job locally? The request at the provider is not cancelled -- the app just stops tracking it, and its files are tagged one by one instead."
+  },
+  "providerUsage": {
+    "title": "Usage statistics",
+    "hint": "Which models were used for tagging across the whole app, with an estimated token count and cost where the provider reports it.",
+    "empty": "No model requests yet.",
+    "colModel": "Model",
+    "colCalls": "Calls",
+    "colTokensIn": "Tokens (in)",
+    "colTokensOut": "Tokens (out)",
+    "colCost": "Estimated cost",
+    "colLastUsed": "Last used",
+    "callsValue": "{{success}} of {{total}}",
+    "notAvailable": "—"
   },
   "jobs": {
     "title": "Jobs",

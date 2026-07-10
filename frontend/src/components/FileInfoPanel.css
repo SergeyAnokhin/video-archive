@@ -177,6 +177,65 @@
   gap: var(--space-1);
 }
 
+.file-info-panel__tags-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.file-info-panel__tags-title {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.file-info-panel__tags-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.file-info-panel__tags-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file-info-panel__tags-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  font-size: 13px;
+}
+
+.file-info-panel__tags-name {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-info-panel__tags-score {
+  flex-shrink: 0;
+  color: var(--color-success);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-info-panel__tags-model {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
 .file-info-panel__media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));

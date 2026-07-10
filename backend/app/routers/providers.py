@@ -18,7 +18,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app import provider_entries as service
-from app import secrets_store
+from app import provider_usage, secrets_store
 from app.config import APP_VERSION
 from app.db import get_engine
 from app.providers import registry
@@ -68,6 +68,14 @@ def _list_models_error(exc: Exception) -> HTTPException:
 @router.get("/settings/provider-entries")
 def list_provider_entries():
     return {"entries": service.list_entries(get_engine())}
+
+
+@router.get("/settings/provider-usage")
+def get_provider_usage():
+    """Aggregated AI-provider call stats (user request -- which models were
+    used across the app, with token counts and an estimated cost where the
+    provider exposes usage metadata), for the Settings usage panel."""
+    return {"usage": provider_usage.get_usage_summary(get_engine())}
 
 
 @router.post("/settings/provider-entries")

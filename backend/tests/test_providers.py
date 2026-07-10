@@ -50,15 +50,29 @@ def test_openrouter_builds_expected_request_and_parses_scores(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", fake_post)
 
-    scores = openrouter.score_tags([FAKE_IMAGE], TAGS, "openai/gpt-4o-mini", "sk-test")
+    scores, usage = openrouter.score_tags([FAKE_IMAGE], TAGS, "openai/gpt-4o-mini", "sk-test")
 
     assert scores == [80, 20]
+    assert usage.tokens_in is None
+    assert usage.tokens_out is None
     assert captured["url"] == openrouter.API_URL
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     assert captured["json"]["model"] == "openai/gpt-4o-mini"
     content = captured["json"]["messages"][0]["content"]
     assert content[0]["type"] == "text"
     assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
+def test_openrouter_parses_usage_when_present(monkeypatch):
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: FakeResponse(
+            {"choices": [{"message": {"content": "[80, 20]"}}], "usage": {"prompt_tokens": 150, "completion_tokens": 6}}
+        ),
+    )
+    _scores, usage = openrouter.score_tags([FAKE_IMAGE], TAGS, None, "sk-test")
+    assert usage.tokens_in == 150
+    assert usage.tokens_out == 6
 
 
 def test_openrouter_uses_default_model_when_none_given(monkeypatch):
@@ -130,14 +144,31 @@ def test_gemini_builds_expected_request_and_parses_scores(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", fake_post)
 
-    scores = gemini.score_tags([FAKE_IMAGE], TAGS, "gemini-2.5-flash", "gm-test")
+    scores, usage = gemini.score_tags([FAKE_IMAGE], TAGS, "gemini-2.5-flash", "gm-test")
 
     assert scores == [55, 5]
+    assert usage.tokens_in is None
+    assert usage.tokens_out is None
     assert captured["url"] == gemini.API_URL_TEMPLATE.format(model="gemini-2.5-flash")
     assert captured["params"] == {"key": "gm-test"}
     parts = captured["json"]["contents"][0]["parts"]
     assert parts[0]["text"]  # prompt text first
     assert parts[1]["inline_data"]["mime_type"] == "image/jpeg"
+
+
+def test_gemini_parses_usage_metadata_when_present(monkeypatch):
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: FakeResponse(
+            {
+                "candidates": [{"content": {"parts": [{"text": "[55, 5]"}]}}],
+                "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 8},
+            }
+        ),
+    )
+    _scores, usage = gemini.score_tags([FAKE_IMAGE], TAGS, None, "gm-test")
+    assert usage.tokens_in == 120
+    assert usage.tokens_out == 8
 
 
 def test_gemini_raises_provider_error_on_malformed_response(monkeypatch):
@@ -182,9 +213,11 @@ def test_mistral_builds_expected_request_and_parses_scores(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", fake_post)
 
-    scores = mistral.score_tags([FAKE_IMAGE], TAGS, None, "ms-test")
+    scores, usage = mistral.score_tags([FAKE_IMAGE], TAGS, None, "ms-test")
 
     assert scores == [10, 90]
+    assert usage.tokens_in is None
+    assert usage.tokens_out is None
     assert captured["url"] == mistral.API_URL
     assert captured["headers"]["Authorization"] == "Bearer ms-test"
     assert captured["json"]["model"] == mistral.DEFAULT_MODEL
@@ -192,6 +225,18 @@ def test_mistral_builds_expected_request_and_parses_scores(monkeypatch):
     # Mistral's image_url is a bare data-URI string, unlike OpenRouter's {"url": ...}
     assert isinstance(content[1]["image_url"], str)
     assert content[1]["image_url"].startswith("data:image/jpeg;base64,")
+
+
+def test_mistral_parses_usage_when_present(monkeypatch):
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: FakeResponse(
+            {"choices": [{"message": {"content": "[10, 90]"}}], "usage": {"prompt_tokens": 200, "completion_tokens": 4}}
+        ),
+    )
+    _scores, usage = mistral.score_tags([FAKE_IMAGE], TAGS, None, "ms-test")
+    assert usage.tokens_in == 200
+    assert usage.tokens_out == 4
 
 
 def test_mistral_raises_provider_error_on_http_error(monkeypatch):
@@ -231,9 +276,11 @@ def test_fal_builds_expected_request_and_parses_scores(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", fake_post)
 
-    scores = fal.score_tags([FAKE_IMAGE], TAGS, "fal-ai/moondream2/visual-query", "fal-test")
+    scores, usage = fal.score_tags([FAKE_IMAGE], TAGS, "fal-ai/moondream2/visual-query", "fal-test")
 
     assert scores == [33, 67]
+    assert usage.tokens_in is None
+    assert usage.tokens_out is None
     assert captured["url"] == fal.API_URL_TEMPLATE.format(model="fal-ai/moondream2/visual-query")
     assert captured["headers"]["Authorization"] == "Key fal-test"
     assert captured["json"]["image_url"].startswith("data:image/jpeg;base64,")
@@ -246,7 +293,7 @@ def test_fal_searches_whole_response_body_for_score_array(monkeypatch):
     monkeypatch.setattr(
         httpx, "post", lambda *a, **k: FakeResponse({"result": {"nested": {"scores": [12, 34]}}})
     )
-    scores = fal.score_tags([FAKE_IMAGE], TAGS, None, "fal-test")
+    scores, _usage = fal.score_tags([FAKE_IMAGE], TAGS, None, "fal-test")
     assert scores == [12, 34]
 
 

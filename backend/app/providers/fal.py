@@ -17,14 +17,14 @@ import json
 
 import httpx
 
-from app.providers.base import ProviderError, build_prompt, encode_image_base64, parse_scores
+from app.providers.base import ProviderError, UsageInfo, build_prompt, encode_image_base64, parse_scores
 
 API_URL_TEMPLATE = "https://fal.run/{model}"
 DEFAULT_MODEL = "fal-ai/moondream2/visual-query"
 TIMEOUT_SECONDS = 60
 
 
-def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> list[int]:
+def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> tuple[list[int], UsageInfo]:
     if not images:
         raise ProviderError("No images to send.")
     prompt = build_prompt(tags)
@@ -43,4 +43,7 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
     except httpx.HTTPError as exc:
         raise ProviderError(f"FAL request failed: {exc}") from exc
 
-    return parse_scores(json.dumps(data), len(tags))
+    # FAL has no fixed response schema (see module docstring), so there's no
+    # reliable field to pull token usage from -- usage stats log the call
+    # itself but never tokens/cost for this provider.
+    return parse_scores(json.dumps(data), len(tags)), UsageInfo()

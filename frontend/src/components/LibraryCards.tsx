@@ -248,6 +248,19 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
             ))}
           </div>
         )}
+        {file.ai_tags && file.ai_tags.length > 0 && (
+          <div className="library-card__tag-row">
+            {file.ai_tags.map((tag) => (
+              <span
+                key={tag.tag_id}
+                className="library-card__tag library-card__tag--ai"
+                title={tag.model_name ?? tag.provider_name ?? undefined}
+              >
+                {tag.display_name} · {tag.score}%
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -1,10 +1,11 @@
-import { Eraser, Pause, Play, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
+import { Eraser, Layers, Pause, Play, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
 import type { JobItem, JobStatus, JobSummary } from '../types/api'
 import { estimateEtaSeconds, type ProgressSample } from '../utils/eta'
 import { formatElapsed, type DurationUnitLabels } from '../utils/format'
+import { BatchSubmissionsModal } from './BatchSubmissionsModal'
 import { LogViewerModal } from './LogViewerModal'
 import './JobsModal.css'
 
@@ -27,6 +28,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
   const { jobs, jobItemsById, refresh } = useJobs()
   const [logJobId, setLogJobId] = useState<string | null>(null)
   const [busyJobId, setBusyJobId] = useState<string | null>(null)
+  const [showBatchSubmissions, setShowBatchSubmissions] = useState(false)
 
   async function handleCancel(jobId: string) {
     setBusyJobId(jobId)
@@ -102,6 +104,15 @@ export function JobsModal({ onClose }: JobsModalProps) {
             <button
               type="button"
               className="jobs-modal__icon-btn"
+              aria-label={t('batchSubmissions.title')}
+              title={t('batchSubmissions.title')}
+              onClick={() => setShowBatchSubmissions(true)}
+            >
+              <Layers size={18} />
+            </button>
+            <button
+              type="button"
+              className="jobs-modal__icon-btn"
               aria-label={t('logs.title')}
               title={t('logs.title')}
               onClick={() => setLogJobId('')}
@@ -166,6 +177,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
       {logJobId !== null && (
         <LogViewerModal onClose={() => setLogJobId(null)} initialJobId={logJobId || null} />
       )}
+      {showBatchSubmissions && <BatchSubmissionsModal onClose={() => setShowBatchSubmissions(false)} />}
     </div>
   )
 }

@@ -463,6 +463,73 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE directories ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE directories ADD COLUMN favorited_at TEXT",
     ],
+    # Post-V1: AI provider usage log (user request -- "want to see usage
+    # statistics for model requests, which models were used across the whole
+    # app"). One row per tagging request (sync or batch) to a provider,
+    # written by `app/providers/registry.py` right after the call returns or
+    # raises, so a failed call is logged too. `tokens_in`/`tokens_out` are
+    # `NULL` when the provider's response doesn't expose usage metadata (FAL
+    # has no fixed response schema -- see `app/providers/fal.py` -- so its
+    # rows are always call-only); `estimated_cost_usd` is then derived from a
+    # hand-maintained per-model rate table (`app/provider_usage.py`) and is
+    # `NULL` for an unrecognized model string. `item_count` is 1 for a
+    # per-file request, or the number of files bundled into a batch request.
+    21: [
+        """
+        CREATE TABLE IF NOT EXISTS provider_usage_log (
+            id TEXT PRIMARY KEY,
+            provider_type TEXT NOT NULL,
+            model_name TEXT,
+            request_kind TEXT NOT NULL,
+            success INTEGER NOT NULL,
+            item_count INTEGER NOT NULL DEFAULT 1,
+            tokens_in INTEGER,
+            tokens_out INTEGER,
+            estimated_cost_usd REAL,
+            error_message TEXT,
+            job_id TEXT REFERENCES jobs(id),
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_provider_usage_log_created_at ON provider_usage_log (created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_provider_usage_log_provider_model ON provider_usage_log (provider_type, model_name)",
+    ],
+    # Post-V1: persisted batch-tagging submissions (user request -- "the
+    # batch task should survive a service restart, polling every 30s until
+    # done"). Before this, `submit_batch()` submitted to the provider and
+    # then blocked polling in-process for up to 30 minutes with nothing
+    # written to the database until it finished -- a restart mid-poll lost
+    # all track of the provider-side job. Now the external id and everything
+    # needed to resolve it later are persisted the moment the batch is
+    # created, so `app/batch_submissions.py`'s startup requeue can pick a
+    # stalled one back up. `tag_ids_json`/`items_json` snapshot exactly what
+    # was sent (tag id order, file/job-item ids) rather than re-reading the
+    # live vocabulary/candidate list, so a resume after the vocabulary or
+    # skip-processed set changed still resolves the original request
+    # correctly. `top_tag_count` is snapshotted the same way for the same
+    # reason `tagging_settings` is a per-job-launch snapshot everywhere else.
+    22: [
+        """
+        CREATE TABLE IF NOT EXISTS batch_submissions (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES jobs(id),
+            provider_entry_id TEXT NOT NULL REFERENCES provider_entries(id),
+            provider_type TEXT NOT NULL,
+            model_name TEXT,
+            external_batch_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'polling',
+            tag_ids_json TEXT NOT NULL,
+            top_tag_count INTEGER NOT NULL,
+            items_json TEXT NOT NULL,
+            error_message TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            resolved_at TEXT
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_batch_submissions_status ON batch_submissions (status)",
+        "CREATE INDEX IF NOT EXISTS idx_batch_submissions_job ON batch_submissions (job_id)",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

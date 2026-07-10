@@ -9,9 +9,10 @@ from sqlalchemy import text
 
 from app import directory_ops, preview_cache
 from app.db import get_engine
-from app.media import ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags
+from app.media import compute_variant_tags, file_row_to_dict
 from app.source_access import get_active_source_or_404
 from app.status import compute_directory_status
+from app.tags import list_top_tags_for_files
 
 router = APIRouter()
 
@@ -29,24 +30,6 @@ def _dir_op_http_error(err: directory_ops.DirectoryOperationError) -> HTTPExcept
         status_code=_DIR_OP_STATUS[err.code],
         detail={"error": {"code": err.code, "message": err.message}},
     )
-
-
-def _file_row_to_dict(row) -> dict:
-    return {
-        "id": row.id,
-        "file_name": row.file_name,
-        "extension": row.extension,
-        "size_bytes": row.size_bytes,
-        "modified_at": row.modified_at,
-        "is_video_supported": bool(row.is_video_supported),
-        "has_preview_asset": bool(row.has_preview_asset),
-        "converted_at": row.converted_at,
-        "tagged_at": row.tagged_at,
-        "duration_seconds": row.duration_seconds,
-        "is_variant": VARIANT_MARKER in row.file_name,
-        "is_original": ORIGINAL_MARKER in row.file_name,
-        "variant_tags": [],
-    }
 
 
 @router.get("/directories/children")
@@ -101,10 +84,12 @@ def get_directory_children(
             ),
             {"dir_id": directory_row.id},
         ).all()
-        files = [_file_row_to_dict(row) for row in file_rows]
+        files = [file_row_to_dict(row, duration_seconds=row.duration_seconds) for row in file_rows]
         variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in file_rows])
+        ai_tags = list_top_tags_for_files(engine, [row.id for row in file_rows])
         for entry in files:
             entry["variant_tags"] = variant_tags.get(entry["id"], [])
+            entry["ai_tags"] = ai_tags.get(entry["id"], [])
 
     return {"path": path, "directories": directories, "files": files}
 

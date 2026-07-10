@@ -262,6 +262,30 @@
   border-top: 1px solid var(--color-border);
 }
 
+.provider-usage-table__wrap {
+  overflow-x: auto;
+  margin-top: var(--space-2);
+}
+
+.provider-usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.provider-usage-table th,
+.provider-usage-table td {
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.provider-usage-table th {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
 .settings-modal__label {
   display: flex;
   flex-direction: column;

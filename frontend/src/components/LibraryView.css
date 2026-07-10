@@ -426,6 +426,10 @@
   border-radius: 999px;
 }
 
+.library-card__tag--ai {
+  color: var(--color-success);
+}
+
 .library-card__meta-size {
   display: inline-flex;
   align-items: center;

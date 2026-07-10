@@ -142,6 +142,14 @@ export interface VariantTag {
   value: number | string
 }
 
+export interface FileTagSummary {
+  tag_id: string
+  display_name: string
+  score: number
+  provider_name: string | null
+  model_name: string | null
+}
+
 export interface FileEntry {
   id: string
   file_name: string
@@ -156,6 +164,7 @@ export interface FileEntry {
   is_original: boolean
   duration_seconds: number | null
   variant_tags?: VariantTag[]
+  ai_tags?: FileTagSummary[]
 }
 
 export interface DirectoryChildrenResponse {
@@ -291,6 +300,28 @@ export interface ProviderEntry {
   key_suffix: string | null
   created_at: string
   updated_at: string
+}
+
+export interface BatchSubmission {
+  id: string
+  job_id: string
+  provider_type: ProviderType
+  model_name: string | null
+  item_count: number
+  status: string
+  created_at: string
+}
+
+export interface ProviderUsageSummary {
+  provider_type: ProviderType
+  model_name: string | null
+  call_count: number
+  success_count: number
+  total_items: number
+  total_tokens_in: number | null
+  total_tokens_out: number | null
+  total_estimated_cost_usd: number | null
+  last_used_at: string
 }
 
 export type PlaybackMode = 'stream' | 'direct_link'

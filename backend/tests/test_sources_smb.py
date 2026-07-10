@@ -254,7 +254,7 @@ def test_tag_file_over_smb(engine, smb_source, tmp_path, monkeypatch):
 
     provider_entries.create_entry(engine, {"provider_type": "openrouter", "enabled": True, "api_key": "sk-test"})
     monkeypatch.setattr(
-        registry, "score_tags_with_fallback", lambda engine, entries, images, tags, dead: ([77], entries[0])
+        registry, "score_tags_with_fallback", lambda engine, entries, images, tags, dead, **_kwargs: ([77], entries[0])
     )
 
     job = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})

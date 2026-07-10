@@ -13,9 +13,10 @@ from sqlalchemy import text
 from app import conversion, file_ops, preview_cache, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
-from app.media import ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags, variant_base_stem
+from app.media import ORIGINAL_MARKER, VARIANT_MARKER, compute_variant_tags, file_row_to_dict, variant_base_stem
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
+from app.tags import list_top_tags_for_files
 
 router = APIRouter()
 
@@ -40,24 +41,6 @@ def _file_not_found_error(file_id: str) -> HTTPException:
         status_code=404,
         detail={"error": {"code": "file_not_found", "message": f"File not found: {file_id}"}},
     )
-
-
-def _file_row_to_dict(row) -> dict:
-    return {
-        "id": row.id,
-        "relative_path": row.relative_path,
-        "file_name": row.file_name,
-        "extension": row.extension,
-        "size_bytes": row.size_bytes,
-        "modified_at": row.modified_at,
-        "is_video_supported": bool(row.is_video_supported),
-        "has_preview_asset": bool(row.has_preview_asset),
-        "converted_at": row.converted_at,
-        "tagged_at": row.tagged_at,
-        "is_variant": VARIANT_MARKER in row.file_name,
-        "is_original": ORIGINAL_MARKER in row.file_name,
-        "variant_tags": [],
-    }
 
 
 @router.get("/files")
@@ -132,10 +115,12 @@ def list_files(
             params,
         ).all()
 
-    files = [_file_row_to_dict(row) for row in rows]
+    files = [file_row_to_dict(row, relative_path=row.relative_path) for row in rows]
     variant_tags = compute_variant_tags([(row.id, row.relative_path) for row in rows])
+    ai_tags = list_top_tags_for_files(engine, [row.id for row in rows])
     for entry in files:
         entry["variant_tags"] = variant_tags.get(entry["id"], [])
+        entry["ai_tags"] = ai_tags.get(entry["id"], [])
 
     return {"files": files}
 

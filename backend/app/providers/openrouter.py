@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import httpx
 
-from app.providers.base import ProviderError, build_prompt, encode_image_base64, parse_scores
+from app.providers.base import ProviderError, UsageInfo, build_prompt, encode_image_base64, parse_scores
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODELS_URL = "https://openrouter.ai/api/v1/models"
@@ -42,7 +42,7 @@ def list_models(api_key: str) -> list[str]:
     return sorted(names)
 
 
-def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> list[int]:
+def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> tuple[list[int], UsageInfo]:
     prompt = build_prompt(tags)
     content = [{"type": "text", "text": prompt}]
     for image_bytes in images:
@@ -68,4 +68,6 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
     except (KeyError, IndexError, TypeError) as exc:
         raise ProviderError(f"Unexpected OpenRouter response shape: {exc}") from exc
 
-    return parse_scores(text_reply, len(tags))
+    usage = data.get("usage") or {}
+    usage_info = UsageInfo(tokens_in=usage.get("prompt_tokens"), tokens_out=usage.get("completion_tokens"))
+    return parse_scores(text_reply, len(tags)), usage_info

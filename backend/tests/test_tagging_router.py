@@ -232,7 +232,9 @@ def test_tag_job_triggers_require_provider_and_vocabulary(tmp_path, monkeypatch)
     # test finishes; stub the provider call so that never means a real
     # network request with a fake key.
     monkeypatch.setattr(
-        registry, "score_tags_with_fallback", lambda engine, entries, images, tags, dead_entry_ids: ([50], entries[0])
+        registry,
+        "score_tags_with_fallback",
+        lambda engine, entries, images, tags, dead_entry_ids, **_kwargs: ([50], entries[0]),
     )
 
     with _fresh_client(tmp_path, monkeypatch) as client:

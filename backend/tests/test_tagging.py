@@ -94,6 +94,93 @@ def test_delete_tag_cascades_file_tags(engine, source):
     assert remaining == 0
 
 
+def _insert_file_and_tags(engine, source, file_id: str, tag_scores: list[tuple[str, int]]) -> None:
+    """`tag_scores` is `[(tag_id, score), ...]`; creates one `files` row and
+    one `file_tags` row per pair."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, created_at, updated_at) "
+                "VALUES (:id, :sid, 'd1', :id, :id, 'mp4', 1, '2024', '2024', 1, '2024', '2024')"
+            ),
+            {"id": file_id, "sid": source["id"]},
+        )
+        for i, (tag_id, score) in enumerate(tag_scores):
+            conn.execute(
+                text(
+                    "INSERT INTO file_tags (id, file_id, tag_id, score, assigned_at) "
+                    "VALUES (:ft_id, :file_id, :tag_id, :score, '2024')"
+                ),
+                {"ft_id": f"{file_id}-ft-{i}", "file_id": file_id, "tag_id": tag_id, "score": score},
+            )
+
+
+def test_list_top_tags_for_files_orders_by_score_and_caps_per_file(engine, source):
+    """Bug fix (user request) -- the library grid/info panel weren't
+    rendering any AI-assigned tags at all despite them being fully computed
+    and stored; `list_top_tags_for_files()` is what makes them visible."""
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    snow = tags_service.create_tag(engine, {"display_name": "Snow"})
+    dog = tags_service.create_tag(engine, {"display_name": "Dog"})
+    cat = tags_service.create_tag(engine, {"display_name": "Cat"})
+
+    _insert_file_and_tags(
+        engine, source, "f1",
+        [(beach["id"], 40), (snow["id"], 90), (dog["id"], 60), (cat["id"], 10)],
+    )
+
+    result = tags_service.list_top_tags_for_files(engine, ["f1"], limit_per_file=2)
+
+    assert [tag["display_name"] for tag in result["f1"]] == ["Snow", "Dog"]
+    assert result["f1"][0]["score"] == 90
+
+
+def test_list_top_tags_for_files_groups_by_file_and_skips_untagged(engine, source):
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    _insert_file_and_tags(engine, source, "f1", [(beach["id"], 70)])
+    _insert_file_and_tags(engine, source, "f2", [])  # no tags assigned yet
+
+    result = tags_service.list_top_tags_for_files(engine, ["f1", "f2"])
+
+    assert [tag["display_name"] for tag in result["f1"]] == ["Beach"]
+    assert "f2" not in result  # untagged files simply have no entry, not an empty list error
+
+
+def test_list_top_tags_for_files_empty_input_returns_empty_dict(engine):
+    assert tags_service.list_top_tags_for_files(engine, []) == {}
+
+
+def test_list_tags_by_ids_preserves_order_and_length(engine):
+    """Batch-tagging resume (`app/jobs/tag_batch.py::resume_directory_scope`)
+    relies on this to realign a batch's positional scores against the exact
+    tag order the request was built with, even if the live vocabulary
+    changed while the batch was in flight -- order and length must survive
+    a tag having been deleted in the meantime (see the next test)."""
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    snow = tags_service.create_tag(engine, {"display_name": "Snow"})
+
+    result = tags_service.list_tags_by_ids(engine, [snow["id"], beach["id"]])
+
+    assert [tag["display_name"] for tag in result] == ["Snow", "Beach"]
+
+
+def test_list_tags_by_ids_returns_none_for_deleted_tag_without_shifting_positions(engine):
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    snow = tags_service.create_tag(engine, {"display_name": "Snow"})
+    tags_service.delete_tag(engine, snow["id"])
+
+    result = tags_service.list_tags_by_ids(engine, [beach["id"], snow["id"]])
+
+    assert len(result) == 2
+    assert result[0]["display_name"] == "Beach"
+    assert result[1] is None
+
+
+def test_list_tags_by_ids_empty_input_returns_empty_list(engine):
+    assert tags_service.list_tags_by_ids(engine, []) == []
+
+
 # --- tagging settings + secrets ----------------------------------------------
 # Provider entry CRUD lives in `test_provider_entries.py`.
 
@@ -187,7 +274,7 @@ def stub_provider(monkeypatch):
     """Bypasses the real HTTP call: returns a fixed score per tag position so
     top-N ranking is deterministic and no network access happens in tests."""
 
-    def fake_fallback(engine, entries, images, tags, dead_entry_ids):
+    def fake_fallback(engine, entries, images, tags, dead_entry_ids, **_kwargs):
         assert entries and entries[0]["provider_type"] == "openrouter"
         assert images
         scores = [max(0, 90 - 10 * i) for i in range(len(tags))]

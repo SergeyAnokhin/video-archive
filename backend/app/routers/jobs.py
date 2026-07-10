@@ -9,13 +9,14 @@ listing/deletion.
 
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion_profiles, preview_layouts, provider_entries, tags as tags_service
+from app import batch_submissions, conversion_profiles, preview_layouts, provider_entries, tags as tags_service
 from app.db import get_engine
 from app.jobs import service
 from app.source_access import get_active_source_or_404
@@ -44,6 +45,45 @@ def list_jobs(
     engine = get_engine()
     jobs = service.list_jobs(engine, status=status, job_type=job_type, limit=limit, offset=offset)
     return {"jobs": jobs}
+
+
+@router.get("/jobs/batch-submissions")
+def list_active_batch_submissions():
+    """Batch tagging submissions still `polling` (Gemini/Mistral only --
+    user request "a button showing what batch jobs are currently in
+    progress"). Registered ahead of `GET /jobs/{job_id}` below so it isn't
+    shadowed by that path parameter. `items_json`/`tag_ids_json` are
+    internal resume-plumbing, not shaped for a UI -- only `item_count` (a
+    plain length) is surfaced instead."""
+    submissions = batch_submissions.list_active(get_engine())
+    return {
+        "submissions": [
+            {
+                "id": row["id"],
+                "job_id": row["job_id"],
+                "provider_type": row["provider_type"],
+                "model_name": row["model_name"],
+                "item_count": len(json.loads(row["items_json"])),
+                "status": row["status"],
+                "created_at": row["created_at"],
+            }
+            for row in submissions
+        ]
+    }
+
+
+@router.delete("/jobs/batch-submissions/{submission_id}")
+def forget_batch_submission(submission_id: str):
+    """"Forget locally" (user request) -- stops this app from polling the
+    submission. Deliberately does not cancel it at the provider; its
+    owning `tag` job is left to resolve on its own next poll, which will
+    then see the submission gone and fall back to per-file tagging."""
+    if not batch_submissions.forget(get_engine(), submission_id):
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"code": "batch_submission_not_found", "message": f"Unknown or already-resolved batch submission: {submission_id}"}},
+        )
+    return {"forgotten": True}
 
 
 @router.get("/jobs/{job_id}")
