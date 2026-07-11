@@ -389,7 +389,22 @@ export interface InterfaceSettings {
   profile_b_contrast: number
   profile_b_sepia: number
   profile_b_hue_rotate: number
+  search_tag_limit: number
+  search_file_limit: number
+  search_dir_limit: number
   updated_at: string
+}
+
+// Scoped library search (user request): per-group caps for the grouped
+// search suggestions/results (found-in-tags / file names / directory names).
+export interface SearchLimits {
+  tags: number
+  files: number
+  dirs: number
+}
+
+export interface DirectorySearchResponse {
+  directories: DirectoryEntry[]
 }
 
 export interface SimilarFile {

@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { useJobs } from '../context/JobsContext'
-import { LibrarySearchBox, type ActiveSearch } from './LibrarySearchBox'
+import { LibrarySearchBox } from './LibrarySearchBox'
+import type { ActiveSearch } from '../utils/searchQuery'
 import { THEME_PRESETS } from '../types/api'
 import { THEME_ICON } from '../themeIcons'
 import './TopBar.css'
@@ -12,11 +13,21 @@ interface TopBarProps {
   onMenuToggle: () => void
   onSettingsToggle: () => void
   onJobsToggle: () => void
+  activeSearch: ActiveSearch | null
   onSearch: (search: ActiveSearch) => void
   onClearSearch: () => void
+  onOpenDirectory: (path: string) => void
 }
 
-export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle, onSearch, onClearSearch }: TopBarProps) {
+export function TopBar({
+  onMenuToggle,
+  onSettingsToggle,
+  onJobsToggle,
+  activeSearch,
+  onSearch,
+  onClearSearch,
+  onOpenDirectory,
+}: TopBarProps) {
   const { t } = useTranslation()
   const { previewsVisible, toggle } = usePreviewVisibility()
   const { theme, setTheme } = useInterfaceSettings()
@@ -55,7 +66,12 @@ export function TopBar({ onMenuToggle, onSettingsToggle, onJobsToggle, onSearch,
       <span className="top-bar__title">{t('app.title')}</span>
 
       <div className="top-bar__search-slot">
-        <LibrarySearchBox onSearch={onSearch} onClear={onClearSearch} />
+        <LibrarySearchBox
+          activeSearch={activeSearch}
+          onSearch={onSearch}
+          onClear={onClearSearch}
+          onOpenDirectory={onOpenDirectory}
+        />
       </div>
 
       <div className="top-bar__actions">

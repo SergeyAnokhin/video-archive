@@ -69,7 +69,12 @@
     "detectedBackupsHint": "Found {{count}} backup(s) on this source.",
     "restoreDetected": "Restore",
     "confirmRestoreDetected": "Restoring replaces the current library metadata with this backup's contents. Continue?",
-    "restoreStarted": "Restore started — see Jobs for progress."
+    "restoreStarted": "Restore started — see Jobs for progress.",
+    "searchLimitsTitle": "Search",
+    "searchLimitsHint": "How many matches to show per group (tags / file names / folders) in search suggestions and unscoped search results.",
+    "searchTagLimit": "Tag matches",
+    "searchFileLimit": "File matches",
+    "searchDirLimit": "Folder matches"
   },
   "playbackSettings": {
     "title": "Playback",
@@ -138,10 +143,10 @@
     "similarEmpty": "No similar videos found yet.",
     "similarClose": "Close",
     "similarDistance": "{{distance}} bit difference",
-    "searchPlaceholder": "Search tags or file names…",
+    "searchPlaceholder": "Search everywhere, or tag: / file: / path:",
     "searchClear": "Clear search",
     "searchResultsFor": "Search results for \"{{query}}\"",
-    "searchEmpty": "No files match this search.",
+    "searchEmpty": "Nothing matches this search.",
     "statusConvertedYes": "Converted",
     "statusConvertedNo": "Not converted yet",
     "statusPreviewYes": "Preview generated",
@@ -173,6 +178,7 @@
     "tagsEmpty": "No tags assigned yet.",
     "tagsModelLabel": "Detected by: {{model}}",
     "tagsManualLabel": "Added manually",
+    "tagsTuningLabel": "Tuning parameter",
     "tagsAddPlaceholder": "Add a tag…",
     "tagsAddButton": "Add tag",
     "tagsRemove": "Remove tag \"{{name}}\"",
@@ -193,7 +199,12 @@
     "unfavoriteFolder": "Remove from favorites",
     "folderHistory": "Recently viewed folders",
     "moveMenuHere": "Move here",
-    "moveMenuBack": "Back"
+    "moveMenuBack": "Back",
+    "searchGroupTags": "Found in tags",
+    "searchGroupFiles": "Found in file names",
+    "searchGroupDirs": "Found in folders",
+    "searchNarrow": "Search only in this group",
+    "searchLoadingMore": "Loading more…"
   },
   "playbackModal": {
     "title": "Playback",

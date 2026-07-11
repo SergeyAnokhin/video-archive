@@ -98,6 +98,39 @@ def get_directory_children(
     return {"path": path, "directories": directories, "files": files}
 
 
+@router.get("/directories/search")
+def search_directories(
+    q: str = Query(min_length=1),
+    limit: int = Query(default=20, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
+    """Directory-name substring search (scoped library search, user request):
+    matches folders whose own name contains `q`, across the whole source."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+        rows = conn.execute(
+            text(
+                "SELECT relative_path, name, has_folder_preview, is_favorite FROM directories "
+                "WHERE source_id = :sid AND relative_path != '' AND LOWER(name) LIKE :q "
+                "ORDER BY relative_path COLLATE NOCASE LIMIT :limit OFFSET :offset"
+            ),
+            {"sid": source.id, "q": f"%{q.strip().lower()}%", "limit": limit, "offset": offset},
+        ).all()
+
+    return {
+        "directories": [
+            {
+                "path": row.relative_path,
+                "name": row.name,
+                "is_favorite": bool(row.is_favorite),
+                "has_folder_preview": bool(row.has_folder_preview),
+            }
+            for row in rows
+        ]
+    }
+
+
 class CreateDirectoryRequest(BaseModel):
     parent_path: str = ""
     name: str

@@ -166,7 +166,15 @@ def get_or_create_tag(engine, display_name: str) -> dict:
         existing = _get_by_key(conn, tag_key)
     if existing is not None:
         return _row_to_dict(existing)
-    return create_tag(engine, {"display_name": display_name})
+    try:
+        return create_tag(engine, {"display_name": display_name})
+    except DuplicateTagError:
+        # Lost a race with a concurrent creator of the same key (e.g. two
+        # tuning-sweep variant threads tagging the shared codec at once) --
+        # the tag exists now, so resolving it is the correct outcome.
+        with engine.connect() as conn:
+            row = _get_by_key(conn, tag_key)
+        return _row_to_dict(row)
 
 
 def assign_file_tag(engine, file_id: str, tag_id: str) -> None:
@@ -196,6 +204,31 @@ def assign_file_tag(engine, file_id: str, tag_id: str) -> None:
             text("UPDATE files SET tagged_at = :now, updated_at = :now WHERE id = :id"),
             {"now": now, "id": file_id},
         )
+
+
+def assign_tuning_parameter_tags(engine, file_id: str, display_names: list[str]) -> None:
+    """Tag a tuning-sweep variant file with its encode parameters (user
+    request) -- one vocabulary tag per parameter (codec, dimension cap, CRF),
+    so a variant's settings are visible and removable like any other tag.
+    Unlike `assign_file_tag` this does not touch `files.tagged_at`: parameter
+    tags record how the file was produced, not an AI-tagging result."""
+    now = _now()
+    tag_ids = [get_or_create_tag(engine, name)["id"] for name in display_names]
+    with engine.begin() as conn:
+        for tag_id in tag_ids:
+            conn.execute(
+                text("DELETE FROM file_tags WHERE file_id = :file_id AND tag_id = :tag_id"),
+                {"file_id": file_id, "tag_id": tag_id},
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at)
+                    VALUES (:id, :file_id, :tag_id, 100, 'tuning', NULL, :now)
+                    """
+                ),
+                {"id": str(uuid.uuid4()), "file_id": file_id, "tag_id": tag_id, "now": now},
+            )
 
 
 def remove_file_tag(engine, file_id: str, tag_id: str) -> bool:

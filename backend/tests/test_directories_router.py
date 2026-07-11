@@ -118,6 +118,44 @@ def test_directory_children_tags_variant_files_with_the_swept_parameter(engine, 
     assert by_id[variant_b]["variant_tags"] == [{"param": "dimension", "value": 1920}]
 
 
+def _insert_dir(engine, source_id: str, relative_path: str, name: str, parent: str) -> None:
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO directories (id, source_id, relative_path, name, parent_relative_path, "
+                "has_folder_preview, last_scanned_at, created_at, updated_at) "
+                "VALUES (:id, :sid, :rel, :name, :parent, 0, :now, :now, :now)"
+            ),
+            {"id": str(uuid.uuid4()), "sid": source_id, "rel": relative_path, "name": name, "parent": parent, "now": now},
+        )
+
+
+def test_search_directories_matches_name_substring(engine, source):
+    _insert_dir(engine, source["id"], "", "Root", None)
+    _insert_dir(engine, source["id"], "Family", "Family", "")
+    _insert_dir(engine, source["id"], "Family/Birthdays", "Birthdays", "Family")
+    _insert_dir(engine, source["id"], "Work", "Work", "")
+
+    with TestClient(app) as client:
+        res = client.get("/api/directories/search", params={"q": "fam"})
+        assert res.status_code == 200
+        entries = res.json()["directories"]
+        # matches the folder's own name only, not the full path -- "Birthdays"
+        # lives under Family/ but its name doesn't contain "fam"
+        assert [e["path"] for e in entries] == ["Family"]
+        assert entries[0]["name"] == "Family"
+
+        res = client.get("/api/directories/search", params={"q": "day"})
+        assert [e["path"] for e in res.json()["directories"]] == ["Family/Birthdays"]
+
+        res = client.get("/api/directories/search", params={"q": "a", "limit": 1, "offset": 1})
+        assert len(res.json()["directories"]) == 1
+
+        res = client.get("/api/directories/search", params={"q": "zzz"})
+        assert res.json()["directories"] == []
+
+
 def test_directory_children_variant_borrows_original_has_preview_asset(engine, source):
     """A variant-sweep output never gets its own preview generated
     (Specification §8.3); the listing should report `has_preview_asset` as

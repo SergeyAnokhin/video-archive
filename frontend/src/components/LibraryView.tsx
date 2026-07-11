@@ -20,27 +20,26 @@ import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
 import { FileTuneModal } from './FileTuneModal'
 import { FileCard, FolderCard } from './LibraryCards'
-import type { ActiveSearch } from './LibrarySearchBox'
 import { MoveFileDialog } from './MoveFileDialog'
 import { PlaybackModal } from './PlaybackModal'
 import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
+import { SearchResults } from './SearchResults'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
-import type { DirectoryChildrenResponse, FileEntry, JobSummary, VariantTag } from '../types/api'
+import type { DirectoryChildrenResponse, FileEntry, JobSummary } from '../types/api'
 import { recordRecentFolder } from '../utils/recentFolders'
 import { recordRecentlyViewed } from '../utils/recentlyViewed'
+import type { ActiveSearch } from '../utils/searchQuery'
+import { SORT_OPTIONS, sortFiles, type SortBy } from '../utils/sortFiles'
 import './LibraryView.css'
 
 interface LibraryViewProps {
   path: string
   onNavigate: (path: string) => void
   activeSearch: ActiveSearch | null
+  onSearch: (search: ActiveSearch) => void
   onClearSearch: () => void
 }
-
-type SortBy = 'name' | 'size' | 'tags'
-
-const SORT_OPTIONS: SortBy[] = ['name', 'size', 'tags']
 
 // Mirrors the top-bar theme cycle button (TopBar.tsx): a single icon button
 // that steps through a small fixed set of options on click, rather than a
@@ -58,40 +57,7 @@ const SORT_LABEL_KEY: Record<SortBy, string> = {
   tags: 'library.sortByTags',
 }
 
-function variantTagSortKey(tag: VariantTag): string {
-  const value = typeof tag.value === 'number' ? tag.value.toString().padStart(8, '0') : tag.value
-  return `${tag.param}:${value}`
-}
-
-function compareByTags(a: FileEntry, b: FileEntry): number {
-  const aKeys = (a.variant_tags ?? []).map(variantTagSortKey).sort()
-  const bKeys = (b.variant_tags ?? []).map(variantTagSortKey).sort()
-  const length = Math.max(aKeys.length, bKeys.length)
-  for (let i = 0; i < length; i++) {
-    if (aKeys[i] === undefined) return bKeys[i] === undefined ? 0 : -1
-    if (bKeys[i] === undefined) return 1
-    if (aKeys[i] !== bKeys[i]) return aKeys[i] < bKeys[i] ? -1 : 1
-  }
-  return 0
-}
-
-function sortFiles(files: FileEntry[], sortBy: SortBy): FileEntry[] {
-  const sorted = [...files]
-  switch (sortBy) {
-    case 'name':
-      sorted.sort((a, b) => a.file_name.localeCompare(b.file_name))
-      break
-    case 'size':
-      sorted.sort((a, b) => a.size_bytes - b.size_bytes)
-      break
-    case 'tags':
-      sorted.sort(compareByTags)
-      break
-  }
-  return sorted
-}
-
-export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: LibraryViewProps) {
+export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearSearch }: LibraryViewProps) {
   const { t } = useTranslation()
   const { activeJob, refresh: refreshJobs } = useJobs()
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
@@ -108,14 +74,16 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
   const [similarFile, setSimilarFile] = useState<FileEntry | null>(null)
   const [infoFile, setInfoFile] = useState<FileEntry | null>(null)
   const [moveFile, setMoveFile] = useState<FileEntry | null>(null)
-  const [searchResults, setSearchResults] = useState<FileEntry[] | null>(null)
-  const [searchError, setSearchError] = useState<string | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>('name')
   const [reloadTick, setReloadTick] = useState(0)
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const overflowRef = useRef<HTMLDivElement | null>(null)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
+  // Tags edited inside FileInfoPanel must show on the cards as soon as the
+  // panel closes (user request) -- the panel reports each successful tag
+  // mutation here, and the pending flag turns into one refetch on close.
+  const infoTagsChangedRef = useRef(false)
 
   // A finished job (preview/tag/convert) may have changed this directory's
   // files, but nothing else refetches on job completion -- do it here so a
@@ -139,40 +107,6 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [overflowOpen])
-
-  useEffect(() => {
-    if (!activeSearch) {
-      return
-    }
-    let cancelled = false
-    setSearchResults(null)
-    setSearchError(null)
-
-    async function loadSearch() {
-      try {
-        const params = new URLSearchParams(
-          activeSearch!.kind === 'tag' ? { tags: activeSearch!.value } : { search: activeSearch!.value },
-        )
-        const res = await fetch(`/api/files?${params.toString()}`)
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-        const json: { files: FileEntry[] } = await res.json()
-        if (!cancelled) {
-          setSearchResults(json.files)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setSearchError(err instanceof Error ? err.message : String(err))
-        }
-      }
-    }
-
-    void loadSearch()
-    return () => {
-      cancelled = true
-    }
-  }, [activeSearch])
 
   useEffect(() => {
     if (activeSearch) {
@@ -234,6 +168,14 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
     const target = sortedFiles[infoIndex + offset]
     if (target) {
       setInfoFile(target)
+    }
+  }
+
+  function closeInfoPanel() {
+    setInfoFile(null)
+    if (infoTagsChangedRef.current) {
+      infoTagsChangedRef.current = false
+      setReloadTick((tick) => tick + 1)
     }
   }
 
@@ -434,33 +376,24 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
       )}
 
       {activeSearch ? (
-        <>
-          {searchError && (
-            <p className="library-view__message library-view__message--error">
-              {t('library.loadError', { message: searchError })}
-            </p>
-          )}
-          {!searchError && !searchResults && <p className="library-view__message">{t('library.loading')}</p>}
-          {searchResults && searchResults.length === 0 && (
-            <p className="library-view__message">{t('library.searchEmpty')}</p>
-          )}
-          {searchResults && searchResults.length > 0 && (
-            <div className="library-view__grid">
-              {sortFiles(searchResults, sortBy).map((file) => (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  onPlay={() => {
-                    recordRecentlyViewed(file.id)
-                    setPlayingFile(file)
-                  }}
-                  onInfo={() => setInfoFile(file)}
-                  onDelete={() => void handleDeleteFile(file.id)}
-                />
-              ))}
-            </div>
-          )}
-        </>
+        <SearchResults
+          activeSearch={activeSearch}
+          sortBy={sortBy}
+          reloadTick={reloadTick}
+          onSearch={onSearch}
+          onOpenDirectory={(dirPath) => {
+            onClearSearch()
+            onNavigate(dirPath)
+          }}
+          onPlayFile={(file) => {
+            recordRecentlyViewed(file.id)
+            setPlayingFile(file)
+          }}
+          onInfoFile={setInfoFile}
+          onDeleteFile={(fileId) => void handleDeleteFile(fileId)}
+          onToggleFavoriteDirectory={(dirPath, favorite) => void handleToggleFavoriteFolder(dirPath, favorite)}
+          onDeleteDirectory={(dirPath) => void handleDeleteFolder(dirPath)}
+        />
       ) : (
         <>
           {error && (
@@ -564,27 +497,30 @@ export function LibraryView({ path, onNavigate, activeSearch, onClearSearch }: L
           file={infoFile}
           previewing={previewingFileId === infoFile.id}
           tagging={taggingFileId === infoFile.id}
-          onClose={() => setInfoFile(null)}
+          onClose={closeInfoPanel}
           onPreview={() => void handlePreviewFile(infoFile.id)}
           onTag={() => void handleTagFile(infoFile.id)}
           onConvert={() => {
             setConvertFile(infoFile)
-            setInfoFile(null)
+            closeInfoPanel()
           }}
           onTune={() => {
             setTuneFile(infoFile)
-            setInfoFile(null)
+            closeInfoPanel()
           }}
           onSimilar={() => {
             setSimilarFile(infoFile)
-            setInfoFile(null)
+            closeInfoPanel()
           }}
           onDelete={() => void handleDeleteFile(infoFile.id)}
           onMove={() => {
             setMoveFile(infoFile)
-            setInfoFile(null)
+            closeInfoPanel()
           }}
           onMoved={handleMoved}
+          onTagsChanged={() => {
+            infoTagsChangedRef.current = true
+          }}
           hasPrev={infoIndex > 0}
           hasNext={infoIndex >= 0 && infoIndex < sortedFiles.length - 1}
           onPrev={() => goToInfoOffset(-1)}

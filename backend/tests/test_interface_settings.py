@@ -29,15 +29,28 @@ def test_interface_settings_defaults_and_round_trip(engine):
     assert settings["profile_a_blur"] == 0
     assert settings["profile_b_saturation"] == 20
     assert settings["profile_b_blur"] == 16
+    assert settings["search_tag_limit"] == 10
+    assert settings["search_file_limit"] == 10
+    assert settings["search_dir_limit"] == 10
 
     updated = interface_settings.update_settings(
         engine,
-        {"language": "ru", "theme_preset": "playful", **_profile_payload(50)},
+        {
+            "language": "ru",
+            "theme_preset": "playful",
+            **_profile_payload(50),
+            "search_tag_limit": 5,
+            "search_file_limit": 25,
+            "search_dir_limit": 3,
+        },
     )
     assert updated["language"] == "ru"
     assert updated["theme_preset"] == "playful"
     assert updated["profile_a_saturation"] == 50
     assert updated["profile_b_saturation"] == 50
+    assert updated["search_tag_limit"] == 5
+    assert updated["search_file_limit"] == 25
+    assert updated["search_dir_limit"] == 3
     assert interface_settings.get_settings(engine)["theme_preset"] == "playful"
 
 
@@ -53,16 +66,22 @@ def test_interface_settings_over_http(tmp_path, monkeypatch):
         assert body["theme_preset"] == "strict"
         assert body["profile_a_saturation"] == 100
         assert body["profile_b_blur"] == 16
+        assert body["search_tag_limit"] == 10
 
         r = client.put(
             "/api/interface-settings",
-            json={"language": "ru", "theme_preset": "playful", **_profile_payload(0)},
+            json={"language": "ru", "theme_preset": "playful", **_profile_payload(0), "search_file_limit": 30},
         )
         assert r.status_code == 200
         assert r.json()["language"] == "ru"
         assert r.json()["theme_preset"] == "playful"
         assert r.json()["profile_a_saturation"] == 0
         assert r.json()["profile_b_saturation"] == 0
+        assert r.json()["search_file_limit"] == 30
+
+        # out-of-range search limits are rejected (SEARCH_LIMIT_RANGE)
+        r = client.put("/api/interface-settings", json={**_profile_payload(0), "search_tag_limit": 0})
+        assert r.status_code == 422
 
         assert client.get("/api/interface-settings").json()["theme_preset"] == "playful"
 

@@ -52,6 +52,17 @@ DEFAULT_PROFILE_B = {
     "hue_rotate": 0,
 }
 
+# Scoped library search (post-V1, user request): how many matches the search
+# UI shows per group (tags / file names / directory names) before the user
+# narrows the search to a single scope (`tag:`/`file:`/`path:` prefixes).
+SEARCH_LIMIT_FIELDS = ("search_tag_limit", "search_file_limit", "search_dir_limit")
+SEARCH_LIMIT_RANGE = (1, 100)
+DEFAULT_SEARCH_LIMITS = {
+    "search_tag_limit": 10,
+    "search_file_limit": 10,
+    "search_dir_limit": 10,
+}
+
 
 def _column(profile: str, field: str) -> str:
     return f"profile_{profile}_{field}"
@@ -67,6 +78,8 @@ def _row_to_dict(row) -> dict:
         for field in PROFILE_FIELDS:
             column = _column(profile, field)
             data[column] = getattr(row, column)
+    for column in SEARCH_LIMIT_FIELDS:
+        data[column] = getattr(row, column)
     return data
 
 
@@ -79,6 +92,7 @@ def get_settings(engine) -> dict:
 def update_settings(engine, data: dict) -> dict:
     now = _now()
     profile_columns = [_column(profile, field) for profile in ("a", "b") for field in PROFILE_FIELDS]
+    profile_columns += list(SEARCH_LIMIT_FIELDS)
     assignments = ", ".join(f"{column} = :{column}" for column in profile_columns)
     params = {"language": data["language"], "theme_preset": data["theme_preset"], "now": now}
     for column in profile_columns:

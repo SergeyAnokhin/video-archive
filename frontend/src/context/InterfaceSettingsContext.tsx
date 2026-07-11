@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import i18n, { persistLanguage, SUPPORTED_LANGUAGES, type SupportedLanguage } from '../i18n'
-import { THEME_PRESETS, type InterfaceSettings, type ThemePreset } from '../types/api'
+import { THEME_PRESETS, type InterfaceSettings, type SearchLimits, type ThemePreset } from '../types/api'
 import {
   DEFAULT_PREVIEW_PROFILE_A,
   DEFAULT_PREVIEW_PROFILE_B,
@@ -12,6 +12,8 @@ const THEME_STORAGE_KEY = 'video-archive:theme'
 const PREVIEW_PROFILES_STORAGE_KEY = 'video-archive:preview-profiles'
 
 type PreviewProfileKey = 'a' | 'b'
+
+export const DEFAULT_SEARCH_LIMITS: SearchLimits = { tags: 10, files: 10, dirs: 10 }
 
 function detectInitialTheme(): ThemePreset {
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
@@ -69,6 +71,8 @@ interface InterfaceSettingsContextValue {
   setLanguage: (language: SupportedLanguage) => void
   previewProfiles: Record<PreviewProfileKey, PreviewStyleProfile>
   setPreviewProfile: (profile: PreviewProfileKey, next: PreviewStyleProfile) => void
+  searchLimits: SearchLimits
+  setSearchLimits: (next: SearchLimits) => void
 }
 
 const InterfaceSettingsContext = createContext<InterfaceSettingsContextValue | undefined>(undefined)
@@ -77,6 +81,7 @@ function persistToBackend(
   theme: ThemePreset,
   language: SupportedLanguage,
   profiles: Record<PreviewProfileKey, PreviewStyleProfile>,
+  searchLimits: SearchLimits,
 ) {
   void fetch('/api/interface-settings', {
     method: 'PUT',
@@ -84,6 +89,9 @@ function persistToBackend(
     body: JSON.stringify({
       language,
       theme_preset: theme,
+      search_tag_limit: searchLimits.tags,
+      search_file_limit: searchLimits.files,
+      search_dir_limit: searchLimits.dirs,
       profile_a_saturation: profiles.a.saturation,
       profile_a_blur: profiles.a.blur,
       profile_a_brightness: profiles.a.brightness,
@@ -114,6 +122,7 @@ export function InterfaceSettingsProvider({ children }: { children: ReactNode })
     applyPreviewProfiles(initial)
     return initial
   })
+  const [searchLimits, setSearchLimitsState] = useState<SearchLimits>(DEFAULT_SEARCH_LIMITS)
 
   // Backend-persisted preferences are the source of truth once loaded; the
   // localStorage/browser-locale guess applied synchronously above just avoids
@@ -147,6 +156,13 @@ export function InterfaceSettingsProvider({ children }: { children: ReactNode })
             window.localStorage.setItem(PREVIEW_PROFILES_STORAGE_KEY, JSON.stringify(fetched))
           }
         }
+        if (data.search_tag_limit != null) {
+          setSearchLimitsState({
+            tags: data.search_tag_limit,
+            files: data.search_file_limit,
+            dirs: data.search_dir_limit,
+          })
+        }
       })
       .catch(() => {
         // Best-effort sync; localStorage/browser-locale detection already applied above.
@@ -161,14 +177,14 @@ export function InterfaceSettingsProvider({ children }: { children: ReactNode })
     setThemeState(next)
     applyTheme(next)
     window.localStorage.setItem(THEME_STORAGE_KEY, next)
-    persistToBackend(next, language, previewProfiles)
+    persistToBackend(next, language, previewProfiles, searchLimits)
   }
 
   function setLanguage(next: SupportedLanguage) {
     setLanguageState(next)
     void i18n.changeLanguage(next)
     persistLanguage(next)
-    persistToBackend(theme, next, previewProfiles)
+    persistToBackend(theme, next, previewProfiles, searchLimits)
   }
 
   function setPreviewProfile(profile: PreviewProfileKey, next: PreviewStyleProfile) {
@@ -176,12 +192,17 @@ export function InterfaceSettingsProvider({ children }: { children: ReactNode })
     setPreviewProfilesState(nextProfiles)
     applyPreviewProfiles(nextProfiles)
     window.localStorage.setItem(PREVIEW_PROFILES_STORAGE_KEY, JSON.stringify(nextProfiles))
-    persistToBackend(theme, language, nextProfiles)
+    persistToBackend(theme, language, nextProfiles, searchLimits)
+  }
+
+  function setSearchLimits(next: SearchLimits) {
+    setSearchLimitsState(next)
+    persistToBackend(theme, language, previewProfiles, next)
   }
 
   return (
     <InterfaceSettingsContext.Provider
-      value={{ theme, setTheme, language, setLanguage, previewProfiles, setPreviewProfile }}
+      value={{ theme, setTheme, language, setLanguage, previewProfiles, setPreviewProfile, searchLimits, setSearchLimits }}
     >
       {children}
     </InterfaceSettingsContext.Provider>

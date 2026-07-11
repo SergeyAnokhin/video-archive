@@ -7,7 +7,7 @@ import { JobsModal } from './JobsModal'
 import { DirectoryTree } from './DirectoryTree'
 import { LibraryView } from './LibraryView'
 import { BackendStatusPanel } from './BackendStatusPanel'
-import type { ActiveSearch } from './LibrarySearchBox'
+import type { ActiveSearch } from '../utils/searchQuery'
 import { useSource } from '../context/SourceContext'
 import './AppLayout.css'
 
@@ -31,8 +31,10 @@ export function AppLayout() {
         onMenuToggle={() => setNavOpen((open) => !open)}
         onSettingsToggle={() => setSettingsOpen((open) => !open)}
         onJobsToggle={() => setJobsOpen((open) => !open)}
+        activeSearch={activeSearch}
         onSearch={setActiveSearch}
         onClearSearch={() => setActiveSearch(null)}
+        onOpenDirectory={handleSelectPath}
       />
       <div className="app-body">
         <nav
@@ -71,6 +73,7 @@ export function AppLayout() {
               path={selectedPath}
               onNavigate={setSelectedPath}
               activeSearch={activeSearch}
+              onSearch={setActiveSearch}
               onClearSearch={() => setActiveSearch(null)}
             />
           )}

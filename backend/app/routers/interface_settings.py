@@ -26,6 +26,18 @@ _profile_fields = {
     for field in service.PROFILE_FIELDS
 }
 
+_search_limit_fields = {
+    field: (
+        int,
+        Field(
+            default=service.DEFAULT_SEARCH_LIMITS[field],
+            ge=service.SEARCH_LIMIT_RANGE[0],
+            le=service.SEARCH_LIMIT_RANGE[1],
+        ),
+    )
+    for field in service.SEARCH_LIMIT_FIELDS
+}
+
 InterfaceSettingsRequest = create_model(
     "InterfaceSettingsRequest",
     __base__=BaseModel,
@@ -35,6 +47,7 @@ InterfaceSettingsRequest = create_model(
         service.DEFAULT_THEME_PRESET,
     ),
     **_profile_fields,
+    **_search_limit_fields,
 )
 
 

@@ -5,6 +5,8 @@ import type { ProviderEntry, ProviderType, ProviderUsageSummary } from '../types
 
 const PROVIDER_TYPES: ProviderType[] = ['openrouter', 'gemini', 'mistral', 'fal']
 const MODEL_LISTING_SUPPORTED: ProviderType[] = ['openrouter', 'gemini', 'mistral']
+// Mirrors the backend's batch-capable provider set (`registry.entry_supports_batch`).
+const BATCH_SUPPORTED: ProviderType[] = ['gemini', 'mistral']
 
 type FormValue = ProviderEntry | 'new' | null
 
@@ -182,14 +184,16 @@ export function ProviderSettingsSection() {
                   onBlur={(event) => void handleUpdate(entry, { text_model: event.target.value || null })}
                 />
               </label>
-              <label className="settings-modal__field">
-                <span className="settings-modal__field-label">{t('providerSettings.batchEnabled')}</span>
-                <input
-                  type="checkbox"
-                  checked={entry.batch_enabled}
-                  onChange={(event) => void handleUpdate(entry, { batch_enabled: event.target.checked })}
-                />
-              </label>
+              {BATCH_SUPPORTED.includes(entry.provider_type) && (
+                <label className="settings-modal__field">
+                  <span className="settings-modal__field-label">{t('providerSettings.batchEnabled')}</span>
+                  <input
+                    type="checkbox"
+                    checked={entry.batch_enabled}
+                    onChange={(event) => void handleUpdate(entry, { batch_enabled: event.target.checked })}
+                  />
+                </label>
+              )}
             </div>
           )}
         </div>

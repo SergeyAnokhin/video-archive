@@ -32,7 +32,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles, performance_settings
+from app import conversion, conversion_profiles, performance_settings, tags
 from app.jobs import service
 from app.media import is_test_artifact, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -294,6 +294,7 @@ def _create_variant(
             text("SELECT id FROM files WHERE source_id = :sid AND relative_path = :rel"),
             {"sid": file_row.source_id, "rel": variant_rel},
         ).fetchone()
+        variant_id = existing.id if existing is not None else str(uuid.uuid4())
         if existing is not None:
             conn.execute(
                 text(
@@ -329,7 +330,7 @@ def _create_variant(
                     """
                 ),
                 {
-                    "id": str(uuid.uuid4()),
+                    "id": variant_id,
                     "sid": file_row.source_id,
                     "dir_id": file_row.directory_id,
                     "rel": variant_rel,
@@ -342,6 +343,22 @@ def _create_variant(
                     "now": now,
                 },
             )
+
+    # Every tuning-produced file carries its effective encode parameters as
+    # ordinary removable tags (user request): codec and CRF always, the
+    # dimension cap when the encode had one -- so the settings behind a
+    # variant are visible at a glance in the library/info panel.
+    tag_names = [params["video_codec"].upper()]
+    if params["max_dimension"]:
+        tag_names.append(f"{params['max_dimension']}px")
+    tag_names.append(f"CRF {params['crf']}")
+    try:
+        tags.assign_tuning_parameter_tags(engine, variant_id, tag_names)
+    except Exception as exc:  # noqa: BLE001 - parameter tags are best-effort metadata; the encode itself succeeded
+        service.log_event(
+            engine, job_id, file_row.id, "warning", "job_item_progress",
+            f"Variant {variant_name} produced, but tagging its parameters failed: {exc}",
+        )
 
     return {"output_ref": variant_rel, "suffix": suffix}
 

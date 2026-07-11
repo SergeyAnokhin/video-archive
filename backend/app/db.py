@@ -530,6 +530,16 @@ MIGRATIONS: dict[int, list[str]] = {
         "CREATE INDEX IF NOT EXISTS idx_batch_submissions_status ON batch_submissions (status)",
         "CREATE INDEX IF NOT EXISTS idx_batch_submissions_job ON batch_submissions (job_id)",
     ],
+    # Post-V1: scoped library search (user request) -- the top-bar search box
+    # groups matches into three sections (tags / file names / directory
+    # names), each capped at a user-configurable number of entries. Same
+    # interface_settings singleton convention as the preview profiles; ALTER
+    # TABLE backfills the existing row via the literal DEFAULT.
+    23: [
+        "ALTER TABLE interface_settings ADD COLUMN search_tag_limit INTEGER NOT NULL DEFAULT 10",
+        "ALTER TABLE interface_settings ADD COLUMN search_file_limit INTEGER NOT NULL DEFAULT 10",
+        "ALTER TABLE interface_settings ADD COLUMN search_dir_limit INTEGER NOT NULL DEFAULT 10",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

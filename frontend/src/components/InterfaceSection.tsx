@@ -5,6 +5,7 @@ import { SUPPORTED_LANGUAGES } from '../i18n'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { THEME_PRESETS } from '../types/api'
 import { THEME_ICON } from '../themeIcons'
+import type { SearchLimits } from '../types/api'
 import { loadPreviewSampleFileIds } from '../utils/recentlyViewed'
 import { DEFAULT_PREVIEW_PROFILE_A, previewFilterCss, type PreviewStyleProfile } from '../utils/previewStyle'
 
@@ -87,9 +88,16 @@ function PreviewProfileEditor({
   )
 }
 
+const SEARCH_LIMIT_FIELDS: { key: keyof SearchLimits; labelKey: string }[] = [
+  { key: 'tags', labelKey: 'settings.searchTagLimit' },
+  { key: 'files', labelKey: 'settings.searchFileLimit' },
+  { key: 'dirs', labelKey: 'settings.searchDirLimit' },
+]
+
 export function InterfaceSection() {
   const { t } = useTranslation()
-  const { language, setLanguage, theme, setTheme, previewProfiles, setPreviewProfile } = useInterfaceSettings()
+  const { language, setLanguage, theme, setTheme, previewProfiles, setPreviewProfile, searchLimits, setSearchLimits } =
+    useInterfaceSettings()
   const [sampleFileIds, setSampleFileIds] = useState<string[]>([])
 
   useEffect(() => {
@@ -157,6 +165,28 @@ export function InterfaceSection() {
             )
           })}
         </div>
+      </div>
+
+      <h4 className="settings-modal__subheading">{t('settings.searchLimitsTitle')}</h4>
+      <p className="settings-modal__hint">{t('settings.searchLimitsHint')}</p>
+      <div className="settings-modal__row">
+        {SEARCH_LIMIT_FIELDS.map(({ key, labelKey }) => (
+          <label className="settings-modal__field settings-modal__field--column" key={key}>
+            <span className="settings-modal__field-label">{t(labelKey)}</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={searchLimits[key]}
+              onChange={(event) => {
+                const parsed = Number(event.target.value)
+                if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 100) {
+                  setSearchLimits({ ...searchLimits, [key]: Math.round(parsed) })
+                }
+              }}
+            />
+          </label>
+        ))}
       </div>
 
       <p className="settings-modal__hint">{t('settings.previewStyleHint')}</p>

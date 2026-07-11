@@ -69,7 +69,12 @@
     "detectedBackupsHint": "На этом источнике найдено резервных копий: {{count}}.",
     "restoreDetected": "Восстановить",
     "confirmRestoreDetected": "Восстановление заменит текущие метаданные библиотеки содержимым этой резервной копии. Продолжить?",
-    "restoreStarted": "Восстановление запущено — прогресс смотрите в разделе «Задания»."
+    "restoreStarted": "Восстановление запущено — прогресс смотрите в разделе «Задания».",
+    "searchLimitsTitle": "Поиск",
+    "searchLimitsHint": "Сколько совпадений показывать в каждой группе (теги / имена файлов / папки) в подсказках и в результатах поиска без префикса.",
+    "searchTagLimit": "Совпадений по тегам",
+    "searchFileLimit": "Совпадений по файлам",
+    "searchDirLimit": "Совпадений по папкам"
   },
   "playbackSettings": {
     "title": "Воспроизведение",
@@ -138,10 +143,10 @@
     "similarEmpty": "Похожие видео пока не найдены.",
     "similarClose": "Закрыть",
     "similarDistance": "различие {{distance}} бит",
-    "searchPlaceholder": "Поиск по тегам или именам файлов…",
+    "searchPlaceholder": "Поиск везде, или tag: / file: / path:",
     "searchClear": "Очистить поиск",
     "searchResultsFor": "Результаты поиска: «{{query}}»",
-    "searchEmpty": "Нет файлов, подходящих под этот поиск.",
+    "searchEmpty": "По этому запросу ничего не найдено.",
     "statusConvertedYes": "Сконвертировано",
     "statusConvertedNo": "Ещё не сконвертировано",
     "statusPreviewYes": "Превью создано",
@@ -173,6 +178,7 @@
     "tagsEmpty": "Теги ещё не назначены.",
     "tagsModelLabel": "Определено моделью: {{model}}",
     "tagsManualLabel": "Добавлено вручную",
+    "tagsTuningLabel": "Параметр тюнинга",
     "tagsAddPlaceholder": "Добавить тег…",
     "tagsAddButton": "Добавить тег",
     "tagsRemove": "Удалить тег «{{name}}»",
@@ -193,7 +199,12 @@
     "unfavoriteFolder": "Убрать из избранного",
     "folderHistory": "Недавно просмотренные папки",
     "moveMenuHere": "Переместить сюда",
-    "moveMenuBack": "Назад"
+    "moveMenuBack": "Назад",
+    "searchGroupTags": "Найдено в тегах",
+    "searchGroupFiles": "Найдено в именах файлов",
+    "searchGroupDirs": "Найдено в папках",
+    "searchNarrow": "Искать только в этой группе",
+    "searchLoadingMore": "Загружаем ещё…"
   },
   "playbackModal": {
     "title": "Воспроизведение",

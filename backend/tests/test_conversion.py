@@ -286,6 +286,57 @@ def test_variant_sweep_never_touches_source(engine, source):
     assert row.converted_at is None
 
 
+def test_variant_sweep_tags_each_variant_with_its_parameters(engine, source):
+    """Every tuning-produced file carries its effective encode parameters as
+    ordinary vocabulary tags (user request): codec and CRF always, the
+    dimension cap when one applied -- provider `tuning`, so the UI can label
+    them, and removable like any other tag. Re-running the same sweep must
+    not duplicate the assignments."""
+    make_video(source["root"] / "clips" / "clip.mp4")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)  # video_codec h265
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    params = {
+        "file_id": file_row.id, "profile_id": profile["id"], "mode": "test",
+        "variants": [{"crf": 24}, {"max_dimension": 100, "crf": 30}],
+    }
+    assert _run_job(engine, "file", file_row.id, params)["status"] == "completed"
+    # Second identical sweep: overwrites the files, must not double the tags.
+    assert _run_job(engine, "file", file_row.id, params)["status"] == "completed"
+
+    def variant_tags(rel: str) -> list[tuple[str, str, int]]:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT tc.display_name, ft.provider_name, ft.score
+                    FROM file_tags ft
+                    JOIN tag_catalog tc ON tc.id = ft.tag_id
+                    JOIN files f ON f.id = ft.file_id
+                    WHERE f.relative_path = :rel
+                    ORDER BY tc.display_name
+                    """
+                ),
+                {"rel": rel},
+            ).all()
+        return [(row.display_name, row.provider_name, row.score) for row in rows]
+
+    assert variant_tags("clips/clip.variant-crf24.mp4") == [
+        ("CRF 24", "tuning", 100),
+        ("H265", "tuning", 100),
+    ]
+    assert variant_tags("clips/clip.variant-d100-crf30.mp4") == [
+        ("100px", "tuning", 100),
+        ("CRF 30", "tuning", 100),
+        ("H265", "tuning", 100),
+    ]
+
+    # The source file itself is untouched: no tags, still not "tagged".
+    assert variant_tags("clips/clip.mp4") == []
+    assert _file_row(engine, "clips/clip.variant-crf24.mp4").tagged_at is None
+
+
 def test_repeated_variant_combination_across_sweeps_does_not_fail(engine, source):
     """Regression: two separate tuning sweeps for the same source file (e.g.
     a dimension sweep, then later a CRF sweep) can reproduce an identical

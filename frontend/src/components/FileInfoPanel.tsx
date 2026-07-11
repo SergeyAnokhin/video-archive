@@ -35,6 +35,7 @@ interface FileInfoPanelProps {
   onDelete: () => void
   onMove: () => void
   onMoved?: () => void
+  onTagsChanged?: () => void
   hasPrev?: boolean
   hasNext?: boolean
   onPrev?: () => void
@@ -54,6 +55,7 @@ export function FileInfoPanel({
   onDelete,
   onMove,
   onMoved,
+  onTagsChanged,
   hasPrev,
   hasNext,
   onPrev,
@@ -143,6 +145,7 @@ export function FileInfoPanel({
       setTagInput('')
       await refetchTags()
       void refreshVocabulary()
+      onTagsChanged?.()
     } catch {
       setTagError(t('library.tagsAddError'))
     } finally {
@@ -158,6 +161,7 @@ export function FileInfoPanel({
         throw new Error(`HTTP ${res.status}`)
       }
       setTags((current) => current.filter((tag) => tag.tag_id !== tagId))
+      onTagsChanged?.()
     } catch {
       setTagError(t('library.tagsRemoveError'))
     }
@@ -166,7 +170,7 @@ export function FileInfoPanel({
   const tagModels = Array.from(
     new Set(
       tags
-        .filter((tag) => tag.provider_name !== 'manual')
+        .filter((tag) => tag.provider_name !== 'manual' && tag.provider_name !== 'tuning')
         .map((tag) => tag.model_name ?? tag.provider_name)
         .filter((value): value is string => Boolean(value)),
     ),
@@ -323,7 +327,13 @@ export function FileInfoPanel({
                         <span className="file-info-panel__tags-name">{tag.display_name}</span>
                         <span
                           className="file-info-panel__tags-score"
-                          title={tag.provider_name === 'manual' ? t('library.tagsManualLabel') : undefined}
+                          title={
+                            tag.provider_name === 'manual'
+                              ? t('library.tagsManualLabel')
+                              : tag.provider_name === 'tuning'
+                                ? t('library.tagsTuningLabel')
+                                : undefined
+                          }
                         >
                           {tag.score}%
                         </span>

@@ -57,6 +57,7 @@ def list_files(
     video_only: bool = Query(default=False),
     search: str | None = Query(default=None),
     tags: str | None = Query(default=None, description="Comma-separated tag keys; matches any of them"),
+    tag_search: str | None = Query(default=None, description="Substring match against tag keys; matches any tag containing it"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ):
@@ -95,6 +96,13 @@ def list_files(
         if search:
             clauses.append("file_name LIKE :search")
             params["search"] = f"%{search}%"
+
+        if tag_search and tag_search.strip():
+            clauses.append(
+                "id IN (SELECT ft.file_id FROM file_tags ft JOIN tag_catalog tc ON tc.id = ft.tag_id "
+                "WHERE tc.tag_key LIKE :tag_search)"
+            )
+            params["tag_search"] = f"%{tag_search.strip().lower()}%"
 
         if tags:
             tag_keys = [key.strip().lower() for key in tags.split(",") if key.strip()]

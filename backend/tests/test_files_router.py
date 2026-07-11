@@ -243,6 +243,49 @@ def test_variant_preview_falls_back_to_original_asset(engine, source):
         assert gif.content == b"gif-bytes"
 
 
+def _insert_tag_assignment(engine, file_id: str, tag_key: str) -> None:
+    now = _now()
+    with engine.begin() as conn:
+        row = conn.execute(text("SELECT id FROM tag_catalog WHERE tag_key = :key"), {"key": tag_key}).fetchone()
+        tag_id = row.id if row else str(uuid.uuid4())
+        if row is None:
+            conn.execute(
+                text(
+                    "INSERT INTO tag_catalog (id, tag_key, display_name, is_active, sort_order, created_at, updated_at) "
+                    "VALUES (:id, :key, :key, 1, 0, :now, :now)"
+                ),
+                {"id": tag_id, "key": tag_key, "now": now},
+            )
+        conn.execute(
+            text(
+                "INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at) "
+                "VALUES (:id, :fid, :tid, 90, 'manual', NULL, :now)"
+            ),
+            {"id": str(uuid.uuid4()), "fid": file_id, "tid": tag_id, "now": now},
+        )
+
+
+def test_list_files_tag_search_matches_tag_key_substring(engine, source):
+    root_id = _insert_directory(engine, source["id"], "", None)
+    garden_id = _insert_file(engine, source["id"], root_id, "a.mp4", "a.mp4")
+    party_id = _insert_file(engine, source["id"], root_id, "b.mp4", "b.mp4")
+    _insert_file(engine, source["id"], root_id, "c.mp4", "c.mp4")
+    _insert_tag_assignment(engine, garden_id, "gardening")
+    _insert_tag_assignment(engine, party_id, "party")
+
+    with TestClient(app) as client:
+        res = client.get("/api/files", params={"tag_search": "garden"})
+        assert res.status_code == 200
+        assert [f["id"] for f in res.json()["files"]] == [garden_id]
+
+        # substring, not prefix: "arden" still matches "gardening"
+        res = client.get("/api/files", params={"tag_search": "arden"})
+        assert [f["id"] for f in res.json()["files"]] == [garden_id]
+
+        res = client.get("/api/files", params={"tag_search": "nothing"})
+        assert res.json()["files"] == []
+
+
 def test_file_listing_flags_variant_and_original_markers(engine, source):
     root_id = _insert_directory(engine, source["id"], "", None)
     _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
