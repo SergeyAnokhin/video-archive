@@ -286,7 +286,10 @@ def test_build_tagging_images_respects_image_resolution(tmp_path):
         video_path, frame_count=4, combine_into_collage=True, image_resolution=128
     )
     collage_arr = cv2.imdecode(np.frombuffer(collage[0], np.uint8), cv2.IMREAD_COLOR)
-    assert collage_arr.shape[0] % 128 == 0 and collage_arr.shape[1] % 128 == 0
+    # Source is 320x240 (4:3): each cell's longest side is capped at 128px
+    # while preserving aspect ratio, so cells are 128x96, not square.
+    cell_height, cell_width = 96, 128
+    assert collage_arr.shape[0] % cell_height == 0 and collage_arr.shape[1] % cell_width == 0
 
     frames = tagging.build_tagging_images(
         video_path, frame_count=4, combine_into_collage=False, image_resolution=128

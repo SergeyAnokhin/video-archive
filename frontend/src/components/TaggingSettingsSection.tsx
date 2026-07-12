@@ -1,4 +1,4 @@
-import { Check, Copy, Eye, Plus, X } from 'lucide-react'
+import { Check, Copy, Eye, Maximize2, Plus, X } from 'lucide-react'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTags } from '../context/TagsContext'
@@ -49,6 +49,7 @@ export function TaggingSettingsSection() {
   const [previewCombined, setPreviewCombined] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewFullscreen, setPreviewFullscreen] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -58,6 +59,23 @@ export function TaggingSettingsSection() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    if (!previewFullscreen) {
+      return
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        // Capture phase + stopPropagation so this closes only the fullscreen
+        // overlay, not the Settings modal underneath (which has its own,
+        // later-firing bubble-phase Escape listener on window).
+        event.stopPropagation()
+        setPreviewFullscreen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [previewFullscreen])
 
   async function handleAddTag() {
     if (!newTagName.trim()) {
@@ -332,6 +350,15 @@ export function TaggingSettingsSection() {
 
             {previewImages && previewImages.length > 0 && (
               <div className="tagging-preview__result">
+                <button
+                  type="button"
+                  className="settings-modal__option settings-modal__option--icon tagging-preview__fullscreen-trigger"
+                  onClick={() => setPreviewFullscreen(true)}
+                  aria-label={t('tagging.previewFullscreen')}
+                  title={t('tagging.previewFullscreen')}
+                >
+                  <Maximize2 size={14} />
+                </button>
                 {previewCombined ? (
                   <div className="tagging-preview__scroll">
                     <div className="tagging-preview__collage">
@@ -358,6 +385,44 @@ export function TaggingSettingsSection() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {previewFullscreen && previewImages && previewImages.length > 0 && (
+              <div className="tagging-preview__fullscreen-overlay" onClick={() => setPreviewFullscreen(false)}>
+                <div className="tagging-preview__fullscreen-content" onClick={(event) => event.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="tagging-preview__fullscreen-close"
+                    aria-label={t('settings.close')}
+                    title={t('settings.close')}
+                    onClick={() => setPreviewFullscreen(false)}
+                  >
+                    <X size={20} />
+                  </button>
+                  {previewCombined ? (
+                    <img
+                      className="tagging-preview__fullscreen-image"
+                      src={previewImages[0].data_url}
+                      alt=""
+                      width={previewImages[0].width}
+                      height={previewImages[0].height}
+                    />
+                  ) : (
+                    <div className="tagging-preview__fullscreen-frames">
+                      {previewImages.map((image, index) => (
+                        <img
+                          key={index}
+                          className="tagging-preview__fullscreen-image"
+                          src={image.data_url}
+                          alt=""
+                          width={image.width}
+                          height={image.height}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

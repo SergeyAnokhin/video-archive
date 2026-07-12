@@ -46,6 +46,7 @@ backend (FastAPI :8000)
 | Incomplete-state "lamp" dots share one visual convention: 8px circle, colored per category when incomplete (`--color-warning` conversion, `--color-accent` preview, `--color-danger` tags), `--color-success` once done | `directory-tree__dot`/`library-card__dot`/`file-info-panel__dot` in `frontend/src/components/*.css` |
 | Settings are grouped into singletons (preview, tagging, playback, backup, interface) with `GET`/`PUT` endpoints applied immediately | `backend/app/*_settings.py` |
 | A literal-path route (e.g. `GET /jobs/batch-submissions`) must be declared *before* a same-method `/{id}`-style route in the same router, or FastAPI/Starlette matches the `{id}` route first and swallows the literal path as an id value | `backend/app/routers/jobs.py` (`batch-submissions` routes sit above `GET /jobs/{job_id}`) |
+| `SourceAccess.direct_path()` (a raw local/UNC path) is only for cheap reads that don't seek/re-read — ffprobe, streaming. Anything that does repeated seeks or heavier processing (frame extraction, ffmpeg encode) uses `local_copy()` instead, which is a no-op passthrough for `local` but downloads to a temp file for `smb` (unreliable/slow over repeated UNC seeks) | `backend/app/sources/access.py`; compare `routers/files.py`'s media-info endpoint (`direct_path`) vs `jobs/tag.py`/`jobs/convert.py` (`local_copy`) |
 
 ## Key flows
 

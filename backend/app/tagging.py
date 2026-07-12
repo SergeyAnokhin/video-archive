@@ -3,8 +3,8 @@ frames using the same strategy as previews (`app/sampling.py`), then package
 them for a vision provider request — either as one combined grid collage
 (the default per Settings §5) or as separate per-frame JPEGs. The pixel
 resolution each image is sent at is user-configurable (`tagging_settings.
-image_resolution`, Settings §5): the collage cell's square side length, or
-each frame's longest side in per-frame mode.
+image_resolution`, Settings §5): each frame's longest side, whether it ends
+up in a collage cell or sent separately — aspect ratio is always preserved.
 
 The collage here is a plain, uniform grid (no enlarged tiles, no caption):
 tagging only needs the model to see the frames, unlike preview collages
@@ -54,13 +54,21 @@ def _resize_max_dim(image_bgr, max_dim: int):
     return cv2.resize(image_bgr, new_size, interpolation=cv2.INTER_LANCZOS4)
 
 
-def _compose_grid(images: list, rows: int, cols: int, cell_size_px: int) -> bytes:
-    canvas = Image.new("RGB", (cols * cell_size_px, rows * cell_size_px), (0, 0, 0))
-    for idx, image_bgr in enumerate(images):
+def _compose_grid(images: list, rows: int, cols: int, max_dim_px: int) -> bytes:
+    """Lay `images` out in a `rows` x `cols` grid. Each frame keeps its
+    original aspect ratio, scaled so its longest side is `max_dim_px`; the
+    cell size is the largest such frame, and smaller frames are centered
+    within their cell rather than stretched to fill it."""
+    resized = [_resize_max_dim(image_bgr, max_dim_px) for image_bgr in images]
+    cell_width = max(img.shape[1] for img in resized)
+    cell_height = max(img.shape[0] for img in resized)
+    canvas = Image.new("RGB", (cols * cell_width, rows * cell_height), (0, 0, 0))
+    for idx, image_bgr in enumerate(resized):
         pil_image = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
-        pil_image = pil_image.resize((cell_size_px, cell_size_px), Image.LANCZOS)
         row, col = divmod(idx, cols)
-        canvas.paste(pil_image, (col * cell_size_px, row * cell_size_px))
+        offset_x = col * cell_width + (cell_width - pil_image.width) // 2
+        offset_y = row * cell_height + (cell_height - pil_image.height) // 2
+        canvas.paste(pil_image, (offset_x, offset_y))
     buf = BytesIO()
     canvas.save(buf, format="JPEG", quality=JPEG_QUALITY)
     return buf.getvalue()
@@ -83,9 +91,9 @@ def build_tagging_images(
     video_path: Path, frame_count: int, combine_into_collage: bool, image_resolution: int = DEFAULT_IMAGE_RESOLUTION
 ) -> list[bytes]:
     """Returns a list of JPEG-encoded images to attach to the provider
-    request: one composed collage, or one JPEG per sampled frame. Each image
-    is capped at `image_resolution` pixels — the collage cell's square side
-    length, or each frame's longest side in per-frame mode."""
+    request: one composed collage, or one JPEG per sampled frame. Each frame
+    is scaled, preserving aspect ratio, so its longest side is
+    `image_resolution` pixels."""
     images = sample_frames(video_path, frame_count)
 
     if not combine_into_collage:

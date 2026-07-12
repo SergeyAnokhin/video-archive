@@ -20,7 +20,7 @@ Running a second frontend dev session against an already-running backend (e.g. a
 | Suite | Command | Notes |
 | --- | --- | --- |
 | Backend (pytest) | `python -m pytest` from `backend/` | The main suite. Tests needing real ffmpeg/ffprobe skip automatically when unavailable. |
-| Frontend unit tests (vitest) | `npm test` from `frontend/` | Pure-logic tests only (`src/**/*.test.ts`, e.g. `utils/format.test.ts`, `utils/layoutGeometry.test.ts`) — no DOM, no network, no component rendering. **No jsdom is configured** (no `vitest.config.ts`, default `node` environment) — a test that touches `window`/`localStorage`/any DOM API needs its own minimal in-memory stub (see `utils/recentFolders.test.ts`'s `FakeStorage`) rather than assuming a browser-like global exists. |
+| Frontend unit tests (vitest) | `npm test` from `frontend/` | Mostly pure-logic tests (`src/**/*.test.ts`, e.g. `utils/format.test.ts`, `utils/layoutGeometry.test.ts`) — the default environment is plain `node` (no `vitest.config.ts`), so a `.test.ts` touching `window`/`localStorage`/any DOM API needs its own minimal in-memory stub (see `utils/recentFolders.test.ts`'s `FakeStorage`) rather than assuming a browser-like global exists. For an actual component test, opt into jsdom per-file with a `// @vitest-environment jsdom` comment on the first line and render via `@testing-library/react` (devDependency) — see `components/TaggingSettingsSection.test.tsx` for the pattern (mocked `fetch`, `TagsProvider` wrapper, `../i18n` side-effect import so `useTranslation()` resolves). |
 | Frontend lint | `npm run lint` from `frontend/` | |
 | Frontend build check | `npm run build` from `frontend/` | Type-checks via `tsc` before bundling. |
 
