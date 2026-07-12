@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Download, Pencil, Plus, Save, Settings, Trash2, X } from 'lucide-react'
+import { Download, GripVertical, Pencil, Plus, Save, Settings, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProviderEntry, ProviderType, ProviderUsageSummary } from '../types/api'
@@ -16,6 +16,8 @@ export function ProviderSettingsSection() {
   const [editing, setEditing] = useState<FormValue>(null)
   const [advancedId, setAdvancedId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   async function refresh() {
     const res = await fetch('/api/settings/provider-entries')
@@ -62,12 +64,11 @@ export function ProviderSettingsSection() {
     }
   }
 
-  async function handleReorder(index: number, direction: -1 | 1) {
-    const targetIndex = index + direction
-    if (targetIndex < 0 || targetIndex >= entries.length) return
+  async function handleReorder(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return
     const reordered = [...entries]
-    const [moved] = reordered.splice(index, 1)
-    reordered.splice(targetIndex, 0, moved)
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
     await fetch('/api/settings/provider-entries/reorder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -98,29 +99,44 @@ export function ProviderSettingsSection() {
       {entries.length === 0 && <p className="settings-modal__hint">{t('providerSettings.empty')}</p>}
 
       {entries.map((entry, index) => (
-        <div key={entry.id} className="provider-entry-row">
+        <div
+          key={entry.id}
+          className={[
+            'provider-entry-row',
+            dragIndex === index ? 'provider-entry-row--dragging' : '',
+            dragOverIndex === index && dragIndex !== null && dragIndex !== index ? 'provider-entry-row--drag-over' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          onDragOver={(event) => {
+            if (dragIndex === null) return
+            event.preventDefault()
+            setDragOverIndex(index)
+          }}
+          onDragLeave={() => setDragOverIndex((current) => (current === index ? null : current))}
+          onDrop={(event) => {
+            event.preventDefault()
+            if (dragIndex !== null) void handleReorder(dragIndex, index)
+            setDragIndex(null)
+            setDragOverIndex(null)
+          }}
+        >
           <div className="provider-entry-row__main">
-            <div className="provider-entry-row__order">
-              <button
-                type="button"
-                className="settings-modal__option settings-modal__option--icon"
-                onClick={() => void handleReorder(index, -1)}
-                disabled={index === 0 || busyId === entry.id}
-                aria-label={t('providerSettings.moveUp')}
-                title={t('providerSettings.moveUp')}
-              >
-                <ChevronUp size={14} />
-              </button>
-              <button
-                type="button"
-                className="settings-modal__option settings-modal__option--icon"
-                onClick={() => void handleReorder(index, 1)}
-                disabled={index === entries.length - 1 || busyId === entry.id}
-                aria-label={t('providerSettings.moveDown')}
-                title={t('providerSettings.moveDown')}
-              >
-                <ChevronDown size={14} />
-              </button>
+            <div
+              className="provider-entry-row__handle"
+              draggable
+              onDragStart={(event) => {
+                setDragIndex(index)
+                event.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragEnd={() => {
+                setDragIndex(null)
+                setDragOverIndex(null)
+              }}
+              aria-label={t('providerSettings.dragHandle')}
+              title={t('providerSettings.dragHandle')}
+            >
+              <GripVertical size={16} />
             </div>
 
             <div className="provider-entry-row__info">

@@ -88,6 +88,20 @@
     "parallelWorkers": "Parallel processing (files/variants at once)",
     "hint": "How many files (bulk convert/preview jobs) or tuning variants are processed at the same time. For a single file, the same number is used to extract preview frames in parallel."
   },
+  "networkAccess": {
+    "title": "Network",
+    "hint": "Open this app from a phone on the same network. The backend and every file always stay on this PC -- the phone only shows the interface and streams video from it.",
+    "addressesTitle": "Open on your phone",
+    "refresh": "Refresh",
+    "copy": "Copy",
+    "noAddresses": "No network address was found on this PC. Connect it to Wi-Fi or Ethernet, then press Refresh.",
+    "scenarioLanTitle": "Same Wi-Fi / router",
+    "scenarioLanText": "Connect the phone to the same Wi-Fi network (or router) as this PC, then open one of the addresses above in its browser.",
+    "scenarioHotspotTitle": "Phone as a hotspot",
+    "scenarioHotspotText": "Turn on the phone's mobile hotspot first, then connect this PC to that hotspot's Wi-Fi. Once connected, press Refresh above -- a new address on the hotspot's own subnet (usually 192.168.43.x or 172.20.10.x) will appear; open that one on the phone.",
+    "firewallTitle": "Windows Firewall",
+    "firewallText": "On the first connection attempt, Windows may prompt to allow Python/Node.js through the firewall -- allow it for Private networks only."
+  },
   "conversionProfiles": {
     "title": "Conversion profiles",
     "empty": "No conversion profiles yet. Add one to start converting videos.",
@@ -385,8 +399,7 @@
     "modelsNotSupported": "This provider doesn't support model listing — enter a model name manually.",
     "save": "Save",
     "cancel": "Cancel",
-    "moveUp": "Move up",
-    "moveDown": "Move down",
+    "dragHandle": "Drag to reorder",
     "edit": "Edit",
     "settings": "Advanced settings",
     "delete": "Delete",

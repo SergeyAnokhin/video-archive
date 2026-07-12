@@ -359,6 +359,12 @@ export interface PerformanceSettings {
   updated_at: string
 }
 
+export interface NetworkInfo {
+  lan_addresses: string[]
+  frontend_port: number
+  backend_port: number
+}
+
 // Single source of truth for the theme list: both the top bar's cycle toggle
 // and the Settings picker iterate this value, so adding a preset here (plus
 // its icon entries and `theme.*` locale keys) surfaces it everywhere at once.

@@ -6,10 +6,12 @@ How to run, test, and manually verify changes in this repository. Prerequisites 
 
 ```powershell
 npm.cmd install
-npm.cmd run dev     # starts frontend (127.0.0.1:5173) and backend (127.0.0.1:8000) together
+npm.cmd run dev     # starts frontend (:5173) and backend (:8000) together
 ```
 
-Frontend and backend also run independently (`npm run dev` inside `frontend/` or `backend/`). The backend health endpoint is `/api/health`; app info is `/api/app/info`.
+Both dev servers bind `0.0.0.0` (post-V1, user request — reachable from a phone on the same network/hotspot, see Settings → Network / `NetworkAccessSection.tsx`), not just `127.0.0.1` — `http://127.0.0.1:<port>` still works locally as before. Frontend and backend also run independently (`npm run dev` inside `frontend/` or `backend/`). The backend health endpoint is `/api/health`; app info is `/api/app/info`.
+
+`npm run dev` from the root always runs [`scripts/check-stale-dev-servers.ps1`](../scripts/check-stale-dev-servers.ps1) first (wired as the root `predev` script, post-V1, user request — "check for this automatically before every run"): a non-blocking check that warns (doesn't kill anything) if ports `5173`/`8000` are already held by another process, printing its PID/start time/command line — see "If a backend change ... doesn't seem to take effect" below for why this matters. Run it standalone any time with `npm run check-dev-servers`.
 
 Running a second frontend dev session against an already-running backend (e.g. a second AI coding session doing UI verification while another one's server is still up on `:5173`): use the `frontend-only` entry in [`.claude/launch.json`](../.claude/launch.json) (`npm run dev --prefix frontend`, `autoPort: true`) — `frontend/vite.config.ts` reads `PORT` from the environment (falling back to `5173`), so a second instance gets its own port and proxies to the same backend on `:8000` instead of failing to bind.
 

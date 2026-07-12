@@ -19,6 +19,7 @@ Stage 9 ("Polish and Optional Features") adds a Playful theme preset ([Design Sy
 
 | Path | Role |
 | --- | --- |
-| [`package.json`](../package.json) | Root developer entrypoint; `npm run dev` uses `concurrently` to start `frontend` and `backend` together. |
+| [`package.json`](../package.json) | Root developer entrypoint; `npm run dev` uses `concurrently` to start `frontend` and `backend` together. `predev` (post-V1, user request) runs [`scripts/check-stale-dev-servers.ps1`](../scripts/check-stale-dev-servers.ps1) first, see below. |
+| [`scripts/check-stale-dev-servers.ps1`](../scripts/check-stale-dev-servers.ps1) | Non-blocking warning-only check (post-V1, user request — "check for this automatically every time before working") for an orphaned dev server already holding port `5173`/`8000` (this repo's own terminal from an earlier run, or a previous Claude Code chat's tooling never cleanly stopped) before `npm run dev` starts fresh ones — an orphan keeps answering requests with its own, possibly outdated code while the new server on the same port fails to bind, see `docs/development.md`'s "stale uvicorn --reload worker" note. Wired as the root `package.json`'s `predev` script; also runnable standalone via `npm run check-dev-servers`. |
 | [`README.md`](../README.md) | Project overview, current status, and startup commands. |
 | [`docs/`](./) | Living project documentation ([index](./README.md)); frozen V1 specification archived in [`docs/spec/`](./spec/README.md). |

@@ -338,6 +338,59 @@
   margin-top: var(--space-3);
 }
 
+.network-access__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.network-access__label {
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.network-access__address-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.network-access__address-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.network-access__address {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.network-access__scenario {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.network-access__scenario-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
 .conversion-profile-row {
   display: flex;
   align-items: flex-start;
@@ -392,10 +445,20 @@
 
 .provider-entry-row {
   padding: var(--space-3) 0;
+  border-top: 2px solid transparent;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
 }
 
 .provider-entry-row + .provider-entry-row {
-  border-top: 1px solid var(--color-border);
+  border-top-color: var(--color-border);
+}
+
+.provider-entry-row--dragging {
+  opacity: 0.5;
+}
+
+.provider-entry-row--drag-over {
+  border-top-color: var(--color-accent);
 }
 
 .provider-entry-row__main {
@@ -404,10 +467,19 @@
   gap: var(--space-3);
 }
 
-.provider-entry-row__order {
+.provider-entry-row__handle {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  color: var(--color-text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.provider-entry-row__handle:active {
+  cursor: grabbing;
 }
 
 .provider-entry-row__info {

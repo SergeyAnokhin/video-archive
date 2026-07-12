@@ -1,8 +1,11 @@
+import os
+
 from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from app.db import get_engine, get_schema_version
 from app.jobs import service as jobs_service
+from app.network_info import get_lan_addresses
 
 router = APIRouter()
 
@@ -39,4 +42,21 @@ def get_app_info(request: Request) -> dict:
             "version": ffmpeg_status.version,
             "path": ffmpeg_status.path,
         },
+    }
+
+
+@router.get("/app/network-info")
+def get_network_info(request: Request) -> dict:
+    # The backend port as the request itself arrived on -- correct even when
+    # reached through the Vite dev-server proxy (which rewrites the Host
+    # header to its target), so it stays right without needing its own env
+    # var. The frontend port has no such signal to read from, so it falls
+    # back to the same `PORT` env var (default 5173) `vite.config.ts` uses.
+    backend_port = request.url.port or 8000
+    frontend_port = int(os.environ.get("PORT", 5173))
+
+    return {
+        "lan_addresses": get_lan_addresses(),
+        "frontend_port": frontend_port,
+        "backend_port": backend_port,
     }

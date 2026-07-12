@@ -1,4 +1,4 @@
-import { X, HardDrive, Wand2, Images, PlayCircle, Tags, Bot, Archive, Palette, Cpu } from 'lucide-react'
+import { X, HardDrive, Wand2, Images, PlayCircle, Tags, Bot, Archive, Palette, Cpu, Wifi } from 'lucide-react'
 import { useEffect, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SourceSection } from './SourceSection'
@@ -11,6 +11,7 @@ import { PlaybackSettingsSection } from './PlaybackSettingsSection'
 import { BackupMaintenanceSection } from './BackupMaintenanceSection'
 import { InterfaceSection } from './InterfaceSection'
 import { PerformanceSettingsSection } from './PerformanceSettingsSection'
+import { NetworkAccessSection } from './NetworkAccessSection'
 import './SettingsModal.css'
 
 interface SettingsModalProps {
@@ -27,6 +28,7 @@ type TabId =
   | 'backup'
   | 'interface'
   | 'performance'
+  | 'network'
 
 interface TabDef {
   id: TabId
@@ -53,6 +55,7 @@ const TABS: TabDef[] = [
   { id: 'providers', icon: Bot, labelKey: 'providerSettings.title', Component: ProviderSettingsSection },
   { id: 'backup', icon: Archive, labelKey: 'backupMaintenance.title', Component: BackupMaintenanceSection },
   { id: 'performance', icon: Cpu, labelKey: 'performanceSettings.title', Component: PerformanceSettingsSection },
+  { id: 'network', icon: Wifi, labelKey: 'networkAccess.title', Component: NetworkAccessSection },
   { id: 'interface', icon: Palette, labelKey: 'settings.interfaceSection', Component: InterfaceSection },
 ]
 

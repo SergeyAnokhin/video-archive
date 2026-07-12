@@ -4,9 +4,11 @@
   "version": "0.1.0",
   "description": "Local-first Windows development workspace for the Video Archive frontend and backend.",
   "scripts": {
+    "predev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-stale-dev-servers.ps1",
     "dev": "concurrently -k -n frontend,backend -c blue,green \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
     "dev:frontend": "npm run dev --prefix frontend",
-    "dev:backend": "npm run dev --prefix backend"
+    "dev:backend": "npm run dev --prefix backend",
+    "check-dev-servers": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-stale-dev-servers.ps1"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
