@@ -84,81 +84,91 @@ export function PlaybackModal({
 
   return (
     <div className="playback-overlay" role="dialog" aria-modal="true" aria-label={file.file_name} onClick={onClose}>
-      <button
-        type="button"
-        className="playback-overlay__close"
-        aria-label={t('playbackModal.close')}
-        onClick={(event) => {
-          event.stopPropagation()
-          onClose()
-        }}
-      >
-        <X size={20} />
-      </button>
-
-      {onMoved && (
-        <div className="playback-overlay__folder-actions" onClick={(event) => event.stopPropagation()}>
-          <FolderQuickActions fileId={file.id} onMoved={onMoved} />
+      <div className="playback-overlay__top-left" onClick={(event) => event.stopPropagation()}>
+        {onMoved && <FolderQuickActions fileId={file.id} onMoved={onMoved} />}
+        <div className="playback-overlay__quick-actions">
+          {onOpenInfo && (
+            <button
+              type="button"
+              className="playback-overlay__info-toggle"
+              aria-label={t('playbackModal.info')}
+              title={t('playbackModal.info')}
+              onClick={onOpenInfo}
+            >
+              <Info size={16} />
+            </button>
+          )}
+          <QuickTagAdd fileId={file.id} onTagAdded={onTagAdded} />
         </div>
-      )}
+      </div>
 
-      <div className="playback-overlay__quick-actions" onClick={(event) => event.stopPropagation()}>
-        {onOpenInfo && (
+      <div className="playback-overlay__top-right" onClick={(event) => event.stopPropagation()}>
+        {info && (
           <button
             type="button"
-            className="playback-overlay__info-toggle"
-            aria-label={t('playbackModal.info')}
-            title={t('playbackModal.info')}
-            onClick={onOpenInfo}
+            className="playback-overlay__mode-toggle"
+            onClick={() => setMode(mode === 'stream' ? 'direct_link' : 'stream')}
           >
-            <Info size={16} />
+            {mode === 'stream' ? <Link size={14} /> : <PlayCircle size={14} />}{' '}
+            {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
           </button>
         )}
-        <QuickTagAdd fileId={file.id} onTagAdded={onTagAdded} />
+        <button
+          type="button"
+          className="playback-overlay__close"
+          aria-label={t('playbackModal.close')}
+          onClick={onClose}
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {hasPrev && onPrev && (
-        <button
-          type="button"
-          className="playback-overlay__nav playback-overlay__nav--prev"
+        <div
+          className="playback-overlay__nav-zone playback-overlay__nav-zone--prev"
+          role="button"
+          tabIndex={0}
           aria-label={t('playbackModal.previous')}
           title={t('playbackModal.previous')}
           onClick={(event) => {
             event.stopPropagation()
             onPrev()
           }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              onPrev()
+            }
+          }}
         >
-          <ChevronLeft size={24} />
-        </button>
+          <span className="playback-overlay__nav" aria-hidden="true">
+            <ChevronLeft size={24} />
+          </span>
+        </div>
       )}
 
       {hasNext && onNext && (
-        <button
-          type="button"
-          className="playback-overlay__nav playback-overlay__nav--next"
+        <div
+          className="playback-overlay__nav-zone playback-overlay__nav-zone--next"
+          role="button"
+          tabIndex={0}
           aria-label={t('playbackModal.next')}
           title={t('playbackModal.next')}
           onClick={(event) => {
             event.stopPropagation()
             onNext()
           }}
-        >
-          <ChevronRight size={24} />
-        </button>
-      )}
-
-      {info && (
-        <button
-          type="button"
-          className="playback-overlay__mode-toggle"
-          onClick={(event) => {
-            event.stopPropagation()
-            setMode(mode === 'stream' ? 'direct_link' : 'stream')
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              onNext()
+            }
           }}
         >
-          {mode === 'stream' ? <Link size={14} /> : <PlayCircle size={14} />}{' '}
-          {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
-        </button>
+          <span className="playback-overlay__nav" aria-hidden="true">
+            <ChevronRight size={24} />
+          </span>
+        </div>
       )}
 
       {error && (

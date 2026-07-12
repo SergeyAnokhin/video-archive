@@ -15,49 +15,35 @@
   background: #000;
 }
 
-.playback-overlay__close,
-.playback-overlay__mode-toggle {
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--touch-target-min);
-  min-height: var(--touch-target-min);
-  background: rgba(0, 0, 0, 0.55);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: #fff;
-  cursor: pointer;
-  z-index: 1;
-}
-
-.playback-overlay__close:hover,
-.playback-overlay__mode-toggle:hover {
-  background: rgba(0, 0, 0, 0.8);
-}
-
-.playback-overlay__close {
-  top: var(--space-3);
-  right: var(--space-3);
-}
-
-.playback-overlay__folder-actions {
+.playback-overlay__top-left,
+.playback-overlay__top-right {
   position: absolute;
   top: var(--space-3);
-  left: var(--space-3);
-  z-index: 1;
-}
-
-.playback-overlay__quick-actions {
-  position: absolute;
-  bottom: var(--space-3);
-  left: var(--space-3);
-  z-index: 1;
+  z-index: 2;
   display: flex;
-  align-items: flex-end;
   gap: var(--space-2);
 }
 
+.playback-overlay__top-left {
+  left: var(--space-3);
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.playback-overlay__top-right {
+  right: var(--space-3);
+  align-items: center;
+}
+
+.playback-overlay__quick-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.playback-overlay__close,
+.playback-overlay__mode-toggle,
 .playback-overlay__info-toggle {
   display: inline-flex;
   align-items: center;
@@ -71,44 +57,63 @@
   cursor: pointer;
 }
 
+.playback-overlay__close:hover,
+.playback-overlay__mode-toggle:hover,
 .playback-overlay__info-toggle:hover {
   background: rgba(0, 0, 0, 0.8);
 }
 
-.playback-overlay__nav {
+.playback-overlay__mode-toggle {
+  padding: 0 var(--space-3);
+  font-size: 12px;
+}
+
+/* Prev/next: a wide invisible click zone spanning the vertical middle of
+   the video (user request: clicking anywhere in the left/right band should
+   navigate, like a typical player's edge-tap), with the round chevron only
+   fading in on hover/focus rather than sitting permanently on top of the
+   video controls. */
+.playback-overlay__nav-zone {
   position: absolute;
-  top: 50%;
+  top: 15%;
+  bottom: 15%;
+  width: min(15%, 160px);
+  display: flex;
+  align-items: center;
+  z-index: 1;
+  cursor: pointer;
+  outline: none;
+}
+
+.playback-overlay__nav-zone--prev {
+  left: 0;
+  justify-content: flex-start;
+  padding-left: var(--space-3);
+}
+
+.playback-overlay__nav-zone--next {
+  right: 0;
+  justify-content: flex-end;
+  padding-right: var(--space-3);
+}
+
+.playback-overlay__nav {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 48px;
   height: 48px;
   background: rgba(0, 0, 0, 0.55);
-  border: none;
   border-radius: 50%;
   color: #fff;
-  cursor: pointer;
-  transform: translateY(-50%);
-  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
 }
 
-.playback-overlay__nav:hover {
+.playback-overlay__nav-zone:hover .playback-overlay__nav,
+.playback-overlay__nav-zone:focus-visible .playback-overlay__nav {
+  opacity: 1;
   background: rgba(0, 0, 0, 0.8);
-}
-
-.playback-overlay__nav--prev {
-  left: var(--space-3);
-}
-
-.playback-overlay__nav--next {
-  right: var(--space-3);
-}
-
-.playback-overlay__mode-toggle {
-  bottom: var(--space-3);
-  right: var(--space-3);
-  padding: 0 var(--space-3);
-  font-size: 12px;
 }
 
 .playback-overlay__message {

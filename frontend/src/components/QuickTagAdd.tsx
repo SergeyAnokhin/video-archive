@@ -114,6 +114,15 @@ export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
 
   return (
     <div className="quick-tag-add" onClick={(event) => event.stopPropagation()}>
+      <button
+        type="button"
+        className="quick-tag-add__toggle"
+        aria-label={t('library.tagsAddButton')}
+        title={t('library.tagsAddButton')}
+        onClick={toggleOpen}
+      >
+        {open ? <X size={16} /> : <TagIcon size={16} />}
+      </button>
       {open && (
         <form className="quick-tag-add__form" onSubmit={handleSubmit}>
           <input
@@ -145,15 +154,6 @@ export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
           {error && <p className="quick-tag-add__error">{error}</p>}
         </form>
       )}
-      <button
-        type="button"
-        className="quick-tag-add__toggle"
-        aria-label={t('library.tagsAddButton')}
-        title={t('library.tagsAddButton')}
-        onClick={toggleOpen}
-      >
-        {open ? <X size={16} /> : <TagIcon size={16} />}
-      </button>
     </div>
   )
 }
