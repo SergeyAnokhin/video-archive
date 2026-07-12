@@ -231,10 +231,10 @@ def test_preview_file_over_smb(engine, smb_source, tmp_path):
     service.finish_job(engine, job["id"], status, message)
 
     assert status == "completed"
-    # Previews are never written back to the source, SMB included (user
-    # request) -- they land in the local cache (`app/preview_cache.py`).
-    assert not smb_source["fs"].exists("clips/movie.jpg")
-    assert preview_cache.collage_path(smb_source["id"], "clips/movie.mp4").exists()
+    # The collage is uploaded back to the SMB source next to the video (user
+    # request); the GIF still lands in the local cache (`app/preview_cache.py`).
+    assert smb_source["fs"].exists("clips/movie.jpg")
+    assert preview_cache.gif_path(smb_source["id"], "clips/movie.mp4").exists()
 
 
 @pytest.mark.skipif(not ffmpeg_available, reason="ffmpeg/ffprobe not on PATH")

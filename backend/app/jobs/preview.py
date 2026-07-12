@@ -2,12 +2,13 @@
 
 Handles both scopes:
 
-- **directory** (recursive): generates a `<name>.jpg` collage (plus a
-  companion animated GIF stored in `.video-archive/previews/`, user request)
-  for every supported video under the subtree (skip-processed rule, always
-  excluding test-mode artifacts), then refreshes `folder-preview.gif` for
-  the target directory and every descendant directory that contains at
-  least one supported video (Specification §9.5) — an animated GIF cycling
+- **directory** (recursive): generates a `<name>.jpg` collage next to the
+  video (plus a companion animated GIF stored in the local preview cache,
+  `app/preview_cache.py`, user request) for every supported video under the
+  subtree (skip-processed rule, always excluding test-mode artifacts), then
+  refreshes `folder-preview.gif` for the target directory and every
+  descendant directory that contains at least one supported video
+  (Specification §9.5) — an animated GIF cycling
   through frames drawn from different videos/subfolders for diversity
   (`preview.diverse_video_frame_plan()`, user request), not a static
   collage.
@@ -106,14 +107,16 @@ def _generate_one_file(
         service.log_event(engine, job_id, file_row.id, "info", "job_item_progress", message)
 
     with access.local_copy(file_row.relative_path) as video_path:
-        # Generated into a scratch dir rather than next to `video_path` --
-        # for a `local` source `local_copy()` yields the real on-disk file,
-        # so writing there would put previews back on the source (user
-        # request: previews live in the local cache, `app/preview_cache.py`,
-        # never on the source itself).
-        with tempfile.TemporaryDirectory(prefix="va_preview_out_") as stage_dir:
-            local_dest = Path(stage_dir) / f"{video_path.stem}.jpg"
-            local_gif = Path(stage_dir) / f"{video_path.stem}.preview.gif"
+        # The JPEG collage is written next to the video itself (via
+        # `commit_new_file`, a no-op move for `local` sources since
+        # `local_copy()` already yields the real on-disk path there, an
+        # upload for `smb`) -- it's a static asset meant to persist on the
+        # source. The GIF stays in a scratch dir and is copied into the
+        # local cache (`app/preview_cache.py`) instead, since it's only ever
+        # needed for fast list-view hover thumbnails, not as a source asset.
+        local_dest = video_path.with_suffix(".jpg")
+        with tempfile.TemporaryDirectory(prefix="va_preview_out_") as gif_stage_dir:
+            local_gif = Path(gif_stage_dir) / f"{video_path.stem}.preview.gif"
             duration_seconds = preview.generate_file_preview(
                 video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
                 gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
@@ -124,9 +127,7 @@ def _generate_one_file(
                 on_stage=on_stage,
             )
             dest_rel = sibling_relative_path(file_row.relative_path, local_dest.name)
-            collage_dest = preview_cache.collage_path(source_id, file_row.relative_path)
-            collage_dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(local_dest, collage_dest)
+            access.commit_new_file(local_dest, dest_rel)
             if local_gif.exists():
                 gif_dest = preview_cache.gif_path(source_id, file_row.relative_path)
                 gif_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -308,13 +309,13 @@ def _run_directory_scope(
             stop_status = "cancelled" if stop == "cancel" else "paused"
             break
 
-        # Also checks the cache file itself, not just the DB flag: it can be
-        # cleared independently (per-source preview cache management, user
-        # request) while this source is inactive, which a later-restored
-        # metadata snapshot wouldn't know about -- this makes regeneration
-        # self-healing instead of permanently skipping a file whose cached
+        # Also checks the collage file itself, not just the DB flag: it can
+        # be deleted directly on the source (or a later-restored metadata
+        # snapshot may predate it), which this makes regeneration
+        # self-healing instead of permanently skipping a file whose on-source
         # preview is actually gone.
-        if skip_processed and row.has_preview_asset and preview_cache.collage_path(source_id, row.relative_path).exists():
+        collage_rel = sibling_relative_path(row.relative_path, f"{Path(row.file_name).stem}.jpg")
+        if skip_processed and row.has_preview_asset and access.exists(collage_rel):
             item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
             service.skip_job_item(engine, item_id, "Already has a preview; skipped.")
             service.log_event(

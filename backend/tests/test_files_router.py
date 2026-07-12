@@ -218,8 +218,7 @@ def test_variant_preview_falls_back_to_original_asset(engine, source):
     # instead of showing a broken thumbnail.
     root_id = _insert_directory(engine, source["id"], "", None)
     (source["root"] / "clip.mp4").write_bytes(b"data")
-    collage_path = preview_cache.collage_path(source["id"], "clip.mp4")
-    collage_path.parent.mkdir(parents=True, exist_ok=True)
+    collage_path = source["root"] / "clip.jpg"
     collage_path.write_bytes(b"jpg-bytes")
     gif_path = preview_cache.gif_path(source["id"], "clip.mp4")
     gif_path.parent.mkdir(parents=True, exist_ok=True)

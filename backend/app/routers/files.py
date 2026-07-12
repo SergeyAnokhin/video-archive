@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from math import gcd
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -278,9 +278,10 @@ def get_file_preview_metadata(file_id: str):
         if row is None:
             raise _file_not_found_error(file_id)
         source_row = _preview_source_row(conn, row)
-    collage_path = preview_cache.collage_path(row.id, source_row.relative_path)
+    access = get_source_access(row)
+    collage_rel = str(PurePosixPath(source_row.relative_path).with_suffix(".jpg"))
     return {
-        "has_preview_asset": bool(row.has_preview_asset) and collage_path.exists(),
+        "has_preview_asset": bool(row.has_preview_asset) and access.exists(collage_rel),
         "preview_generated_at": row.preview_generated_at,
     }
 
@@ -293,13 +294,14 @@ def get_file_preview_image(file_id: str):
             raise _file_not_found_error(file_id)
         source_row = _preview_source_row(conn, row)
 
-    collage_path = preview_cache.collage_path(row.id, source_row.relative_path)
-    if not collage_path.exists():
+    access = get_source_access(row)
+    collage_rel = str(PurePosixPath(source_row.relative_path).with_suffix(".jpg"))
+    if not access.exists(collage_rel):
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No preview asset for this file."}},
         )
-    return FileResponse(collage_path, media_type="image/jpeg")
+    return Response(content=access.read_bytes(collage_rel), media_type="image/jpeg")
 
 
 @router.get("/files/{file_id}/preview.gif")

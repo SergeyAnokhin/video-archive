@@ -201,8 +201,7 @@ def test_file_preview_image_serving(tmp_path, monkeypatch):
         r = client.get(f"/api/files/{file_id}/preview.jpg")
         assert r.status_code == 404
 
-        collage_path = preview_cache.collage_path(_source_id, "clip_0.mp4")
-        collage_path.parent.mkdir(parents=True, exist_ok=True)
+        collage_path = source_root / "clip_0.jpg"
         collage_path.write_bytes(b"\xff\xd8\xff\xd9")
         with engine.begin() as conn:
             conn.execute(text("UPDATE files SET has_preview_asset = 1 WHERE id = :id"), {"id": file_id})

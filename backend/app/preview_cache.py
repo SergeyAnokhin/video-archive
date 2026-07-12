@@ -1,9 +1,14 @@
-"""Local, per-source cache for generated preview assets (collage jpg, per-file
-gif, folder gif). Kept on the backend's own disk rather than written back to
-the source itself (user request): fast to read regardless of source protocol
-(no SMB round-trip per thumbnail), and it survives switching to another
-source and back without regenerating, since it's keyed by `source_id` rather
-than tied to whichever source is currently active.
+"""Local, per-source cache for generated GIF preview assets (per-file gif,
+folder gif). Kept on the backend's own disk rather than written back to the
+source itself (user request): fast to read regardless of source protocol (no
+SMB round-trip per thumbnail), and it survives switching to another source
+and back without regenerating, since it's keyed by `source_id` rather than
+tied to whichever source is currently active.
+
+The JPEG collage is *not* cached here -- it's written next to the video on
+the source itself (user request, `app/jobs/preview.py`'s `_generate_one_file`
+via `access.commit_new_file`), so it can be browsed/backed up alongside the
+video like any other sibling file.
 
 `PREVIEW_CACHE_DIR` is imported by value below, so tests must patch
 `app.preview_cache.PREVIEW_CACHE_DIR` directly rather than `app.config`'s
@@ -26,11 +31,6 @@ def preview_cache_dir_for_source(source_id: str) -> Path:
 
 def _to_path(rel: str) -> Path:
     return Path(*PurePosixPath(rel).parts)
-
-
-def collage_path(source_id: str, relative_path: str) -> Path:
-    rel = PurePosixPath(relative_path).with_suffix(".jpg")
-    return preview_cache_dir_for_source(source_id) / _to_path(rel.as_posix())
 
 
 def gif_path(source_id: str, relative_path: str) -> Path:

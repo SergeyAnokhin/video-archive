@@ -349,11 +349,10 @@ def test_preview_job_file_scope_marks_file_previewed(engine, source):
     status, _message = preview_job.run_preview_job(engine, job)
 
     assert status == "completed"
-    # Previews land in the local cache (`app/preview_cache.py`), not on the
-    # source itself.
-    assert preview_cache.collage_path(source["id"], "clips/movie.mp4").exists()
+    # Collage lands next to the video on the source; GIF stays in the local
+    # cache (`app/preview_cache.py`).
+    assert (source["root"] / "clips" / "movie.jpg").exists()
     assert preview_cache.gif_path(source["id"], "clips/movie.mp4").exists()
-    assert not (source["root"] / "clips" / "movie.jpg").exists()
 
     with engine.connect() as conn:
         updated = conn.execute(text("SELECT * FROM files WHERE id = :id"), {"id": file_row.id}).fetchone()
@@ -374,8 +373,8 @@ def test_preview_job_directory_scope_recursive_with_folder_previews(engine, sour
     status, message = preview_job.run_preview_job(engine, job)
 
     assert status == "completed"
-    assert preview_cache.collage_path(source["id"], "clips/a.mp4").exists()
-    assert preview_cache.collage_path(source["id"], "clips/nested/b.mp4").exists()
+    assert (source["root"] / "clips" / "a.jpg").exists()
+    assert (source["root"] / "clips" / "nested" / "b.jpg").exists()
     assert preview_cache.folder_gif_path(source["id"], "").exists()
     assert preview_cache.folder_gif_path(source["id"], "clips").exists()
     assert preview_cache.folder_gif_path(source["id"], "clips/nested").exists()
@@ -398,7 +397,7 @@ def test_preview_job_skip_processed_rule(engine, source):
     job1 = service.create_job(engine, "preview", "source", None, {"path": ""})
     service.start_job(engine, job1["id"])
     preview_job.run_preview_job(engine, job1)
-    collage = preview_cache.collage_path(source["id"], "clips/movie.mp4")
+    collage = source["root"] / "clips" / "movie.jpg"
     first_mtime = collage.stat().st_mtime
 
     job2 = service.create_job(engine, "preview", "source", None, {"path": "", "skip_processed": True})
@@ -422,8 +421,8 @@ def test_preview_job_excludes_test_artifacts(engine, source):
 
     assert status == "completed"
     assert "1 of 1" in message
-    assert not preview_cache.collage_path(source["id"], "clips/movie.original.mov").exists()
-    assert not preview_cache.collage_path(source["id"], "clips/movie.variant-crf28.mp4").exists()
+    assert not (source["root"] / "clips" / "movie.original.jpg").exists()
+    assert not (source["root"] / "clips" / "movie.variant-crf28.jpg").exists()
 
 
 def test_preview_job_items_and_events_identify_file_by_path(engine, source):
@@ -515,7 +514,7 @@ def test_preview_job_directory_scope_generates_all_across_multiple_batches(engin
     assert status == "completed"
     assert "Generated previews for 5 of 5 file(s)" in message
     for i in range(5):
-        assert preview_cache.collage_path(source["id"], f"clips/clip_{i}.mp4").exists()
+        assert (source["root"] / "clips" / f"clip_{i}.jpg").exists()
 
     with engine.connect() as conn:
         previewed = conn.execute(

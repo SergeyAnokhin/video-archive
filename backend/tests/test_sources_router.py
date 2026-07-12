@@ -60,9 +60,9 @@ def test_list_sources_includes_preview_cache_stats(engine, source, tmp_path):
     root_b.mkdir()
     _insert_source(engine, "B", root_b, is_active=False)
 
-    collage = preview_cache.collage_path(source["id"], "clip.mp4")
-    collage.parent.mkdir(parents=True, exist_ok=True)
-    collage.write_bytes(b"jpg-bytes")
+    gif = preview_cache.gif_path(source["id"], "clip.mp4")
+    gif.parent.mkdir(parents=True, exist_ok=True)
+    gif.write_bytes(b"gif-bytes")
 
     with TestClient(app) as client:
         r = client.get("/api/sources")
@@ -71,7 +71,7 @@ def test_list_sources_includes_preview_cache_stats(engine, source, tmp_path):
 
     assert set(by_name) == {"Test", "B"}
     assert by_name["Test"]["is_active"] is True
-    assert by_name["Test"]["preview_cache"] == {"size_bytes": len(b"jpg-bytes"), "file_count": 1}
+    assert by_name["Test"]["preview_cache"] == {"size_bytes": len(b"gif-bytes"), "file_count": 1}
     assert by_name["B"]["is_active"] is False
     assert by_name["B"]["preview_cache"] == {"size_bytes": 0, "file_count": 0}
 
@@ -126,9 +126,9 @@ def test_forget_removes_an_inactive_source_and_its_preview_cache(engine, source,
     root_b = tmp_path / "b"
     root_b.mkdir()
     b_id = _insert_source(engine, "B", root_b, is_active=False)
-    collage = preview_cache.collage_path(b_id, "clip.mp4")
-    collage.parent.mkdir(parents=True, exist_ok=True)
-    collage.write_bytes(b"jpg-bytes")
+    gif = preview_cache.gif_path(b_id, "clip.mp4")
+    gif.parent.mkdir(parents=True, exist_ok=True)
+    gif.write_bytes(b"gif-bytes")
 
     with TestClient(app) as client:
         r = client.delete(f"/api/sources/{b_id}")
@@ -142,16 +142,16 @@ def test_forget_removes_an_inactive_source_and_its_preview_cache(engine, source,
 
 def test_clear_preview_cache_for_active_source_resets_db_flags(engine, source):
     dir_id, file_id = _seed_previewed_file(engine, source["id"])
-    collage = preview_cache.collage_path(source["id"], "clip.mp4")
-    collage.parent.mkdir(parents=True, exist_ok=True)
-    collage.write_bytes(b"jpg-bytes")
+    gif = preview_cache.gif_path(source["id"], "clip.mp4")
+    gif.parent.mkdir(parents=True, exist_ok=True)
+    gif.write_bytes(b"gif-bytes")
 
     with TestClient(app) as client:
         r = client.delete(f"/api/sources/{source['id']}/preview-cache")
         assert r.status_code == 200
         assert r.json()["cleared"] is True
 
-    assert not collage.exists()
+    assert not gif.exists()
     with engine.connect() as conn:
         file_row = conn.execute(
             text("SELECT has_preview_asset, preview_generated_at FROM files WHERE id = :id"), {"id": file_id}
@@ -171,16 +171,16 @@ def test_clear_preview_cache_for_inactive_source_only_touches_its_own_cache(engi
     root_b.mkdir()
     b_id = _insert_source(engine, "B", root_b, is_active=False)
 
-    active_collage = preview_cache.collage_path(source["id"], "clip.mp4")
-    active_collage.parent.mkdir(parents=True, exist_ok=True)
-    active_collage.write_bytes(b"jpg-bytes")
-    b_collage = preview_cache.collage_path(b_id, "other.mp4")
-    b_collage.parent.mkdir(parents=True, exist_ok=True)
-    b_collage.write_bytes(b"jpg-bytes")
+    active_gif = preview_cache.gif_path(source["id"], "clip.mp4")
+    active_gif.parent.mkdir(parents=True, exist_ok=True)
+    active_gif.write_bytes(b"gif-bytes")
+    b_gif = preview_cache.gif_path(b_id, "other.mp4")
+    b_gif.parent.mkdir(parents=True, exist_ok=True)
+    b_gif.write_bytes(b"gif-bytes")
 
     with TestClient(app) as client:
         r = client.delete(f"/api/sources/{b_id}/preview-cache")
         assert r.status_code == 200
 
-    assert not b_collage.exists()
-    assert active_collage.exists()
+    assert not b_gif.exists()
+    assert active_gif.exists()
