@@ -59,7 +59,7 @@ const SORT_LABEL_KEY: Record<SortBy, string> = {
 
 export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearSearch }: LibraryViewProps) {
   const { t } = useTranslation()
-  const { activeJob, refresh: refreshJobs } = useJobs()
+  const { activeJob, jobItemsById, refresh: refreshJobs } = useJobs()
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rescanning, setRescanning] = useState(false)
@@ -84,6 +84,15 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   // panel closes (user request) -- the panel reports each successful tag
   // mutation here, and the pending flag turns into one refetch on close.
   const infoTagsChangedRef = useRef(false)
+  // Per-file job items already completed and folded into this directory's
+  // data, so a still-running job's later poll ticks don't re-trigger the
+  // same reload (user request: preview/tag/convert results should appear as
+  // each file finishes, not only once the whole job is done).
+  const appliedCompletedItemIdsRef = useRef<Set<string>>(new Set())
+  // Tracks which folder path the grid was last loaded for, so a same-folder
+  // silent reload can be told apart from an actual navigation (see the data
+  // effect below).
+  const lastLoadedPathRef = useRef<string | null>(null)
 
   // A finished job (preview/tag/convert) may have changed this directory's
   // files, but nothing else refetches on job completion -- do it here so a
@@ -94,6 +103,32 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     }
     prevActiveJobRef.current = activeJob
   }, [activeJob])
+
+  // Live per-item updates: as soon as an individual file's job item finishes
+  // (rather than waiting for the whole job to finish), reload this directory
+  // so its new preview/tags/conversion result shows up immediately.
+  useEffect(() => {
+    if (activeSearch || !data) {
+      return
+    }
+    const currentFileIds = new Set(data.files.map((file) => file.id))
+    const newlyCompleted = Object.values(jobItemsById)
+      .flat()
+      .filter(
+        (item) =>
+          item.status === 'completed' &&
+          item.file_id &&
+          currentFileIds.has(item.file_id) &&
+          !appliedCompletedItemIdsRef.current.has(item.id),
+      )
+    if (newlyCompleted.length === 0) {
+      return
+    }
+    for (const item of newlyCompleted) {
+      appliedCompletedItemIdsRef.current.add(item.id)
+    }
+    setReloadTick((tick) => tick + 1)
+  }, [jobItemsById, data, activeSearch])
 
   useEffect(() => {
     if (!overflowOpen) {
@@ -113,8 +148,16 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
       return
     }
     let cancelled = false
-    setData(null)
-    setError(null)
+    // Only show the loading state when actually navigating to a different
+    // folder -- a same-folder reload (job completion, move/delete, live
+    // per-item update) fetches quietly and swaps the grid's data in place,
+    // so cards update without a flash back to "Loading..." (user request).
+    const isNewLocation = lastLoadedPathRef.current !== path
+    lastLoadedPathRef.current = path
+    if (isNewLocation) {
+      setData(null)
+      setError(null)
+    }
 
     async function load() {
       try {
@@ -126,6 +169,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
         const json: DirectoryChildrenResponse = await res.json()
         if (!cancelled) {
           setData(json)
+          setError(null)
         }
       } catch (err) {
         if (!cancelled) {
