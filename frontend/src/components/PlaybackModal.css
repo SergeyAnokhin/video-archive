@@ -48,6 +48,33 @@
   z-index: 1;
 }
 
+.playback-overlay__quick-actions {
+  position: absolute;
+  bottom: var(--space-3);
+  left: var(--space-3);
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.playback-overlay__info-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+}
+
+.playback-overlay__info-toggle:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
 .playback-overlay__nav {
   position: absolute;
   top: 50%;

@@ -1,0 +1,82 @@
+.quick-tag-add {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.quick-tag-add__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+}
+
+.quick-tag-add__toggle:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.quick-tag-add__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 220px;
+  max-width: min(80vw, 320px);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: var(--radius-sm);
+}
+
+.quick-tag-add__input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  font-size: 13px;
+  padding: var(--space-1) 2px;
+  outline: none;
+}
+
+.quick-tag-add__input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.quick-tag-add__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.quick-tag-add__suggestion {
+  padding: 2px var(--space-2);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-pill, 999px);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.quick-tag-add__suggestion:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.quick-tag-add__suggestion:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.quick-tag-add__error {
+  margin: 0;
+  font-size: 11px;
+  color: #ff8080;
+}

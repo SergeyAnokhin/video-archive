@@ -39,6 +39,14 @@ def list_tags(
     return {"tags": service.list_tags(get_engine(), query=query, active_only=active_only, limit=limit)}
 
 
+@router.get("/tags/used")
+def list_used_tags(
+    query: str | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=1000),
+):
+    return {"tags": service.list_used_tags(get_engine(), query=query, limit=limit)}
+
+
 @router.post("/tags")
 def create_tag(body: TagRequest):
     try:

@@ -232,7 +232,8 @@
     "copyPath": "Copy path",
     "copied": "Copied.",
     "switchToStream": "Switch to embedded playback",
-    "switchToDirectLink": "Switch to direct link"
+    "switchToDirectLink": "Switch to direct link",
+    "info": "File info & actions"
   },
   "convertDialog": {
     "directoryTitle": "Convert folder",

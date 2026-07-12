@@ -167,6 +167,44 @@ def test_list_top_tags_for_files_empty_input_returns_empty_dict(engine):
     assert tags_service.list_top_tags_for_files(engine, []) == {}
 
 
+def test_list_used_tags_only_includes_assigned_tags(engine, source):
+    """Unlike `list_tags()`, `list_used_tags()` must exclude vocabulary
+    entries configured for AI tagging but never actually assigned to a file
+    (user request: playback screen's quick-add should suggest from what's
+    really in this archive, not the full settings vocabulary)."""
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    tags_service.create_tag(engine, {"display_name": "Birthday"})  # never assigned
+
+    _insert_file_and_tags(engine, source, "f1", [(beach["id"], 80)])
+
+    used = tags_service.list_used_tags(engine)
+    assert [t["display_name"] for t in used] == ["Beach"]
+
+
+def test_list_used_tags_prefix_filters_and_orders_by_usage(engine, source):
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    birthday = tags_service.create_tag(engine, {"display_name": "Birthday"})
+    bike = tags_service.create_tag(engine, {"display_name": "Bike"})
+
+    _insert_file_and_tags(engine, source, "f1", [(beach["id"], 80), (birthday["id"], 50)])
+    _insert_file_and_tags(engine, source, "f2", [(beach["id"], 60), (bike["id"], 40)])
+
+    used = tags_service.list_used_tags(engine, query="b")
+    assert [t["display_name"] for t in used] == ["Beach", "Bike", "Birthday"]
+
+    used_snow = tags_service.list_used_tags(engine, query="sn")
+    assert used_snow == []
+
+
+def test_list_used_tags_respects_limit(engine, source):
+    beach = tags_service.create_tag(engine, {"display_name": "Beach"})
+    birthday = tags_service.create_tag(engine, {"display_name": "Birthday"})
+    _insert_file_and_tags(engine, source, "f1", [(beach["id"], 80), (birthday["id"], 50)])
+
+    used = tags_service.list_used_tags(engine, limit=1)
+    assert len(used) == 1
+
+
 def test_list_tags_by_ids_preserves_order_and_length(engine):
     """Batch-tagging resume (`app/jobs/tag_batch.py::resume_directory_scope`)
     relies on this to realign a batch's positional scores against the exact

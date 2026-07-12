@@ -84,6 +84,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   // panel closes (user request) -- the panel reports each successful tag
   // mutation here, and the pending flag turns into one refetch on close.
   const infoTagsChangedRef = useRef(false)
+  // Same batching for tags added via the playback screen's quick tag-add
+  // control (user request) -- see closePlayback()/openInfoFromPlayback().
+  const playingTagsChangedRef = useRef(false)
   // Per-file job items already completed and folded into this directory's
   // data, so a still-running job's later poll ticks don't re-trigger the
   // same reload (user request: preview/tag/convert results should appear as
@@ -213,6 +216,27 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     if (target) {
       setInfoFile(target)
     }
+  }
+
+  function closePlayback() {
+    setPlayingFile(null)
+    if (playingTagsChangedRef.current) {
+      playingTagsChangedRef.current = false
+      setReloadTick((tick) => tick + 1)
+    }
+  }
+
+  // Playback screen's quick tag-add button (user request) switches straight
+  // into the info panel for the same file instead of stacking a second
+  // overlay -- any tag added while still on the playback screen carries
+  // forward into the info panel's own batched refresh-on-close.
+  function openInfoFromPlayback() {
+    if (playingTagsChangedRef.current) {
+      playingTagsChangedRef.current = false
+      infoTagsChangedRef.current = true
+    }
+    setInfoFile(playingFile)
+    setPlayingFile(null)
   }
 
   function closeInfoPanel() {
@@ -527,8 +551,12 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
       {playingFile && (
         <PlaybackModal
           file={playingFile}
-          onClose={() => setPlayingFile(null)}
+          onClose={closePlayback}
           onMoved={handleMoved}
+          onOpenInfo={openInfoFromPlayback}
+          onTagAdded={() => {
+            playingTagsChangedRef.current = true
+          }}
           hasPrev={playingIndex > 0}
           hasNext={playingIndex >= 0 && playingIndex < sortedFiles.length - 1}
           onPrev={() => goToPlayingOffset(-1)}

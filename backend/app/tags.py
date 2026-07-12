@@ -66,6 +66,41 @@ def list_tags(
     return [_row_to_dict(row) for row in rows]
 
 
+def list_used_tags(engine, query: str | None = None, limit: int | None = None) -> list[dict]:
+    """Tags actually assigned to at least one file in this archive (as
+    opposed to `list_tags()`'s full vocabulary, which also includes tags
+    only configured for AI tagging but never applied) -- feeds the playback
+    screen's quick tag-add autocomplete (user request), ordered by how often
+    each tag is used so the most locally-relevant matches surface first."""
+    clauses = []
+    params: dict = {}
+    if query:
+        clauses.append("tc.tag_key LIKE :prefix")
+        params["prefix"] = f"{normalize_tag_key(query)}%"
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    limit_sql = ""
+    if limit is not None:
+        limit_sql = "LIMIT :limit"
+        params["limit"] = limit
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT tc.*, COUNT(ft.id) AS usage_count
+                FROM tag_catalog tc
+                JOIN file_tags ft ON ft.tag_id = tc.id
+                {where_sql}
+                GROUP BY tc.id
+                ORDER BY usage_count DESC, tc.display_name COLLATE NOCASE
+                {limit_sql}
+                """
+            ),
+            params,
+        ).all()
+    return [_row_to_dict(row) for row in rows]
+
+
 def get_tag(engine, tag_id: str) -> dict | None:
     with engine.connect() as conn:
         row = conn.execute(text("SELECT * FROM tag_catalog WHERE id = :id"), {"id": tag_id}).fetchone()

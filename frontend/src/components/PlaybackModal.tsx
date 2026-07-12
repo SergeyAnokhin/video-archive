@@ -1,21 +1,34 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronLeft, ChevronRight, Copy, Link, PlayCircle, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Copy, Info, Link, PlayCircle, X } from 'lucide-react'
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
+import { QuickTagAdd } from './QuickTagAdd'
 import './PlaybackModal.css'
 
 interface PlaybackModalProps {
   file: FileEntry
   onClose: () => void
   onMoved?: () => void
+  onOpenInfo?: () => void
+  onTagAdded?: () => void
   hasPrev?: boolean
   hasNext?: boolean
   onPrev?: () => void
   onNext?: () => void
 }
 
-export function PlaybackModal({ file, onClose, onMoved, hasPrev, hasNext, onPrev, onNext }: PlaybackModalProps) {
+export function PlaybackModal({
+  file,
+  onClose,
+  onMoved,
+  onOpenInfo,
+  onTagAdded,
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
+}: PlaybackModalProps) {
   const { t } = useTranslation()
   const [info, setInfo] = useState<PlaybackInfo | null>(null)
   const [mode, setMode] = useState<PlaybackMode | null>(null)
@@ -88,6 +101,21 @@ export function PlaybackModal({ file, onClose, onMoved, hasPrev, hasNext, onPrev
           <FolderQuickActions fileId={file.id} onMoved={onMoved} />
         </div>
       )}
+
+      <div className="playback-overlay__quick-actions" onClick={(event) => event.stopPropagation()}>
+        {onOpenInfo && (
+          <button
+            type="button"
+            className="playback-overlay__info-toggle"
+            aria-label={t('playbackModal.info')}
+            title={t('playbackModal.info')}
+            onClick={onOpenInfo}
+          >
+            <Info size={16} />
+          </button>
+        )}
+        <QuickTagAdd fileId={file.id} onTagAdded={onTagAdded} />
+      </div>
 
       {hasPrev && onPrev && (
         <button
