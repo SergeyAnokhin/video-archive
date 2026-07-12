@@ -497,6 +497,7 @@
     "copied": "Скопировано",
     "filterJob": "ID задания",
     "filterFile": "ID файла",
+    "clearFilter": "Очистить фильтр",
     "filterByFile": "Фильтр по этому файлу",
     "filterLevelAll": "Все уровни",
     "level": {

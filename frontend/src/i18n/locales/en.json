@@ -497,6 +497,7 @@
     "copied": "Copied",
     "filterJob": "Job ID",
     "filterFile": "File ID",
+    "clearFilter": "Clear filter",
     "filterByFile": "Filter by this file",
     "filterLevelAll": "All levels",
     "level": {

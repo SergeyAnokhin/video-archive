@@ -138,12 +138,25 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
             value={jobIdFilter}
             onChange={(event) => setJobIdFilter(event.target.value)}
           />
-          <input
-            className="log-viewer__filter-input"
-            placeholder={t('logs.filterFile')}
-            value={fileIdFilter}
-            onChange={(event) => setFileIdFilter(event.target.value)}
-          />
+          <div className="log-viewer__filter-with-clear">
+            <input
+              className="log-viewer__filter-input"
+              placeholder={t('logs.filterFile')}
+              value={fileIdFilter}
+              onChange={(event) => setFileIdFilter(event.target.value)}
+            />
+            {fileIdFilter && (
+              <button
+                type="button"
+                className="log-viewer__filter-clear"
+                aria-label={t('logs.clearFilter')}
+                title={t('logs.clearFilter')}
+                onClick={() => setFileIdFilter('')}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
           <select
             className="log-viewer__filter-select"
             value={levelFilter}

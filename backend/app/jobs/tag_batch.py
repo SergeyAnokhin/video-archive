@@ -27,11 +27,11 @@ import time
 
 from sqlalchemy import text
 
-from app import batch_submissions, provider_entries, tagging, tagging_settings, tags as tags_service
+from app import batch_submissions, provider_entries, provider_usage, tagging, tagging_settings, tags as tags_service
 from app.jobs import service
 from app.jobs.tag import _assign_tags, _log_tag_scores, _process_pending_file
 from app.providers import registry
-from app.providers.base import BatchPollResult, ProviderError
+from app.providers.base import BatchPollResult, ProviderError, build_prompt
 from app.sources import SourceAccess
 
 # How often a batch submission is re-checked, and how long it may stay
@@ -91,9 +91,19 @@ def run_batch(
         return 0, unresolved, None
 
     try:
+        # Token counts aren't known until the provider responds, so the best
+        # size signal available before submission is what we're about to
+        # send: prompt characters (same prompt text per request, tags don't
+        # vary within a batch) and the raw image payload (user request --
+        # "how much did it send, tokens or characters if there's no
+        # tokens").
+        prompt_chars = len(build_prompt(display_names))
+        image_count = sum(len(images) for _, images in items)
+        image_bytes = sum(len(image) for _, images in items for image in images)
         service.log_event(
             engine, job["id"], None, "info", "batch_submitted",
-            f"Submitting {len(items)} file(s) to {batch_entry['display_name']} for batch tagging.",
+            f"Submitting {len(items)} file(s) to {batch_entry['display_name']} for batch tagging "
+            f"({image_count} image(s), ~{image_bytes:,} image byte(s), {prompt_chars} prompt char(s)/file).",
         )
         external_batch_id = registry.create_batch_with_entry(engine, batch_entry, items, display_names)
     except Exception as exc:  # noqa: BLE001 - submission failure falls back to the per-file loop for every file
@@ -239,11 +249,31 @@ def _poll_and_apply(
                 service.fail_job_item(engine, item_id, message="File no longer exists.")
         return 0, fallback_pending, None
 
+    # Usage stats (user request -- see tokens/estimated cost the batch call
+    # spent without having to go look in the Settings usage-stats table).
+    usage = poll_result.usage
+    if usage and (usage.tokens_in is not None or usage.tokens_out is not None):
+        cost = provider_usage.estimate_cost_usd(submission["model_name"], usage.tokens_in, usage.tokens_out)
+        cost_part = f", ~${cost:.4f} estimated" if cost is not None else ""
+        service.log_event(
+            engine, job["id"], None, "info", "batch_usage",
+            f"Batch usage: {usage.tokens_in or 0} token(s) in, {usage.tokens_out or 0} token(s) out{cost_part}.",
+        )
+
     for file_id, item_id in item_map.items():
         row = file_rows.get(file_id)
         if row is None:
             service.fail_job_item(engine, item_id, message="File no longer exists.")
             continue
+        raw_text = poll_result.raw_texts.get(file_id) if poll_result.raw_texts else None
+        if raw_text is not None:
+            # Logged before any parsing/ranking (user request -- "in case it
+            # later breaks, so we know what changed and why"), at debug level
+            # since it's the full unparsed reply, not a routine progress event.
+            service.log_event(
+                engine, job["id"], row.id, "debug", "job_item_raw_response",
+                f"Raw model response for {row.relative_path}: {raw_text}",
+            )
         scores = poll_result.results.get(file_id) if poll_result.results else None
         if scores is None:
             fallback_pending.append((row, item_id))
@@ -303,7 +333,9 @@ def _poll_until_resolved(
         return "resolved", BatchPollResult(done=True, error="Provider entry no longer exists.")
 
     ordered_keys = [item["file_id"] for item in json.loads(submission["items_json"])]
-    deadline = time.monotonic() + BATCH_POLL_TIMEOUT_SECONDS
+    started = time.monotonic()
+    deadline = started + BATCH_POLL_TIMEOUT_SECONDS
+    poll_count = 0
 
     while True:
         stop = service.check_stop_requested(job["id"])
@@ -313,6 +345,15 @@ def _poll_until_resolved(
         current = batch_submissions.get_submission(engine, submission["id"])
         if current is None or current["status"] != batch_submissions.STATUS_POLLING:
             return "resolved", BatchPollResult(done=True, error="Batch submission was forgotten locally.")
+
+        poll_count += 1
+        elapsed = int(time.monotonic() - started)
+        # User request -- make the 30s poll cadence visible (console + Log
+        # Viewer) instead of the job looking stuck while it waits.
+        service.log_event(
+            engine, job["id"], None, "info", "batch_poll_check",
+            f"Checking batch status (poll #{poll_count}, {elapsed}s since submission)...",
+        )
 
         try:
             result = registry.poll_batch_with_entry(

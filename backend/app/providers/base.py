@@ -48,6 +48,13 @@ class BatchPollResult:
     results: dict[str, list[int] | None] | None = None
     usage: UsageInfo | None = None
     error: str | None = None
+    raw_texts: dict[str, str] | None = None
+    """Each file's raw provider reply text, keyed the same as `results` (user
+    request -- log the exact model output before it's parsed/ranked, so a
+    parsing or scoring bug downstream still leaves a record of what the
+    model actually said). Only populated once the batch resolves
+    successfully; absent entries mean that key's response couldn't even be
+    extracted (see each provider's `poll_batch()`)."""
 
 
 def encode_image_base64(image_bytes: bytes) -> str:

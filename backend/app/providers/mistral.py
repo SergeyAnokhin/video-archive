@@ -168,6 +168,7 @@ def poll_batch(external_batch_id: str, tags: list[str], api_key: str) -> BatchPo
         raise ProviderError(f"Mistral batch output download failed: {exc}") from exc
 
     results: dict[str, list[int] | None] = {}
+    raw_texts: dict[str, str] = {}
     tokens_in_total = 0
     tokens_out_total = 0
     saw_usage = False
@@ -181,6 +182,7 @@ def poll_batch(external_batch_id: str, tags: list[str], api_key: str) -> BatchPo
         body = record.get("response", {}).get("body", {})
         try:
             text_reply = body["choices"][0]["message"]["content"]
+            raw_texts[key] = text_reply
             results[key] = parse_scores(text_reply, len(tags))
         except (KeyError, IndexError, TypeError, ProviderError):
             results[key] = None
@@ -191,4 +193,4 @@ def poll_batch(external_batch_id: str, tags: list[str], api_key: str) -> BatchPo
             tokens_out_total += usage.get("completion_tokens") or 0
 
     usage_info = UsageInfo(tokens_in_total, tokens_out_total) if saw_usage else UsageInfo()
-    return BatchPollResult(done=True, results=results, usage=usage_info)
+    return BatchPollResult(done=True, results=results, usage=usage_info, raw_texts=raw_texts)

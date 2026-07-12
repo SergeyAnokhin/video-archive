@@ -152,12 +152,14 @@ def poll_batch(external_batch_id: str, ordered_keys: list[str], tags: list[str],
         return BatchPollResult(done=True, error=f"Unexpected Gemini batch response shape: {exc}")
 
     results: dict[str, list[int] | None] = {}
+    raw_texts: dict[str, str] = {}
     tokens_in_total = 0
     tokens_out_total = 0
     saw_usage = False
     for key, entry in zip(ordered_keys, inlined_responses):
         try:
             text_reply = entry["response"]["candidates"][0]["content"]["parts"][0]["text"]
+            raw_texts[key] = text_reply
             results[key] = parse_scores(text_reply, len(tags))
         except (KeyError, IndexError, TypeError, ProviderError):
             results[key] = None
@@ -168,4 +170,4 @@ def poll_batch(external_batch_id: str, ordered_keys: list[str], tags: list[str],
             tokens_out_total += usage.get("candidatesTokenCount") or 0
 
     usage_info = UsageInfo(tokens_in_total, tokens_out_total) if saw_usage else UsageInfo()
-    return BatchPollResult(done=True, results=results, usage=usage_info)
+    return BatchPollResult(done=True, results=results, usage=usage_info, raw_texts=raw_texts)

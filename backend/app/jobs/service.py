@@ -27,7 +27,10 @@ _FINISH_EVENT_TYPES = {
 
 # See `log_event()`'s console-mirroring note below.
 _CONSOLE_INFO_EVENT_TYPES = frozenset(
-    {"job_item_started", "job_item_progress", "job_force_cancelled", "job_force_abandoned", "job_item_tags"}
+    {
+        "job_item_started", "job_item_progress", "job_force_cancelled", "job_force_abandoned", "job_item_tags",
+        "batch_poll_check",
+    }
 )
 
 
@@ -95,6 +98,9 @@ _EVENT_EMOJI = {
     "job_item_batch_prep_failed": "⚠️",
     "batch_submitted": "📦",
     "batch_failed": "⚠️",
+    "batch_poll_check": "🔄",
+    "batch_usage": "🔢",
+    "job_item_raw_response": "📄",
 }
 
 

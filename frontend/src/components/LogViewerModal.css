@@ -101,6 +101,40 @@
   min-width: 120px;
 }
 
+.log-viewer__filter-with-clear {
+  position: relative;
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+}
+
+.log-viewer__filter-with-clear .log-viewer__filter-input {
+  width: 100%;
+  padding-right: calc(var(--space-3) + 16px);
+}
+
+.log-viewer__filter-clear {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.log-viewer__filter-clear:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
 .log-viewer__list {
   flex: 1;
   overflow-y: auto;
