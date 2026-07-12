@@ -342,7 +342,9 @@
     "copyAll": "Copy all tags",
     "sampleFrameCount": "Sampled frame count",
     "combineIntoCollage": "Combine frames into one collage image",
-    "topTagCount": "Top tag count to keep"
+    "topTagCount": "Top tag count to keep",
+    "imageResolution": "Image resolution (px)",
+    "imageResolutionHint": "Caps each image sent to the AI provider: the collage cell's side length, or each frame's longest side when frames are sent separately."
   },
   "backupMaintenance": {
     "title": "Backup & Maintenance",

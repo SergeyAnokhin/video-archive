@@ -540,6 +540,15 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE interface_settings ADD COLUMN search_file_limit INTEGER NOT NULL DEFAULT 10",
         "ALTER TABLE interface_settings ADD COLUMN search_dir_limit INTEGER NOT NULL DEFAULT 10",
     ],
+    # Post-V1: configurable tagging image resolution (user request -- wants
+    # control over what gets sent to the AI vision provider). The pixel size
+    # was previously a hardcoded constant (`CELL_SIZE_PX` in `app/tagging.py`);
+    # this makes it a per-image cap: the collage cell side length, or each
+    # frame's longest side in per-frame mode. Default 360 matches the prior
+    # hardcoded constant, so existing behavior is unchanged until edited.
+    24: [
+        "ALTER TABLE tagging_settings ADD COLUMN image_resolution INTEGER NOT NULL DEFAULT 360",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

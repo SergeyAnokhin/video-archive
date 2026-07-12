@@ -189,11 +189,12 @@ def test_tagging_settings_roundtrip_over_http(tmp_path, monkeypatch):
 
         r = client.put(
             "/api/tagging-settings",
-            json={"sample_frame_count": 6, "combine_into_collage": False, "top_tag_count": 5},
+            json={"sample_frame_count": 6, "combine_into_collage": False, "top_tag_count": 5, "image_resolution": 720},
         )
         assert r.status_code == 200
         assert r.json()["sample_frame_count"] == 6
         assert r.json()["combine_into_collage"] is False
+        assert r.json()["image_resolution"] == 720
 
 
 def test_provider_entries_crud_and_key_masking_over_http(tmp_path, monkeypatch):

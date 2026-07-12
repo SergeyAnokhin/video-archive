@@ -228,7 +228,9 @@ def two_files(engine, source):
 
 @pytest.fixture(autouse=False)
 def stub_build_images(monkeypatch):
-    monkeypatch.setattr(tagging, "build_tagging_images", lambda video_path, count, combine: [FAKE_IMAGE])
+    monkeypatch.setattr(
+        tagging, "build_tagging_images", lambda video_path, count, combine, resolution=None: [FAKE_IMAGE]
+    )
 
 
 def _run_directory_tag_job(engine):
@@ -404,7 +406,9 @@ def test_per_file_fallback_tries_next_entry_after_first_fails(engine, source, mo
         engine, {"provider_type": "gemini", "display_name": "working", "enabled": True, "api_key": "gm-test"}
     )
 
-    monkeypatch.setattr(tagging, "build_tagging_images", lambda video_path, count, combine: [FAKE_IMAGE])
+    monkeypatch.setattr(
+        tagging, "build_tagging_images", lambda video_path, count, combine, resolution=None: [FAKE_IMAGE]
+    )
 
     def fake_score(images, tags, model, api_key):
         raise ProviderError("openrouter is down")

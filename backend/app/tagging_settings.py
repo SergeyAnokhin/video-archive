@@ -2,12 +2,13 @@
 
 Holds the tagging job's non-vocabulary configuration: how many frames to
 sample per video, whether to combine them into one collage image before
-sending to the provider (default behavior per Specification §12.2), and how
-many top-scoring tags to keep. There is no manual "default provider" choice
-here anymore -- the tag job picks the active provider by trying enabled
-`app/provider_entries.py` entries in priority order (see `app/jobs/tag.py`).
-The tag vocabulary itself lives in `app/tags.py`; provider credentials/
-enablement live in `app/provider_entries.py` + `app/secrets_store.py`.
+sending to the provider (default behavior per Specification §12.2), the
+pixel resolution each image is sent at, and how many top-scoring tags to
+keep. There is no manual "default provider" choice here anymore -- the tag
+job picks the active provider by trying enabled `app/provider_entries.py`
+entries in priority order (see `app/jobs/tag.py`). The tag vocabulary
+itself lives in `app/tags.py`; provider credentials/enablement live in
+`app/provider_entries.py` + `app/secrets_store.py`.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from sqlalchemy import text
 DEFAULT_SAMPLE_FRAME_COUNT = 9
 DEFAULT_COMBINE_INTO_COLLAGE = True
 DEFAULT_TOP_TAG_COUNT = 10
+DEFAULT_IMAGE_RESOLUTION = 360
 
 
 def _now() -> str:
@@ -30,6 +32,7 @@ def _row_to_dict(row) -> dict:
         "sample_frame_count": row.sample_frame_count,
         "combine_into_collage": bool(row.combine_into_collage),
         "top_tag_count": row.top_tag_count,
+        "image_resolution": row.image_resolution,
         "updated_at": row.updated_at,
     }
 
@@ -50,6 +53,7 @@ def update_settings(engine, data: dict) -> dict:
                 SET sample_frame_count = :frame_count,
                     combine_into_collage = :combine,
                     top_tag_count = :top_count,
+                    image_resolution = :resolution,
                     updated_at = :now
                 WHERE id = 1
                 """
@@ -58,6 +62,7 @@ def update_settings(engine, data: dict) -> dict:
                 "frame_count": data.get("sample_frame_count", DEFAULT_SAMPLE_FRAME_COUNT),
                 "combine": bool(data.get("combine_into_collage", DEFAULT_COMBINE_INTO_COLLAGE)),
                 "top_count": data.get("top_tag_count", DEFAULT_TOP_TAG_COUNT),
+                "resolution": data.get("image_resolution", DEFAULT_IMAGE_RESOLUTION),
                 "now": now,
             },
         )
@@ -71,14 +76,15 @@ def seed_default_settings(conn) -> None:
         text(
             """
             INSERT OR IGNORE INTO tagging_settings
-                (id, sample_frame_count, combine_into_collage, top_tag_count, updated_at)
-            VALUES (1, :frame_count, :combine, :top_count, :now)
+                (id, sample_frame_count, combine_into_collage, top_tag_count, image_resolution, updated_at)
+            VALUES (1, :frame_count, :combine, :top_count, :resolution, :now)
             """
         ),
         {
             "frame_count": DEFAULT_SAMPLE_FRAME_COUNT,
             "combine": DEFAULT_COMBINE_INTO_COLLAGE,
             "top_count": DEFAULT_TOP_TAG_COUNT,
+            "resolution": DEFAULT_IMAGE_RESOLUTION,
             "now": _now(),
         },
     )

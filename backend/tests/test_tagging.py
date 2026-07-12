@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import shutil
 
+import cv2
+import numpy as np
 import pytest
 from sqlalchemy import text
 
@@ -204,13 +206,16 @@ def test_tagging_settings_singleton_roundtrip(engine):
     assert defaults["sample_frame_count"] == 9
     assert defaults["combine_into_collage"] is True
     assert defaults["top_tag_count"] == 10
+    assert defaults["image_resolution"] == 360
 
     updated = tagging_settings.update_settings(
-        engine, {"sample_frame_count": 6, "combine_into_collage": False, "top_tag_count": 5}
+        engine,
+        {"sample_frame_count": 6, "combine_into_collage": False, "top_tag_count": 5, "image_resolution": 720},
     )
     assert updated["sample_frame_count"] == 6
     assert updated["combine_into_collage"] is False
     assert updated["top_tag_count"] == 5
+    assert updated["image_resolution"] == 720
 
 
 def test_secrets_store_roundtrip():
@@ -270,6 +275,25 @@ def test_build_tagging_images_uncombined_returns_per_frame(tmp_path):
     images = tagging.build_tagging_images(video_path, frame_count=4, combine_into_collage=False)
     assert len(images) == 4
     assert all(img[:2] == b"\xff\xd8" for img in images)
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_build_tagging_images_respects_image_resolution(tmp_path):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    collage = tagging.build_tagging_images(
+        video_path, frame_count=4, combine_into_collage=True, image_resolution=128
+    )
+    collage_arr = cv2.imdecode(np.frombuffer(collage[0], np.uint8), cv2.IMREAD_COLOR)
+    assert collage_arr.shape[0] % 128 == 0 and collage_arr.shape[1] % 128 == 0
+
+    frames = tagging.build_tagging_images(
+        video_path, frame_count=4, combine_into_collage=False, image_resolution=128
+    )
+    for frame in frames:
+        frame_arr = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
+        assert max(frame_arr.shape[:2]) == 128
 
 
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")

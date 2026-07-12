@@ -76,7 +76,7 @@ def _tag_one_file(
 
     with access.local_copy(file_row.relative_path) as video_path:
         images = tagging.build_tagging_images(
-            video_path, settings["sample_frame_count"], settings["combine_into_collage"]
+            video_path, settings["sample_frame_count"], settings["combine_into_collage"], settings["image_resolution"]
         )
     display_names = [tag["display_name"] for tag in vocabulary]
     scores, used_entry = registry.score_tags_with_fallback(

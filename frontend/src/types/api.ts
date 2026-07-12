@@ -282,6 +282,7 @@ export interface TaggingSettings {
   sample_frame_count: number
   combine_into_collage: boolean
   top_tag_count: number
+  image_resolution: number
   updated_at: string
 }
 

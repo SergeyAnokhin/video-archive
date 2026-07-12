@@ -241,7 +241,22 @@ export function TaggingSettingsSection() {
                 onBlur={() => void handleSaveSettings(settings)}
               />
             </label>
+
+            <label className="settings-modal__label">
+              {t('tagging.imageResolution')}
+              <input
+                className="settings-modal__input"
+                type="number"
+                min={64}
+                max={2048}
+                step={8}
+                value={settings.image_resolution}
+                onChange={(event) => setSettings({ ...settings, image_resolution: Number(event.target.value) })}
+                onBlur={() => void handleSaveSettings(settings)}
+              />
+            </label>
           </div>
+          <p className="settings-modal__hint">{t('tagging.imageResolutionHint')}</p>
 
           <label className="settings-modal__field">
             <span className="settings-modal__field-label">{t('tagging.combineIntoCollage')}</span>
