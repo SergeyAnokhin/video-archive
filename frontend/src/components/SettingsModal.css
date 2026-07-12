@@ -181,6 +181,49 @@
   background: var(--color-surface-raised);
 }
 
+/* Tagging Settings "what the model sees" demo (TaggingSettingsSection.tsx):
+   images render at their real, unscaled pixel size inside a scrollable strip
+   so the chosen resolution's actual quality is visible, not stretched/shrunk
+   to fit the modal. */
+.tagging-preview {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.tagging-preview__scroll {
+  margin-top: var(--space-2);
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.tagging-preview__collage,
+.tagging-preview__frame {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tagging-preview__frames {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.tagging-preview__collage img,
+.tagging-preview__frame img {
+  display: block;
+  max-width: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.tagging-preview__caption {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 /* Two-dot preview of a theme's accent pair, scoped via `data-theme` so each
  * swatch reads that preset's own variables regardless of the theme actually
  * applied to the document (InterfaceSection.tsx). */

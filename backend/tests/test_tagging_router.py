@@ -8,15 +8,21 @@ call (manual/live verification only).
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import app.db as db_module
 from app.main import app
 from app.providers import registry
+
+from .conftest import make_video
+
+ffmpeg_missing = shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None
 
 
 def _insert_source_and_folder(engine, root):
@@ -195,6 +201,46 @@ def test_tagging_settings_roundtrip_over_http(tmp_path, monkeypatch):
         assert r.json()["sample_frame_count"] == 6
         assert r.json()["combine_into_collage"] is False
         assert r.json()["image_resolution"] == 720
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_tagging_preview_over_http(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        engine = db_module.get_engine()
+        root = tmp_path / "source"
+        _source_id, file_id = _insert_source_and_folder(engine, root)
+        make_video(root / "clip_0.mp4", duration=3.0, size="320x240")
+
+        r = client.post(
+            "/api/tagging-settings/preview",
+            json={"file_id": file_id, "sample_frame_count": 4, "combine_into_collage": True, "image_resolution": 128},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["combine_into_collage"] is True
+        assert len(body["images"]) == 1
+        assert body["images"][0]["width"] % 128 == 0
+        assert body["images"][0]["data_url"].startswith("data:image/jpeg;base64,")
+
+        r = client.post(
+            "/api/tagging-settings/preview",
+            json={"file_id": file_id, "sample_frame_count": 3, "combine_into_collage": False, "image_resolution": 96},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert len(body["images"]) == 3
+        assert all(max(img["width"], img["height"]) == 96 for img in body["images"])
+
+        r = client.post(
+            "/api/tagging-settings/preview",
+            json={
+                "file_id": str(uuid.uuid4()),
+                "sample_frame_count": 3,
+                "combine_into_collage": False,
+                "image_resolution": 96,
+            },
+        )
+        assert r.status_code == 404
 
 
 def test_provider_entries_crud_and_key_masking_over_http(tmp_path, monkeypatch):
