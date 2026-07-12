@@ -2,8 +2,9 @@
 external dependency: media naming rules (`app/media.py`), ffmpeg command
 construction and variant naming (`app/conversion.py` — the command an
 external ffmpeg process is invoked with, without running it), aspect-ratio
-resolution (`app/preview_settings.py`), and collage frame-to-tile selection
-(`app/preview.py`) with hand-built detection metadata — no ffmpeg, no
+resolution (`app/preview_settings.py`), collage frame-to-tile selection
+(`app/preview.py`) with hand-built detection metadata, and detection math
+(`app/detection.py` — greedy NMS, cosine-distance fallback) — no ffmpeg, no
 models, no database.
 """
 
@@ -11,6 +12,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from app import detection
 from app.conversion import build_ffmpeg_command, effective_max_dimension, encode_variant_suffix
 from app.media import (
     PREVIEW_GIF_DIR,
@@ -323,3 +327,54 @@ def test_diverse_video_frame_plan_edge_cases():
     assert diverse_video_frame_plan([], 4) == []
     assert diverse_video_frame_plan(["a.mp4"], 3) == ["a.mp4", "a.mp4", "a.mp4"]
     assert diverse_video_frame_plan(["a.mp4", "b.mp4"], 0) == []
+
+
+# --- detection math: greedy NMS and embedding distance ---------------------
+
+
+def test_nms_suppresses_overlapping_lower_scored_box():
+    # Two near-identical boxes: only the higher-scored one survives; a
+    # distant third box is untouched.
+    boxes = [
+        (0.0, 0.0, 10.0, 10.0),
+        (1.0, 1.0, 11.0, 11.0),  # IoU ~0.68 with the first box
+        (100.0, 100.0, 110.0, 110.0),
+    ]
+    scores = [0.9, 0.8, 0.5]
+    assert detection._nms(boxes, scores, iou_threshold=0.5) == [0, 2]
+
+
+def test_nms_orders_by_score_not_input_position():
+    boxes = [(1.0, 1.0, 11.0, 11.0), (0.0, 0.0, 10.0, 10.0)]
+    scores = [0.3, 0.9]  # second box wins despite coming later
+    assert detection._nms(boxes, scores, iou_threshold=0.5) == [1]
+
+
+def test_nms_keeps_boxes_at_or_below_iou_threshold():
+    # Side-by-side boxes with zero overlap are both kept, and a box whose
+    # IoU is exactly the threshold survives (`<=` comparison).
+    boxes = [(0.0, 0.0, 10.0, 10.0), (10.0, 0.0, 20.0, 10.0)]
+    scores = [0.9, 0.8]
+    assert detection._nms(boxes, scores, iou_threshold=0.0) == [0, 1]
+    # IoU of these two is exactly 1/3: kept at threshold 1/3, dropped below.
+    boxes = [(0.0, 0.0, 10.0, 10.0), (5.0, 0.0, 15.0, 10.0)]
+    assert detection._nms(boxes, scores, iou_threshold=1 / 3) == [0, 1]
+    assert detection._nms(boxes, scores, iou_threshold=0.33) == [0]
+
+
+def test_nms_empty_input():
+    assert detection._nms([], []) == []
+
+
+def test_embedding_distance_numpy_fallback(monkeypatch):
+    # Without the SFace recognizer the numpy cosine-distance fallback runs:
+    # 0 for identical direction, 1 for orthogonal, 2 for opposite.
+    monkeypatch.setattr(detection, "get_face_recognizer", lambda: None)
+    assert detection.embedding_distance([1.0, 0.0], [2.0, 0.0]) == pytest.approx(0.0)
+    assert detection.embedding_distance([1.0, 0.0], [0.0, 1.0]) == pytest.approx(1.0)
+    assert detection.embedding_distance([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(2.0)
+
+
+def test_embedding_distance_zero_vector_does_not_divide_by_zero(monkeypatch):
+    monkeypatch.setattr(detection, "get_face_recognizer", lambda: None)
+    assert detection.embedding_distance([0.0, 0.0], [0.0, 0.0]) == pytest.approx(1.0)
