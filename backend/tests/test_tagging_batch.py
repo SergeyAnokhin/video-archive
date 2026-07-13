@@ -270,6 +270,31 @@ def test_directory_batch_tagging_all_succeed(engine, source, two_files, stub_bui
     assert batch_submissions.list_active(engine) == []  # resolved submissions aren't "active" anymore
 
 
+def test_directory_batch_tagging_logs_provider_and_model_used(engine, source, two_files, stub_build_images, monkeypatch):
+    """User request -- same as the per-file path, batch-resolved tag scores
+    should also be logged with the provider/model that produced them."""
+    file_a, file_b = two_files
+
+    monkeypatch.setattr(registry, "create_batch_with_entry", lambda engine_, entry, items, tags: "ext-batch-1")
+    monkeypatch.setattr(
+        registry, "poll_batch_with_entry",
+        lambda engine_, entry, external_id, ordered_keys, tags, **_kwargs: BatchPollResult(
+            done=True, results={file_a: [90, 10], file_b: [10, 90]}, usage=UsageInfo()
+        ),
+    )
+
+    status, _message = _run_directory_tag_job(engine)
+    assert status == "completed"
+
+    with engine.connect() as conn:
+        events = conn.execute(
+            text("SELECT message FROM app_events WHERE event_type = 'job_item_tags'")
+        ).all()
+
+    assert len(events) == 2
+    assert all("via gemini/" in event.message for event in events)
+
+
 def test_directory_batch_tagging_partial_fallback(engine, source, two_files, stub_build_images, monkeypatch):
     file_a, file_b = two_files
 

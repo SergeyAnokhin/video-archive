@@ -404,6 +404,49 @@ def test_tag_job_file_scope_assigns_top_n_tags(engine, source, stub_provider):
     assert updated_file.tagged_at is not None
 
 
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_tag_job_logs_provider_and_model_used(engine, source, monkeypatch):
+    """User request -- job log entries for tag scoring should name the
+    provider/model that produced them, not just the scores, so the log makes
+    clear where a tagging request actually went."""
+    entry = provider_entries.create_entry(
+        engine,
+        {
+            "provider_type": "openrouter",
+            "display_name": "openrouter",
+            "enabled": True,
+            "api_key": "sk-test",
+            "vision_model": "test-vision-model",
+        },
+    )
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+
+    def fake_fallback(engine, entries, images, tags, dead_entry_ids, **_kwargs):
+        return [90], entries[0]
+
+    monkeypatch.setattr(registry, "score_tags_with_fallback", fake_fallback)
+
+    make_video(source["root"] / "clips" / "movie.mp4", duration=2.0, size="320x240")
+    scan_source(engine, source["id"], source["root"])
+
+    with engine.connect() as conn:
+        file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clips/movie.mp4'")).fetchone()
+
+    job = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
+    service.start_job(engine, job["id"])
+    status, _message = tag_job.run_tag_job(engine, job)
+    assert status == "completed"
+
+    with engine.connect() as conn:
+        events = conn.execute(
+            text("SELECT message FROM app_events WHERE job_id = :jid AND event_type = 'job_item_tags'"),
+            {"jid": job["id"]},
+        ).all()
+
+    assert len(events) == 1
+    assert f"via {entry['provider_type']}/{entry['vision_model']}" in events[0].message
+
+
 @pytest.fixture()
 def stub_provider_with_zero_scores(monkeypatch):
     """Only the first tag gets a non-zero score -- the rest are scored 0,
