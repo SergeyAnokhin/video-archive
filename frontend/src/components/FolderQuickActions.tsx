@@ -4,6 +4,7 @@ import { Folder, History } from 'lucide-react'
 import type { DirectoryEntry, FavoriteDirectory } from '../types/api'
 import { getRecentFolders, recordFolderVisit } from '../utils/recentFolders'
 import { DirectoryMoveMenu } from './DirectoryMoveMenu'
+import { HistoryFolderMenu } from './HistoryFolderMenu'
 import './FolderQuickActions.css'
 
 interface FolderQuickActionsProps {
@@ -110,17 +111,7 @@ export function FolderQuickActions({ fileId, onMoved }: FolderQuickActionsProps)
           </button>
           {openMenu === 'history' && (
             <div className="folder-quick-actions__history-menu" onClick={(event) => event.stopPropagation()}>
-              {history.map((path, index) => (
-                <button
-                  key={`${path}-${index}`}
-                  type="button"
-                  className="folder-quick-actions__history-item"
-                  onClick={() => void moveTo(path)}
-                >
-                  <Folder size={14} />
-                  <span>{path || t('library.root')}</span>
-                </button>
-              ))}
+              <HistoryFolderMenu paths={history} rootLabel={t('library.root')} onSelect={(path) => void moveTo(path)} />
             </div>
           )}
         </div>

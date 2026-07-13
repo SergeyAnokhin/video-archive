@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowDownAZ,
-  Folder,
   FolderPlus,
   HardDrive,
   History,
@@ -21,6 +20,7 @@ import { CreateFolderDialog } from './CreateFolderDialog'
 import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
 import { FileTuneModal } from './FileTuneModal'
+import { HistoryFolderMenu } from './HistoryFolderMenu'
 import { FileCard, FolderCard } from './LibraryCards'
 import { MoveFileDialog } from './MoveFileDialog'
 import { PlaybackModal } from './PlaybackModal'
@@ -384,36 +384,15 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
               <History size={16} />
             </button>
             {historyOpen && recentVisits.length > 0 && (
-              <div className="library-view__history-menu" role="menu">
-                {recentVisits.map((visitPath, index) => {
-                  const crumbs = visitPath ? visitPath.split('/') : [t('library.root')]
-                  return (
-                    <div key={`${visitPath}-${index}`} className="library-view__history-item">
-                      <Folder size={14} className="library-view__history-item-icon" />
-                      <span className="library-view__history-item-path">
-                        {crumbs.map((crumb, crumbIndex) => {
-                          const isLast = crumbIndex === crumbs.length - 1
-                          const targetPath = visitPath ? crumbs.slice(0, crumbIndex + 1).join('/') : ''
-                          return (
-                            <span key={crumbIndex}>
-                              <button
-                                type="button"
-                                className={`library-view__history-crumb${isLast ? ' library-view__history-crumb--current' : ''}`}
-                                onClick={() => {
-                                  onNavigate(targetPath)
-                                  setHistoryOpen(false)
-                                }}
-                              >
-                                {crumb}
-                              </button>
-                              {!isLast && <span className="library-view__history-crumb-sep">/</span>}
-                            </span>
-                          )
-                        })}
-                      </span>
-                    </div>
-                  )
-                })}
+              <div className="library-view__history-menu">
+                <HistoryFolderMenu
+                  paths={recentVisits}
+                  rootLabel={t('library.root')}
+                  onSelect={(path) => {
+                    onNavigate(path)
+                    setHistoryOpen(false)
+                  }}
+                />
               </div>
             )}
           </div>
