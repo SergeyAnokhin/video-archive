@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getRecentFolders, recordRecentFolder } from './recentFolders'
+import { getRecentFolderVisits, getRecentFolders, recordFolderVisit, recordRecentFolder } from './recentFolders'
 
 // No jsdom in this project's vitest setup (see format.test.ts/eta.test.ts --
 // pure-function tests only): a minimal in-memory localStorage stub is enough
@@ -54,6 +54,34 @@ describe('recordRecentFolder / getRecentFolders', () => {
       recordRecentFolder(`folder-${i}`)
     }
     const result = getRecentFolders()
+    expect(result).toHaveLength(10)
+    expect(result[0]).toBe('folder-14')
+  })
+})
+
+describe('recordFolderVisit / getRecentFolderVisits', () => {
+  it('starts empty', () => {
+    expect(getRecentFolderVisits()).toEqual([])
+  })
+
+  it('prepends the most recently visited folder', () => {
+    recordFolderVisit('a')
+    recordFolderVisit('b')
+    expect(getRecentFolderVisits()).toEqual(['b', 'a'])
+  })
+
+  it('dedupes a re-visited folder, moving it back to the front', () => {
+    recordFolderVisit('a')
+    recordFolderVisit('b')
+    recordFolderVisit('a')
+    expect(getRecentFolderVisits()).toEqual(['a', 'b'])
+  })
+
+  it('caps the list at 10 entries', () => {
+    for (let i = 0; i < 15; i++) {
+      recordFolderVisit(`folder-${i}`)
+    }
+    const result = getRecentFolderVisits()
     expect(result).toHaveLength(10)
     expect(result[0]).toBe('folder-14')
   })

@@ -2,6 +2,7 @@ import { ChevronRight, Folder, FolderInput, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DirectoryEntry, FileEntry } from '../types/api'
+import { recordFolderVisit } from '../utils/recentFolders'
 import './ConvertDialog.css'
 import './MoveFileDialog.css'
 
@@ -38,6 +39,7 @@ export function MoveFileDialog({ file, currentPath, onClose, onMoved }: MoveFile
         }
         throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
       }
+      recordFolderVisit(selected)
       onMoved()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

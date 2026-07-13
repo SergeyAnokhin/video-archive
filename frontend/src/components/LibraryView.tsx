@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowDownAZ,
+  Folder,
   FolderPlus,
   HardDrive,
+  History,
   Home,
   Images,
   MoreVertical,
@@ -27,7 +29,7 @@ import { SearchResults } from './SearchResults'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
 import type { DirectoryChildrenResponse, FileEntry, JobSummary } from '../types/api'
-import { recordRecentFolder } from '../utils/recentFolders'
+import { getRecentFolderVisits, recordFolderVisit, recordRecentFolder } from '../utils/recentFolders'
 import { recordRecentlyViewed } from '../utils/recentlyViewed'
 import type { ActiveSearch } from '../utils/searchQuery'
 import { SORT_OPTIONS, sortFiles, type SortBy } from '../utils/sortFiles'
@@ -75,10 +77,12 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const [infoFile, setInfoFile] = useState<FileEntry | null>(null)
   const [moveFile, setMoveFile] = useState<FileEntry | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>('name')
   const [reloadTick, setReloadTick] = useState(0)
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const overflowRef = useRef<HTMLDivElement | null>(null)
+  const historyRef = useRef<HTMLDivElement | null>(null)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
   // Tags edited inside FileInfoPanel must show on the cards as soon as the
   // panel closes (user request) -- the panel reports each successful tag
@@ -147,6 +151,19 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   }, [overflowOpen])
 
   useEffect(() => {
+    if (!historyOpen) {
+      return
+    }
+    function handleClickOutside(event: MouseEvent) {
+      if (historyRef.current && !historyRef.current.contains(event.target as Node)) {
+        setHistoryOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [historyOpen])
+
+  useEffect(() => {
     if (activeSearch) {
       return
     }
@@ -188,6 +205,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   }, [path, activeSearch, reloadTick])
 
   const segments = path ? path.split('/') : []
+  const recentVisits = getRecentFolderVisits().filter((visitPath) => visitPath !== path)
 
   // Next/prev navigation in PlaybackModal/FileInfoPanel only makes sense
   // against this directory's own sorted listing (user request) -- search
@@ -352,6 +370,56 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
         </nav>
 
         <div className="library-view__toolbar-actions">
+          <div className="library-view__history" ref={historyRef}>
+            <button
+              type="button"
+              className="library-view__icon-btn"
+              aria-label={t('library.folderNavHistory')}
+              title={t('library.folderNavHistory')}
+              aria-haspopup="menu"
+              aria-expanded={historyOpen}
+              disabled={recentVisits.length === 0}
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <History size={16} />
+            </button>
+            {historyOpen && recentVisits.length > 0 && (
+              <div className="library-view__history-menu" role="menu">
+                {recentVisits.map((visitPath, index) => {
+                  const crumbs = visitPath ? visitPath.split('/') : [t('library.root')]
+                  return (
+                    <div key={`${visitPath}-${index}`} className="library-view__history-item">
+                      <Folder size={14} className="library-view__history-item-icon" />
+                      <span className="library-view__history-item-path">
+                        {crumbs.map((crumb, crumbIndex) => {
+                          const isLast = crumbIndex === crumbs.length - 1
+                          const targetPath = visitPath ? crumbs.slice(0, crumbIndex + 1).join('/') : ''
+                          return (
+                            <span key={crumbIndex}>
+                              <button
+                                type="button"
+                                className={`library-view__history-crumb${isLast ? ' library-view__history-crumb--current' : ''}`}
+                                onClick={() => {
+                                  onNavigate(targetPath)
+                                  setHistoryOpen(false)
+                                }}
+                              >
+                                {crumb}
+                              </button>
+                              {!isLast && <span className="library-view__history-crumb-sep">/</span>}
+                            </span>
+                          )
+                        })}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <span className="library-view__toolbar-divider" aria-hidden="true" />
+
           <button
             type="button"
             className="library-view__icon-btn"
@@ -494,6 +562,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
                   onPlay={() => {
                     recordRecentlyViewed(file.id)
                     recordRecentFolder(path)
+                    recordFolderVisit(path)
                     setPlayingFile(file)
                   }}
                   onInfo={() => {

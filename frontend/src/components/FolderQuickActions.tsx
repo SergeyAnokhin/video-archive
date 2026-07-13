@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Folder, History } from 'lucide-react'
 import type { DirectoryEntry, FavoriteDirectory } from '../types/api'
-import { getRecentFolders } from '../utils/recentFolders'
+import { getRecentFolders, recordFolderVisit } from '../utils/recentFolders'
 import { DirectoryMoveMenu } from './DirectoryMoveMenu'
 import './FolderQuickActions.css'
 
@@ -63,6 +63,7 @@ export function FolderQuickActions({ fileId, onMoved }: FolderQuickActionsProps)
         const json = await res.json().catch(() => null)
         throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
       }
+      recordFolderVisit(path)
       setOpenMenu(null)
       onMoved()
     } catch (err) {

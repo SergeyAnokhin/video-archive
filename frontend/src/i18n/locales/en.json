@@ -127,12 +127,19 @@
     "loading": "Loading…",
     "treeError": "Could not load the directory tree: {{message}}",
     "expand": "Expand",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "filterPlaceholder": "Filter folders…",
+    "clearFilter": "Clear filter",
+    "empty": "No folders yet.",
+    "noMatches": "No matching folders."
   },
   "library": {
     "noSource": "No source is connected yet. Open Settings to point Video Archive at a local folder.",
     "root": "Root",
     "breadcrumb": "Current folder",
+    "folderNavHistory": "Recent folders",
     "loading": "Loading…",
     "loadError": "Could not load this folder: {{message}}",
     "empty": "This folder is empty.",
