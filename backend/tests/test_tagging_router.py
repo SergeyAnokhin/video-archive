@@ -303,6 +303,23 @@ def test_provider_entries_export_includes_plaintext_key_over_http(tmp_path, monk
         assert "attachment" in r.headers["content-disposition"]
 
 
+def test_provider_entries_import_round_trips_export_and_skips_unknown_types(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        client.post("/api/settings/provider-entries", json={"provider_type": "gemini", "api_key": "sk-export-me"})
+        exported = client.get("/api/settings/provider-entries/export").json()
+        exported["entries"].append({**exported["entries"][0], "provider_type": "not-a-provider"})
+
+        r = client.post("/api/settings/provider-entries/import", json={"entries": exported["entries"]})
+        assert r.status_code == 200
+        body = r.json()
+        assert len(body["entries"]) == 1
+        assert body["skipped"] == 1
+
+        all_entries = client.get("/api/settings/provider-entries").json()["entries"]
+        assert [e["provider_type"] for e in all_entries] == ["gemini", "gemini"]
+        assert all(e["has_api_key"] for e in all_entries)
+
+
 def test_provider_entries_model_listing_endpoints_over_http(tmp_path, monkeypatch):
     monkeypatch.setattr(
         registry, "list_models_for_provider_type", lambda provider_type, api_key: ["model-a", "model-b"]

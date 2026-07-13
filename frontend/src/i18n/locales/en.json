@@ -415,7 +415,12 @@
     "confirmDelete": "Delete this provider entry? This cannot be undone.",
     "export": "Export",
     "exportWarning": "The exported file contains your API keys in plain text — store it securely.",
-    "exportConfirm": "The exported file will contain your API keys in plain text. Continue?"
+    "exportConfirm": "The exported file will contain your API keys in plain text. Continue?",
+    "import": "Import",
+    "importConfirm": "This will add provider entries from the selected file, including any API keys it contains. Continue?",
+    "importResult": "Imported {{count}} provider(s).",
+    "importResultWithSkipped": "Imported {{count}} provider(s), skipped {{skipped}} with an unknown provider type.",
+    "importError": "Could not import provider entries. Make sure the file is a valid export."
   },
   "providers": {
     "openrouter": "OpenRouter",

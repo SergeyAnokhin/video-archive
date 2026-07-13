@@ -5,7 +5,10 @@ create/update/delete/reorder freely, unlike the old fixed-4-row shape.
 API keys are write-only from the frontend's perspective everywhere except
 `GET .../export`, which is an explicit, user-requested exception: the
 exported file contains plaintext keys so the frontend must show a clear
-warning before triggering the download.
+warning before triggering the download. `POST .../import` reads that same
+export shape back in, creating one new entry per item (invalid
+`provider_type` values are skipped, not fatal, since a hand-edited file
+shouldn't abort the whole batch).
 """
 
 from __future__ import annotations
@@ -43,6 +46,20 @@ class ProviderEntryUpdateRequest(BaseModel):
     text_model: str | None = None
     batch_enabled: bool = False
     api_key: str | None = None
+
+
+class ProviderEntryImportItem(BaseModel):
+    provider_type: str
+    display_name: str | None = None
+    enabled: bool = True
+    vision_model: str | None = None
+    text_model: str | None = None
+    batch_enabled: bool = False
+    api_key: str | None = None
+
+
+class ProviderEntriesImportRequest(BaseModel):
+    entries: list[ProviderEntryImportItem]
 
 
 class ReorderRequest(BaseModel):
@@ -162,3 +179,16 @@ def export_provider_entries():
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=provider-entries-export.json"},
     )
+
+
+@router.post("/settings/provider-entries/import")
+def import_provider_entries(body: ProviderEntriesImportRequest):
+    engine = get_engine()
+    created = []
+    skipped = 0
+    for item in body.entries:
+        try:
+            created.append(service.create_entry(engine, item.model_dump()))
+        except service.UnknownProviderTypeError:
+            skipped += 1
+    return {"entries": created, "skipped": skipped}

@@ -1,5 +1,5 @@
-import { Download, GripVertical, Pencil, Plus, Save, Settings, Trash2, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Download, GripVertical, Pencil, Plus, Save, Settings, Trash2, Upload, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProviderEntry, ProviderType, ProviderUsageSummary } from '../types/api'
 
@@ -18,6 +18,7 @@ export function ProviderSettingsSection() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   async function refresh() {
     const res = await fetch('/api/settings/provider-entries')
@@ -88,6 +89,28 @@ export function ProviderSettingsSection() {
     anchor.download = 'provider-entries-export.json'
     anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function handleImportFile(file: File) {
+    if (!window.confirm(t('providerSettings.importConfirm'))) return
+    try {
+      const parsed = JSON.parse(await file.text())
+      const res = await fetch('/api/settings/provider-entries/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: parsed.entries ?? [] }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json: { entries: ProviderEntry[]; skipped: number } = await res.json()
+      await refresh()
+      window.alert(
+        json.skipped > 0
+          ? t('providerSettings.importResultWithSkipped', { count: json.entries.length, skipped: json.skipped })
+          : t('providerSettings.importResult', { count: json.entries.length }),
+      )
+    } catch {
+      window.alert(t('providerSettings.importError'))
+    }
   }
 
   return (
@@ -220,6 +243,20 @@ export function ProviderSettingsSection() {
           <button type="button" className="settings-modal__option" onClick={() => setEditing('new')}>
             <Plus size={14} /> {t('providerSettings.addProvider')}
           </button>
+          <button type="button" className="settings-modal__option" onClick={() => importInputRef.current?.click()}>
+            <Upload size={14} /> {t('providerSettings.import')}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) void handleImportFile(file)
+            }}
+          />
           <button type="button" className="settings-modal__option" onClick={() => void handleExport()}>
             <Download size={14} /> {t('providerSettings.export')}
           </button>
