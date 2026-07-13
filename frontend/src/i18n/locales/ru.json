@@ -187,6 +187,7 @@
     "mediaInfoFormat": "Контейнер",
     "mediaInfoProfile": "Профиль конвертации",
     "mediaInfoLoading": "Загрузка технических данных…",
+    "resizePanels": "Изменить соотношение панелей",
     "mediaInfoUnavailable": "—",
     "tagsSectionTitle": "Теги",
     "tagsEmpty": "Теги ещё не назначены.",

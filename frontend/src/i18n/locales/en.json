@@ -187,6 +187,7 @@
     "mediaInfoFormat": "Container",
     "mediaInfoProfile": "Conversion profile",
     "mediaInfoLoading": "Loading technical info…",
+    "resizePanels": "Resize preview and details panels",
     "mediaInfoUnavailable": "—",
     "tagsSectionTitle": "Tags",
     "tagsEmpty": "No tags assigned yet.",

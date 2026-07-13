@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ChevronLeft,
@@ -42,6 +51,20 @@ interface FileInfoPanelProps {
   onNext?: () => void
 }
 
+const SPLIT_STORAGE_KEY = 'video-archive:file-info-split'
+const SPLIT_MIN = 25
+const SPLIT_MAX = 85
+const SPLIT_DEFAULT = 70
+
+function clampSplit(value: number): number {
+  return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, value))
+}
+
+function detectInitialSplit(): number {
+  const stored = Number(window.localStorage.getItem(SPLIT_STORAGE_KEY))
+  return Number.isFinite(stored) && stored > 0 ? clampSplit(stored) : SPLIT_DEFAULT
+}
+
 export function FileInfoPanel({
   file,
   previewing,
@@ -64,6 +87,9 @@ export function FileInfoPanel({
   const { t } = useTranslation()
   const { tags: vocabularyTags, refresh: refreshVocabulary } = useTags()
   const showThumbnail = file.is_video_supported && file.has_preview_asset
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const draggingRef = useRef(false)
+  const [splitPercent, setSplitPercent] = useState<number>(() => detectInitialSplit())
   const [mediaInfo, setMediaInfo] = useState<FileMediaInfo | null>(null)
   const [mediaInfoLoading, setMediaInfoLoading] = useState(true)
   const [tags, setTags] = useState<FileTagAssignment[]>([])
@@ -167,6 +193,54 @@ export function FileInfoPanel({
     }
   }
 
+  const handleDividerPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const body = bodyRef.current
+    if (!body) {
+      return
+    }
+    draggingRef.current = true
+    const rect = body.getBoundingClientRect()
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      if (!draggingRef.current) {
+        return
+      }
+      const ratio = ((moveEvent.clientX - rect.left) / rect.width) * 100
+      setSplitPercent(clampSplit(ratio))
+    }
+
+    function handlePointerUp() {
+      draggingRef.current = false
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      setSplitPercent((current) => {
+        window.localStorage.setItem(SPLIT_STORAGE_KEY, String(current))
+        return current
+      })
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }, [])
+
+  function handleDividerKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    let delta = 0
+    if (event.key === 'ArrowLeft') {
+      delta = -2
+    } else if (event.key === 'ArrowRight') {
+      delta = 2
+    } else {
+      return
+    }
+    event.preventDefault()
+    setSplitPercent((current) => {
+      const next = clampSplit(current + delta)
+      window.localStorage.setItem(SPLIT_STORAGE_KEY, String(next))
+      return next
+    })
+  }
+
   const tagModels = Array.from(
     new Set(
       tags
@@ -254,7 +328,11 @@ export function FileInfoPanel({
 
         <h2 className="convert-dialog__title">{file.file_name}</h2>
 
-        <div className="file-info-panel__body">
+        <div
+          className="file-info-panel__body"
+          ref={bodyRef}
+          style={{ '--fip-split': `${splitPercent}%` } as CSSProperties}
+        >
           <div className="file-info-panel__thumb">
             {showThumbnail ? (
               <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
@@ -262,6 +340,17 @@ export function FileInfoPanel({
               <Film size={40} />
             )}
           </div>
+
+          <div
+            className="file-info-panel__divider"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('library.resizePanels')}
+            title={t('library.resizePanels')}
+            tabIndex={0}
+            onPointerDown={handleDividerPointerDown}
+            onKeyDown={handleDividerKeyDown}
+          />
 
           <div className="file-info-panel__details">
             <ul className="file-info-panel__status">
