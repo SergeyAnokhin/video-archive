@@ -233,6 +233,8 @@
     "copied": "Скопировано.",
     "switchToStream": "Переключиться на встроенное воспроизведение",
     "switchToDirectLink": "Переключиться на прямую ссылку",
+    "rawStreamHint": "Или откройте поток напрямую с бэкенда (без интерфейса приложения) в новой вкладке:",
+    "openRawStream": "Открыть поток напрямую",
     "info": "Информация о файле и действия"
   },
   "convertDialog": {
@@ -261,6 +263,7 @@
     "variantsGenerated": "Сгенерированные варианты",
     "variantsGenerateError": "Проверьте диапазон: мин ≤ макс, шаг больше 0.",
     "variantsGenerateErrorCodec": "Выберите хотя бы один кодек.",
+    "variantsGenerateErrorDimension": "Выберите хотя бы одно разрешение.",
     "variantsAdd": "Добавить вариант",
     "variantsRemove": "Убрать",
     "variantMaxDimension": "Макс. сторона",
@@ -466,6 +469,12 @@
       "hour": "ч",
       "minute": "мин",
       "second": "сек"
+    },
+    "unitShort": {
+      "day": "д",
+      "hour": "ч",
+      "minute": "м",
+      "second": "с"
     },
     "progress": {
       "count": "{{done}} / {{total}}",

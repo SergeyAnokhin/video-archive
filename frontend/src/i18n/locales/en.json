@@ -233,6 +233,8 @@
     "copied": "Copied.",
     "switchToStream": "Switch to embedded playback",
     "switchToDirectLink": "Switch to direct link",
+    "rawStreamHint": "Or open the raw backend stream (no app UI) in a new tab:",
+    "openRawStream": "Open raw stream",
     "info": "File info & actions"
   },
   "convertDialog": {
@@ -261,6 +263,7 @@
     "variantsGenerated": "Generated variants",
     "variantsGenerateError": "Check the range: min ≤ max, step greater than 0.",
     "variantsGenerateErrorCodec": "Select at least one codec.",
+    "variantsGenerateErrorDimension": "Select at least one resolution.",
     "variantsAdd": "Add variant",
     "variantsRemove": "Remove",
     "variantMaxDimension": "Max dimension",
@@ -466,6 +469,12 @@
       "hour": "h",
       "minute": "min",
       "second": "sec"
+    },
+    "unitShort": {
+      "day": "d",
+      "hour": "h",
+      "minute": "m",
+      "second": "s"
     },
     "progress": {
       "count": "{{done}} / {{total}}",

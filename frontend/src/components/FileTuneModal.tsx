@@ -34,15 +34,19 @@ function rowToOverride(row: VariantRow): VariantOverride {
 
 const CODEC_OPTIONS = ['h265', 'h264', 'vp9', 'av1']
 
+// Common longest-side values in the range typically used for compact
+// archival/test variants (480-1024px) so the dimension sweep can offer a
+// standard-resolution checklist instead of typing a min/max/step range.
+const DIMENSION_PRESETS = [480, 640, 720, 960, 1024]
+
 type SweepParameter = 'dimension' | 'crf' | 'codec'
 
 // Centered on the app's own defaults (h265 CRF 26, Specification §7): a
 // narrow band around "good enough to archive" so the sweep still finishes
 // quickly and every generated variant is a plausible real choice, not a
 // throwaway extreme.
-const DEFAULT_SWEEP_RANGES: Record<'dimension' | 'crf', { min: number; max: number; step: number }> = {
+const DEFAULT_SWEEP_RANGES: Record<'crf', { min: number; max: number; step: number }> = {
   crf: { min: 22, max: 30, step: 4 },
-  dimension: { min: 960, max: 1920, step: 480 },
 }
 
 function generateRange(min: number, max: number, step: number): number[] {
@@ -63,6 +67,7 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
   const [sweepMax, setSweepMax] = useState(String(DEFAULT_SWEEP_RANGES.crf.max))
   const [sweepStep, setSweepStep] = useState(String(DEFAULT_SWEEP_RANGES.crf.step))
   const [sweepCodecs, setSweepCodecs] = useState<string[]>([])
+  const [sweepDimensions, setSweepDimensions] = useState<number[]>(DIMENSION_PRESETS)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -142,6 +147,12 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
     )
   }
 
+  function toggleSweepDimension(value: number) {
+    setSweepDimensions((current) =>
+      current.includes(value) ? current.filter((v) => v !== value) : [...current, value],
+    )
+  }
+
   function handleGenerate() {
     setGenerateError(null)
 
@@ -154,6 +165,15 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
       return
     }
 
+    if (sweepParameter === 'dimension') {
+      if (sweepDimensions.length === 0) {
+        setGenerateError(t('convertDialog.variantsGenerateErrorDimension'))
+        return
+      }
+      setRows(sweepDimensions.map((value) => newRow({ maxDimension: String(value) })))
+      return
+    }
+
     const min = Number(sweepMin)
     const max = Number(sweepMax)
     const step = Number(sweepStep)
@@ -163,11 +183,7 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
     }
 
     const values = generateRange(min, max, step)
-    setRows(
-      values.map((value) =>
-        sweepParameter === 'dimension' ? newRow({ maxDimension: String(value) }) : newRow({ crf: String(value) }),
-      ),
-    )
+    setRows(values.map((value) => newRow({ crf: String(value) })))
   }
 
   const baseProfile = profiles.find((p) => p.id === profileId)
@@ -214,8 +230,8 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
                   onChange={(event) => {
                     const next = event.target.value as SweepParameter
                     setSweepParameter(next)
-                    if (next !== 'codec') {
-                      const defaults = DEFAULT_SWEEP_RANGES[next]
+                    if (next === 'crf') {
+                      const defaults = DEFAULT_SWEEP_RANGES.crf
                       setSweepMin(String(defaults.min))
                       setSweepMax(String(defaults.max))
                       setSweepStep(String(defaults.step))
@@ -238,6 +254,19 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
                         onChange={() => toggleSweepCodec(codec)}
                       />
                       {codec.toUpperCase()}
+                    </label>
+                  ))}
+                </div>
+              ) : sweepParameter === 'dimension' ? (
+                <div className="convert-dialog__codec-options">
+                  {DIMENSION_PRESETS.map((value) => (
+                    <label key={value} className="convert-dialog__checkbox">
+                      <input
+                        type="checkbox"
+                        checked={sweepDimensions.includes(value)}
+                        onChange={() => toggleSweepDimension(value)}
+                      />
+                      {value}px
                     </label>
                   ))}
                 </div>

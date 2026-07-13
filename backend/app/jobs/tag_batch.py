@@ -285,7 +285,7 @@ def _poll_and_apply(
             )
             top = [pair for pair in ranked if pair[1] > 0][: submission["top_tag_count"]]
             scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
-            _log_tag_scores(engine, job["id"], row, top)
+            _log_tag_scores(engine, job["id"], row, top, submission["provider_type"], submission["model_name"])
             _assign_tags(engine, row.id, scored_tags, submission["provider_type"], submission["model_name"])
             message = f"{len(scored_tags)} tag(s) assigned (batch)"
             service.complete_job_item(engine, item_id, output_ref=None, message=message)

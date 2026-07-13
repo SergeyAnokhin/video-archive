@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { formatBitrate, formatDuration, formatElapsed, formatSize } from './format'
+import { basename, formatBitrate, formatDuration, formatElapsed, formatElapsedCompact, formatSize } from './format'
 
 const UNITS = { day: 'd', hour: 'h', minute: 'min', second: 'sec' }
+const SHORT_UNITS = { day: 'd', hour: 'h', minute: 'm', second: 's' }
 
 describe('formatSize', () => {
   it('keeps sub-kilobyte values in bytes', () => {
@@ -76,5 +77,32 @@ describe('formatElapsed', () => {
   it('rounds fractional seconds and clamps negatives to zero', () => {
     expect(formatElapsed(59.6, UNITS)).toBe('1 min')
     expect(formatElapsed(-5, UNITS)).toBe('0 sec')
+  })
+})
+
+describe('formatElapsedCompact', () => {
+  it('joins a number directly to its unit letter, no internal space', () => {
+    expect(formatElapsedCompact(45, SHORT_UNITS)).toBe('45s')
+    expect(formatElapsedCompact(90, SHORT_UNITS)).toBe('1m 30s')
+    expect(formatElapsedCompact(3661, SHORT_UNITS)).toBe('1h 1m')
+    expect(formatElapsedCompact(90000, SHORT_UNITS)).toBe('1d 1h')
+  })
+
+  it('still separates the two unit groups with a space', () => {
+    expect(formatElapsedCompact(120, SHORT_UNITS)).toBe('2m')
+  })
+})
+
+describe('basename', () => {
+  it('returns the last segment of a forward-slash path', () => {
+    expect(basename('Foscam/2026/categories/2_535728.mp4')).toBe('2_535728.mp4')
+  })
+
+  it('returns the last segment of a backslash path', () => {
+    expect(basename('Foscam\\2026\\categories\\2_535728.mp4')).toBe('2_535728.mp4')
+  })
+
+  it('returns the input unchanged when there is no path separator', () => {
+    expect(basename('2_535728.mp4')).toBe('2_535728.mp4')
   })
 })

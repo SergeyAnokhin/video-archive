@@ -55,3 +55,30 @@ export function formatElapsed(seconds: number, units: DurationUnitLabels): strin
   }
   return `${secs} ${units.second}`
 }
+
+/** Compact elapsed/remaining time for tight card layouts, e.g. "4m 22s", "2h 15m", "3d" —
+ * no space between a number and its unit letter, unlike `formatElapsed`. */
+export function formatElapsedCompact(seconds: number, units: DurationUnitLabels): string {
+  const total = Math.max(0, Math.round(seconds))
+  const days = Math.floor(total / 86400)
+  const hours = Math.floor((total % 86400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+
+  if (days > 0) {
+    return hours > 0 ? `${days}${units.day} ${hours}${units.hour}` : `${days}${units.day}`
+  }
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}${units.hour} ${minutes}${units.minute}` : `${hours}${units.hour}`
+  }
+  if (minutes > 0) {
+    return secs > 0 ? `${minutes}${units.minute} ${secs}${units.second}` : `${minutes}${units.minute}`
+  }
+  return `${secs}${units.second}`
+}
+
+/** Last path segment of a `/`- or `\`-separated relative path, e.g. "a/b/c.mp4" -> "c.mp4". */
+export function basename(path: string): string {
+  const parts = path.split(/[\\/]/)
+  return parts[parts.length - 1] || path
+}

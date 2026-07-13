@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronLeft, ChevronRight, Copy, Info, Link, PlayCircle, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Info, Link, PlayCircle, X } from 'lucide-react'
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { QuickTagAdd } from './QuickTagAdd'
@@ -198,6 +198,16 @@ export function PlaybackModal({
             {copied ? <Check size={14} /> : <Copy size={14} />} {t('playbackModal.copyPath')}
           </button>
           {copied && <span className="playback-overlay__message">{t('playbackModal.copied')}</span>}
+
+          <p className="playback-overlay__message">{t('playbackModal.rawStreamHint')}</p>
+          <a
+            className="playback-overlay__copy-btn"
+            href={info.stream_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink size={14} /> {t('playbackModal.openRawStream')}
+          </a>
         </div>
       )}
     </div>

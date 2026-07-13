@@ -1,10 +1,27 @@
-import { Eraser, Layers, Pause, Play, RotateCcw, ScrollText, Trash2, X } from 'lucide-react'
+import {
+  Ban,
+  CheckCircle2,
+  Clock,
+  Eraser,
+  Hourglass,
+  Layers,
+  Loader2,
+  Pause,
+  Play,
+  RotateCcw,
+  ScrollText,
+  Timer,
+  Trash2,
+  X,
+  XCircle,
+  type LucideIcon,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
 import type { JobItem, JobStatus, JobSummary } from '../types/api'
 import { estimateEtaSeconds, type ProgressSample } from '../utils/eta'
-import { formatElapsed, type DurationUnitLabels } from '../utils/format'
+import { basename, formatElapsed, formatElapsedCompact, type DurationUnitLabels } from '../utils/format'
 import { BatchSubmissionsModal } from './BatchSubmissionsModal'
 import { LogViewerModal } from './LogViewerModal'
 import './JobsModal.css'
@@ -22,6 +39,17 @@ const ETA_WINDOW_MS = 5 * 60 * 1000
 // types with a per-item loop can honor a pause request between items --
 // `optimize_db`/`backup`/`restore` run one atomic action with no checkpoint.
 const PAUSABLE_JOB_TYPES = new Set(['rescan', 'convert', 'preview', 'tag', 'cleanup'])
+
+// Prefer an icon over a text label for status (per CLAUDE.md UI conventions):
+// the shape + color read at a glance, the full word is still available via `title` on hover.
+const STATUS_ICON: Record<JobStatus, LucideIcon> = {
+  queued: Clock,
+  running: Loader2,
+  paused: Pause,
+  completed: CheckCircle2,
+  failed: XCircle,
+  cancelled: Ban,
+}
 
 export function JobsModal({ onClose }: JobsModalProps) {
   const { t } = useTranslation()
@@ -254,6 +282,12 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
     minute: t('jobs.unit.minute'),
     second: t('jobs.unit.second'),
   }
+  const compactUnits: DurationUnitLabels = {
+    day: t('jobs.unitShort.day'),
+    hour: t('jobs.unitShort.hour'),
+    minute: t('jobs.unitShort.minute'),
+    second: t('jobs.unitShort.second'),
+  }
 
   const done = items.filter((item) => DONE_ITEM_STATUSES.has(item.status)).length
   const total = job.total_items
@@ -275,6 +309,8 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
     : null
 
   const clickableForLog = job.status === 'running' || job.status === 'queued' || job.status === 'paused'
+  const StatusIcon = STATUS_ICON[job.status]
+  const statusLabel = t(`jobs.section.${job.status}`)
 
   return (
     <div
@@ -285,9 +321,14 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
     >
       <div className="jobs-modal__card-header">
         <div className="jobs-modal__card-heading">
-          <span className={`jobs-modal__status-dot jobs-modal__status-dot--${job.status}`} />
+          <span
+            className={`jobs-modal__status-icon jobs-modal__status-icon--${job.status}`}
+            title={statusLabel}
+            aria-label={statusLabel}
+          >
+            <StatusIcon size={14} />
+          </span>
           <span className="jobs-modal__row-type">{t(`jobs.type.${job.job_type}`, job.job_type)}</span>
-          <span className="jobs-modal__status-label">{t(`jobs.section.${job.status}`)}</span>
         </div>
         <div className="jobs-modal__row-actions" onClick={(event) => event.stopPropagation()}>
           <button
@@ -373,8 +414,10 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
       )}
 
       {currentItem && (
-        <div className="jobs-modal__row-message">
-          {t('jobs.progress.current', { name: currentItem.item_key ?? currentItem.file_id ?? '…' })}
+        <div className="jobs-modal__row-message" title={currentItem.item_key ?? undefined}>
+          {t('jobs.progress.current', {
+            name: currentItem.item_key ? basename(currentItem.item_key) : (currentItem.file_id ?? '…'),
+          })}
         </div>
       )}
 
@@ -390,10 +433,14 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
       {isRunning && (
         <div className="jobs-modal__meta">
           {runningElapsedSeconds !== null && (
-            <span>{t('jobs.progress.elapsed', { time: formatElapsed(runningElapsedSeconds, units) })}</span>
+            <span title={t('jobs.progress.elapsed', { time: formatElapsed(runningElapsedSeconds, units) })}>
+              <Timer size={12} /> {formatElapsedCompact(runningElapsedSeconds, compactUnits)}
+            </span>
           )}
           {etaSeconds !== null && (
-            <span>{t('jobs.progress.eta', { time: formatElapsed(etaSeconds, units) })}</span>
+            <span title={t('jobs.progress.eta', { time: formatElapsed(etaSeconds, units) })}>
+              <Hourglass size={12} /> {formatElapsedCompact(etaSeconds, compactUnits)}
+            </span>
           )}
         </div>
       )}
