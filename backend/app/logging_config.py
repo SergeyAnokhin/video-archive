@@ -12,6 +12,7 @@ module only wires up *where* every logger's output goes.
 from __future__ import annotations
 
 import logging
+import sys
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -26,9 +27,35 @@ LOG_FILE = LOG_DIR / "backend.log"
 _FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 
+class _WindowsSafeTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """Skip a rollover instead of raising if the file is still locked.
+
+    `--reload` briefly runs old and new worker processes back to back, both
+    holding a handle on the same `backend.log`; on Windows that makes the
+    other process's rename in `doRollover` fail with `PermissionError`. It's
+    already non-fatal (stdlib's `emit` catches it and just prints "Logging
+    error"), but the traceback is noisy -- swallow it and retry at the next
+    interval instead.
+    """
+
+    def doRollover(self) -> None:
+        try:
+            super().doRollover()
+        except PermissionError:
+            pass
+
+
 def configure_logging() -> None:
     LOG_DIR.mkdir(exist_ok=True)
     formatter = logging.Formatter(_FORMAT)
+
+    # `logging.StreamHandler()` writes to stderr, which Python opens as
+    # `cp1252` on Windows regardless of terminal (Git Bash's mintty renders
+    # UTF-8 fine, but never gets the chance) -- request log lines carry
+    # emoji (see `app.request_logging`), and cp1252 can't encode them, so
+    # they come out as literal `\U0001f4e5`-style escapes instead of crashing.
+    # Force real UTF-8 bytes onto the stream so they render correctly.
+    sys.stderr.reconfigure(encoding="utf-8")
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
@@ -36,7 +63,9 @@ def configure_logging() -> None:
     # Rotates every 5 minutes, one backup kept -- the file always holds the
     # last 5-10 minutes of activity (enough to diagnose an error just seen
     # in the console) without growing unbounded over a long dev session.
-    file_handler = TimedRotatingFileHandler(LOG_FILE, when="M", interval=5, backupCount=1, encoding="utf-8")
+    file_handler = _WindowsSafeTimedRotatingFileHandler(
+        LOG_FILE, when="M", interval=5, backupCount=1, encoding="utf-8"
+    )
     file_handler.setFormatter(formatter)
 
     root = logging.getLogger()
