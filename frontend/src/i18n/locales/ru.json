@@ -159,9 +159,9 @@
     "sortByTags": "По тегам",
     "info": "Информация о файле",
     "play": "Воспроизвести",
-    "similar": "Похожие видео",
-    "similarTitle": "Видео, похожие на «{{name}}»",
-    "similarEmpty": "Похожие видео пока не найдены.",
+    "similar": "Похожие файлы",
+    "similarTitle": "Файлы, похожие на «{{name}}»",
+    "similarEmpty": "Похожие файлы пока не найдены.",
     "similarClose": "Закрыть",
     "similarDistance": "различие {{distance}} бит",
     "searchPlaceholder": "Поиск везде, или tag: / file: / path:",
@@ -243,6 +243,12 @@
     "switchToDirectLink": "Переключиться на прямую ссылку",
     "rawStreamHint": "Или откройте поток напрямую с бэкенда (без интерфейса приложения) в новой вкладке:",
     "openRawStream": "Открыть поток напрямую",
+    "info": "Информация о файле и действия"
+  },
+  "imageViewerModal": {
+    "close": "Закрыть",
+    "previous": "Предыдущий файл",
+    "next": "Следующий файл",
     "info": "Информация о файле и действия"
   },
   "convertDialog": {

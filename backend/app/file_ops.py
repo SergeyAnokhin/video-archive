@@ -40,7 +40,7 @@ def _file_with_source_lookup(conn, file_id: str):
     return conn.execute(
         text(
             """
-            SELECT f.relative_path, f.file_name, f.directory_id, f.source_id, s.*
+            SELECT f.relative_path, f.file_name, f.extension, f.directory_id, f.source_id, s.*
             FROM files f
             JOIN sources s ON s.id = f.source_id
             WHERE f.id = :id AND s.is_active = 1
@@ -48,6 +48,16 @@ def _file_with_source_lookup(conn, file_id: str):
         ),
         {"id": file_id},
     ).fetchone()
+
+
+def _has_sibling_jpg_collage(row) -> bool:
+    """A `.jpg`/`.jpeg` file is its own collage-sibling candidate under
+    `with_suffix(".jpg")` (e.g. `photo.jpeg` -> sibling `photo.jpg`, an
+    unrelated file, not itself). Only a video (or any non-jpg file) can
+    meaningfully have a separate `<stem>.jpg` collage sibling -- skip the
+    sibling-cleanup step entirely for a standalone jpg/jpeg image to avoid
+    deleting/renaming an unrelated same-stem `.jpg` neighbor."""
+    return row.extension.lower() not in ("jpg", "jpeg")
 
 
 def delete_file(engine, file_id: str) -> None:
@@ -63,9 +73,10 @@ def delete_file(engine, file_id: str) -> None:
         if access.exists(row.relative_path):
             access.remote_remove(row.relative_path)
 
-        jpg_rel = str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
-        if access.exists(jpg_rel):
-            access.remote_remove(jpg_rel)
+        if _has_sibling_jpg_collage(row):
+            jpg_rel = str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
+            if access.exists(jpg_rel):
+                access.remote_remove(jpg_rel)
 
         gif_rel = preview_gif_relative_path(row.relative_path)
         if access.exists(gif_rel):
@@ -108,10 +119,11 @@ def move_file(engine, file_id: str, target_directory: str):
         access = get_source_access(row)
         access.remote_rename(row.relative_path, new_rel)
 
-        old_jpg_rel = str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
-        new_jpg_rel = str(PurePosixPath(new_rel).with_suffix(".jpg"))
-        if access.exists(old_jpg_rel):
-            access.remote_rename(old_jpg_rel, new_jpg_rel)
+        if _has_sibling_jpg_collage(row):
+            old_jpg_rel = str(PurePosixPath(row.relative_path).with_suffix(".jpg"))
+            new_jpg_rel = str(PurePosixPath(new_rel).with_suffix(".jpg"))
+            if access.exists(old_jpg_rel):
+                access.remote_rename(old_jpg_rel, new_jpg_rel)
 
         old_gif_rel = preview_gif_relative_path(row.relative_path)
         new_gif_rel = preview_gif_relative_path(new_rel)

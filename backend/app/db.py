@@ -549,6 +549,14 @@ MIGRATIONS: dict[int, list[str]] = {
     24: [
         "ALTER TABLE tagging_settings ADD COLUMN image_resolution INTEGER NOT NULL DEFAULT 360",
     ],
+    # Post-V1: standalone images become first-class library items (user
+    # request). Parallel to `is_video_supported` rather than replacing it --
+    # conversion/preview/tune job-scoping queries stay video-only unchanged;
+    # listing/status/tag-scope queries widen to
+    # `(is_video_supported = 1 OR is_image_supported = 1)` instead.
+    25: [
+        "ALTER TABLE files ADD COLUMN is_image_supported INTEGER NOT NULL DEFAULT 0",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

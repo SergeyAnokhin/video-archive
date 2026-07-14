@@ -51,6 +51,83 @@ def _insert_file(engine, source_id: str, dir_id: str, relative_path: str, file_n
     return file_id
 
 
+def _insert_file_with_kind(
+    engine, source_id: str, dir_id: str, relative_path: str, file_name: str, *, is_video: int, is_image: int
+) -> str:
+    file_id = str(uuid.uuid4())
+    now = _now()
+    ext = file_name.rsplit(".", 1)[-1]
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, is_image_supported, "
+                "converted_at, has_preview_asset, created_at, updated_at) "
+                "VALUES (:id, :sid, :did, :rel, :name, :ext, 1, :now, :now, :is_video, :is_image, "
+                "NULL, 0, :now, :now)"
+            ),
+            {
+                "id": file_id,
+                "sid": source_id,
+                "did": dir_id,
+                "rel": relative_path,
+                "name": file_name,
+                "ext": ext,
+                "is_video": is_video,
+                "is_image": is_image,
+                "now": now,
+            },
+        )
+    return file_id
+
+
+def test_list_files_default_listing_includes_images_excludes_junk(engine, source):
+    root_id = _insert_directory(engine, source["id"], "", None)
+    video_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+    image_id = _insert_file_with_kind(
+        engine, source["id"], root_id, "photo.jpg", "photo.jpg", is_video=0, is_image=1
+    )
+    _insert_file_with_kind(engine, source["id"], root_id, "notes.txt", "notes.txt", is_video=0, is_image=0)
+
+    with TestClient(app) as client:
+        res = client.get("/api/files", params={"directory": ""})
+        assert res.status_code == 200
+        ids = {f["id"] for f in res.json()["files"]}
+        assert ids == {video_id, image_id}
+
+        res = client.get("/api/files", params={"directory": "", "video_only": "true"})
+        assert res.status_code == 200
+        assert {f["id"] for f in res.json()["files"]} == {video_id}
+
+
+def test_delete_standalone_jpeg_does_not_touch_unrelated_jpg_sibling(engine, source):
+    """A standalone `.jpeg` image's sibling-collage path (`with_suffix('.jpg')`)
+    computes a *different*, unrelated file -- deleting it must not remove an
+    unrelated same-stem `.jpg` neighbor (post-V1, edge case found while
+    making images first-class library items)."""
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "photo.jpeg").write_bytes(b"jpeg-bytes")
+    (source["root"] / "photo.jpg").write_bytes(b"unrelated-jpg-bytes")
+    jpeg_id = _insert_file_with_kind(
+        engine, source["id"], root_id, "photo.jpeg", "photo.jpeg", is_video=0, is_image=1
+    )
+
+    with TestClient(app) as client:
+        res = client.delete(f"/api/files/{jpeg_id}")
+        assert res.status_code == 200
+
+    assert not (source["root"] / "photo.jpeg").exists()
+    assert (source["root"] / "photo.jpg").exists()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT id FROM files WHERE source_id = :sid AND relative_path = 'photo.jpg'"),
+            {"sid": source["id"]},
+        ).fetchone()
+    # No DB row was ever inserted for the unrelated photo.jpg in this test,
+    # so this just re-confirms the on-disk file above was left alone.
+    assert row is None
+
+
 def test_delete_file_removes_disk_file_and_db_row(engine, source):
     root_id = _insert_directory(engine, source["id"], "", None)
     video_path = source["root"] / "clip.mp4"

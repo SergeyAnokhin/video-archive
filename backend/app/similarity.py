@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
+import numpy as np
 from PIL import Image
 from sqlalchemy import text
 
@@ -61,6 +62,20 @@ def compute_signature(video_path: Path, sample_count: int = SAMPLE_COUNT) -> dic
     if not hashes:
         return None
     return {"sample_count": len(hashes), "signature_type": SIGNATURE_TYPE, "hashes": hashes}
+
+
+def compute_image_signature(image_path: Path) -> dict | None:
+    """Image sibling of `compute_signature()` (post-V1, user request --
+    "similar images"): no ffprobe/sampling involved, just a single aHash over
+    the whole image -- shaped identically (`sample_count: 1`) so
+    `store_signature()`/`find_similar()` need no further changes. Windows
+    non-ASCII-path safe (`np.fromfile()` + `cv2.imdecode()`, never
+    `cv2.imread()`, same convention as `preview.py`)."""
+    data = np.fromfile(str(image_path), dtype=np.uint8)
+    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if image is None:
+        return None
+    return {"sample_count": 1, "signature_type": SIGNATURE_TYPE, "hashes": [_average_hash(image)]}
 
 
 def store_signature(engine, file_id: str, signature: dict, job_id: str | None = None) -> None:
@@ -130,7 +145,14 @@ def find_similar(
 ) -> list[dict]:
     with engine.connect() as conn:
         target = conn.execute(
-            text("SELECT signature_payload FROM file_similarity_signatures WHERE file_id = :id"), {"id": file_id}
+            text(
+                """
+                SELECT s.signature_payload, f.is_video_supported
+                FROM file_similarity_signatures s JOIN files f ON f.id = s.file_id
+                WHERE s.file_id = :id
+                """
+            ),
+            {"id": file_id},
         ).fetchone()
         if target is None:
             return []
@@ -143,9 +165,10 @@ def find_similar(
                 FROM file_similarity_signatures s
                 JOIN files f ON f.id = s.file_id
                 WHERE f.source_id = :source_id AND s.file_id != :file_id
+                  AND f.is_video_supported = :is_video
                 """
             ),
-            {"source_id": source_id, "file_id": file_id},
+            {"source_id": source_id, "file_id": file_id, "is_video": target.is_video_supported},
         ).all()
 
     results = []

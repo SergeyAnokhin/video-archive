@@ -1,0 +1,108 @@
+.image-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  z-index: 50;
+}
+
+.image-viewer-overlay__image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.image-viewer-overlay__top-left,
+.image-viewer-overlay__top-right {
+  position: absolute;
+  top: var(--space-3);
+  z-index: 2;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.image-viewer-overlay__top-left {
+  left: var(--space-3);
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.image-viewer-overlay__top-right {
+  right: var(--space-3);
+  align-items: center;
+}
+
+.image-viewer-overlay__quick-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.image-viewer-overlay__close,
+.image-viewer-overlay__info-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+}
+
+.image-viewer-overlay__close:hover,
+.image-viewer-overlay__info-toggle:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+/* Prev/next: a wide invisible click zone spanning the vertical middle of
+   the image (mirrors PlaybackModal.css's nav zones), with the round chevron
+   only fading in on hover/focus rather than sitting permanently on top. */
+.image-viewer-overlay__nav-zone {
+  position: absolute;
+  top: 15%;
+  bottom: 15%;
+  width: min(15%, 160px);
+  display: flex;
+  align-items: center;
+  z-index: 1;
+  cursor: pointer;
+  outline: none;
+}
+
+.image-viewer-overlay__nav-zone--prev {
+  left: 0;
+  justify-content: flex-start;
+  padding-left: var(--space-3);
+}
+
+.image-viewer-overlay__nav-zone--next {
+  right: 0;
+  justify-content: flex-end;
+  padding-right: var(--space-3);
+}
+
+.image-viewer-overlay__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 50%;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.image-viewer-overlay__nav-zone:hover .image-viewer-overlay__nav,
+.image-viewer-overlay__nav-zone:focus-visible .image-viewer-overlay__nav {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.8);
+}

@@ -21,6 +21,7 @@ import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
 import { FileTuneModal } from './FileTuneModal'
 import { HistoryFolderMenu } from './HistoryFolderMenu'
+import { ImageViewerModal } from './ImageViewerModal'
 import { FileCard, FolderCard } from './LibraryCards'
 import { MoveFileDialog } from './MoveFileDialog'
 import { PlaybackModal } from './PlaybackModal'
@@ -224,7 +225,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   function goToPlayingOffset(offset: number) {
     const target = sortedFiles[playingIndex + offset]
     if (target) {
-      recordRecentlyViewed(target.id)
+      if (target.is_video_supported) {
+        recordRecentlyViewed(target.id)
+      }
       setPlayingFile(target)
     }
   }
@@ -501,7 +504,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             onNavigate(dirPath)
           }}
           onPlayFile={(file) => {
-            recordRecentlyViewed(file.id)
+            if (file.is_video_supported) {
+              recordRecentlyViewed(file.id)
+            }
             setPlayingFile(file)
           }}
           onInfoFile={setInfoFile}
@@ -539,7 +544,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
                   key={file.id}
                   file={file}
                   onPlay={() => {
-                    recordRecentlyViewed(file.id)
+                    if (file.is_video_supported) {
+                      recordRecentlyViewed(file.id)
+                    }
                     recordRecentFolder(path)
                     recordFolderVisit(path)
                     setPlayingFile(file)
@@ -596,8 +603,23 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
         />
       )}
 
-      {playingFile && (
+      {playingFile && playingFile.is_video_supported && (
         <PlaybackModal
+          file={playingFile}
+          onClose={closePlayback}
+          onMoved={handleMoved}
+          onOpenInfo={openInfoFromPlayback}
+          onTagAdded={() => {
+            playingTagsChangedRef.current = true
+          }}
+          hasPrev={playingIndex > 0}
+          hasNext={playingIndex >= 0 && playingIndex < sortedFiles.length - 1}
+          onPrev={() => goToPlayingOffset(-1)}
+          onNext={() => goToPlayingOffset(1)}
+        />
+      )}
+      {playingFile && !playingFile.is_video_supported && (
+        <ImageViewerModal
           file={playingFile}
           onClose={closePlayback}
           onMoved={handleMoved}

@@ -90,6 +90,11 @@ def list_files(
                 clauses.append("directory_id = :dir_id")
                 params["dir_id"] = dir_row.id
 
+        # Default listing is scoped to actual library content (video or
+        # image) so it never surfaces arbitrary scanned-but-unsupported
+        # files; `video_only` narrows further to video alone (used by
+        # `recentlyViewed.ts`'s video-only preview-style sampling).
+        clauses.append("(is_video_supported = 1 OR is_image_supported = 1)")
         if video_only:
             clauses.append("is_video_supported = 1")
 
@@ -120,7 +125,7 @@ def list_files(
             text(
                 f"""
                 SELECT id, directory_id, relative_path, file_name, extension, size_bytes, modified_at,
-                       is_video_supported, has_preview_asset, converted_at, tagged_at
+                       is_video_supported, is_image_supported, has_preview_asset, converted_at, tagged_at
                 FROM files
                 WHERE {where_sql}
                 ORDER BY relative_path COLLATE NOCASE
@@ -177,6 +182,7 @@ def get_file(file_id: str):
         "discovered_at": row.discovered_at,
         "last_scanned_at": row.last_scanned_at,
         "is_video_supported": bool(row.is_video_supported),
+        "is_image_supported": bool(row.is_image_supported),
         "converted_at": row.converted_at,
         "has_preview_asset": bool(row.has_preview_asset),
         "preview_generated_at": row.preview_generated_at,
@@ -328,12 +334,42 @@ def get_file_preview_gif(file_id: str):
 def get_similar_files(file_id: str):
     """Approximate near-duplicate lookup (Specification §13): optional and
     secondary, so an empty list (no signature yet, or nothing within the
-    distance threshold) is a normal, non-error response."""
+    distance threshold) is a normal, non-error response. A standalone image
+    never runs through the preview job that computes a video's signature as
+    a side effect (post-V1, user request -- "similar images"), so its
+    signature is computed lazily here on first request if missing."""
     engine = get_engine()
     with engine.connect() as conn:
-        row = conn.execute(text("SELECT source_id FROM files WHERE id = :id"), {"id": file_id}).fetchone()
+        row = conn.execute(
+            text(
+                """
+                SELECT f.source_id, f.relative_path, f.is_image_supported, s.*
+                FROM files f JOIN sources s ON s.id = f.source_id
+                WHERE f.id = :id AND s.is_active = 1
+                """
+            ),
+            {"id": file_id},
+        ).fetchone()
         if row is None:
             raise _file_not_found_error(file_id)
+        has_signature = (
+            conn.execute(
+                text("SELECT 1 FROM file_similarity_signatures WHERE file_id = :id"), {"id": file_id}
+            ).fetchone()
+            is not None
+        )
+
+    if not has_signature and row.is_image_supported:
+        try:
+            access = get_source_access(row)
+            with access.local_copy(row.relative_path) as image_path:
+                signature = similarity.compute_image_signature(image_path)
+            if signature is not None:
+                similarity.store_signature(engine, file_id, signature)
+        except Exception:  # noqa: BLE001 - best-effort only, see docstring
+            pass
+
+    with engine.connect() as conn:
         results = similarity.find_similar(engine, row.source_id, file_id)
     return {"similar": results}
 
@@ -444,6 +480,7 @@ def move_file(file_id: str, body: MoveFileRequest):
         "size_bytes": updated.size_bytes,
         "modified_at": updated.modified_at,
         "is_video_supported": bool(updated.is_video_supported),
+        "is_image_supported": bool(updated.is_image_supported),
         "converted_at": updated.converted_at,
         "has_preview_asset": bool(updated.has_preview_asset),
         "tagged_at": updated.tagged_at,

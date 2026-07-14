@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from app import batch_submissions, provider_entries, tagging, tagging_settings, tags as tags_service
+from app import batch_submissions, provider_entries, similarity, tagging, tagging_settings, tags as tags_service
 from app.jobs import service
 from app.media import is_test_artifact
 from app.providers import registry
@@ -67,6 +67,20 @@ def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_type: s
         )
 
 
+def _try_store_similarity_signature_for_image(engine, job_id: str | None, file_id: str, image_path) -> None:
+    """Similarity detection for a standalone image piggybacks on the tag job
+    (post-V1, user request -- "similar images", image-vs-image only), the
+    same way `jobs/preview.py`'s `_try_store_similarity_signature()` does for
+    video off the preview job: optional and secondary, so a failure here
+    must never fail the tag job item it rides along with."""
+    try:
+        signature = similarity.compute_image_signature(image_path)
+        if signature is not None:
+            similarity.store_signature(engine, file_id, signature, job_id=job_id)
+    except Exception:  # noqa: BLE001 - best-effort only, see docstring
+        pass
+
+
 def _tag_one_file(
     engine, access: SourceAccess, file_row, vocabulary: list[dict], settings: dict,
     entries: list[dict], dead_entries: set[str], job_id: str | None = None,
@@ -74,10 +88,14 @@ def _tag_one_file(
     if not access.exists(file_row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
 
-    with access.local_copy(file_row.relative_path) as video_path:
-        images = tagging.build_tagging_images(
-            video_path, settings["sample_frame_count"], settings["combine_into_collage"], settings["image_resolution"]
+    is_video = bool(file_row.is_video_supported)
+    with access.local_copy(file_row.relative_path) as local_path:
+        images = tagging.build_tagging_images_for_file(
+            local_path, is_video,
+            settings["sample_frame_count"], settings["combine_into_collage"], settings["image_resolution"],
         )
+        if not is_video:
+            _try_store_similarity_signature_for_image(engine, job_id, file_row.id, local_path)
     display_names = [tag["display_name"] for tag in vocabulary]
     scores, used_entry = registry.score_tags_with_fallback(
         engine, entries, images, display_names, dead_entries, job_id=job_id
@@ -208,7 +226,7 @@ def _run_directory_scope(
     with engine.connect() as conn:
         source_id = conn.execute(text("SELECT id FROM sources WHERE is_active = 1 LIMIT 1")).fetchone().id
 
-        clauses = ["source_id = :sid", "is_video_supported = 1"]
+        clauses = ["source_id = :sid", "(is_video_supported = 1 OR is_image_supported = 1)"]
         query_params: dict = {"sid": source_id}
         if relative_path:
             clauses.append("(relative_path = :rel OR relative_path LIKE :prefix)")

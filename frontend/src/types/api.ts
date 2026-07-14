@@ -157,6 +157,7 @@ export interface FileEntry {
   size_bytes: number
   modified_at: string | null
   is_video_supported: boolean
+  is_image_supported: boolean
   has_preview_asset: boolean
   converted_at: string | null
   tagged_at: string | null

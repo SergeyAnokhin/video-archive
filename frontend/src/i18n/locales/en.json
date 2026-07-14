@@ -159,9 +159,9 @@
     "sortByTags": "Tags",
     "info": "File info",
     "play": "Play",
-    "similar": "Similar videos",
-    "similarTitle": "Videos similar to \"{{name}}\"",
-    "similarEmpty": "No similar videos found yet.",
+    "similar": "Similar files",
+    "similarTitle": "Files similar to \"{{name}}\"",
+    "similarEmpty": "No similar files found yet.",
     "similarClose": "Close",
     "similarDistance": "{{distance}} bit difference",
     "searchPlaceholder": "Search everywhere, or tag: / file: / path:",
@@ -243,6 +243,12 @@
     "switchToDirectLink": "Switch to direct link",
     "rawStreamHint": "Or open the raw backend stream (no app UI) in a new tab:",
     "openRawStream": "Open raw stream",
+    "info": "File info & actions"
+  },
+  "imageViewerModal": {
+    "close": "Close",
+    "previous": "Previous file",
+    "next": "Next file",
     "info": "File info & actions"
   },
   "convertDialog": {

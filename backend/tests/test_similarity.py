@@ -15,12 +15,15 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app import similarity
+from app import provider_entries, similarity
+from app import tags as tags_service
 from app.jobs import preview as preview_job
 from app.jobs import service
+from app.jobs import tag as tag_job
+from app.providers import registry
 from app.scan import scan_source
 
-from .conftest import make_video
+from .conftest import make_image, make_video
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -97,6 +100,116 @@ def test_preview_job_stores_similarity_signature(engine, source):
         ).fetchone()
     assert signature_row is not None
     assert signature_row.signature_type == "perceptual_hash"
+
+
+def test_compute_image_signature_roundtrip(tmp_path):
+    image_path = tmp_path / "photo.jpg"
+    make_image(image_path, size=(160, 120))
+    signature = similarity.compute_image_signature(image_path)
+    assert signature is not None
+    assert signature["sample_count"] == 1
+    assert signature["signature_type"] == "perceptual_hash"
+
+
+def test_compute_image_signature_returns_none_for_undecodable_file(tmp_path):
+    bogus = tmp_path / "not-an-image.jpg"
+    bogus.write_bytes(b"not a real image")
+    assert similarity.compute_image_signature(bogus) is None
+
+
+def test_find_similar_scopes_to_same_kind(engine, source):
+    """Video and image signatures never cross-compare (post-V1, user
+    request -- "similar images", image-vs-image only), even when their
+    hashes happen to be identical."""
+    make_video(source["root"] / "clip.mp4", duration=1.0, size="160x120")
+    make_image(source["root"] / "photo.jpg", size=(160, 120), color=(0, 0, 0))
+    make_image(source["root"] / "twin.png", size=(160, 120), color=(0, 0, 0))
+    scan_source(engine, source["id"], source["root"])
+
+    with engine.connect() as conn:
+        rows = {r.relative_path: r for r in conn.execute(text("SELECT * FROM files")).all()}
+
+    video_signature = similarity.compute_signature(source["root"] / "clip.mp4")
+    similarity.store_signature(engine, rows["clip.mp4"].id, video_signature)
+    photo_signature = similarity.compute_image_signature(source["root"] / "photo.jpg")
+    similarity.store_signature(engine, rows["photo.jpg"].id, photo_signature)
+    twin_signature = similarity.compute_image_signature(source["root"] / "twin.png")
+    similarity.store_signature(engine, rows["twin.png"].id, twin_signature)
+
+    similar_to_photo = similarity.find_similar(engine, source["id"], rows["photo.jpg"].id, threshold=64)
+    similar_ids = {r["file_id"] for r in similar_to_photo}
+    assert similar_ids == {rows["twin.png"].id}
+    assert rows["clip.mp4"].id not in similar_ids
+
+
+def test_tag_job_stores_image_signature(engine, source, monkeypatch):
+    """Similarity detection for a standalone image piggybacks on the tag
+    job as a best-effort side effect (post-V1, user request), the same way
+    the preview job does for video."""
+
+    def fake_fallback(engine, entries, images, tags, dead_entry_ids, **_kwargs):
+        return [90], entries[0]
+
+    monkeypatch.setattr(registry, "score_tags_with_fallback", fake_fallback)
+    provider_entries.create_entry(
+        engine, {"provider_type": "openrouter", "display_name": "openrouter", "enabled": True, "api_key": "sk-test"}
+    )
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+
+    make_image(source["root"] / "photo.jpg", size=(160, 120))
+    scan_source(engine, source["id"], source["root"])
+    with engine.connect() as conn:
+        file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'photo.jpg'")).fetchone()
+
+    job = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
+    service.start_job(engine, job["id"])
+    status, _message = tag_job.run_tag_job(engine, job)
+    assert status == "completed"
+
+    with engine.connect() as conn:
+        signature_row = conn.execute(
+            text("SELECT * FROM file_similarity_signatures WHERE file_id = :id"), {"id": file_row.id}
+        ).fetchone()
+    assert signature_row is not None
+    assert signature_row.signature_type == "perceptual_hash"
+
+
+def test_similar_files_endpoint_lazily_computes_image_signature(engine, source):
+    """An image that was never tagged has no signature yet -- `/similar`
+    computes and stores one on the spot instead of always returning empty."""
+    from app.main import app
+
+    make_image(source["root"] / "photo.jpg", size=(160, 120), color=(10, 20, 30))
+    make_image(source["root"] / "twin.png", size=(160, 120), color=(10, 20, 30))
+    scan_source(engine, source["id"], source["root"])
+    with engine.connect() as conn:
+        rows = {r.relative_path: r for r in conn.execute(text("SELECT * FROM files")).all()}
+
+    # Pre-store the twin's signature so the target's lazy computation has
+    # something to match against; the target itself has none yet.
+    twin_signature = similarity.compute_image_signature(source["root"] / "twin.png")
+    similarity.store_signature(engine, rows["twin.png"].id, twin_signature)
+
+    with engine.connect() as conn:
+        assert (
+            conn.execute(
+                text("SELECT 1 FROM file_similarity_signatures WHERE file_id = :id"), {"id": rows["photo.jpg"].id}
+            ).fetchone()
+            is None
+        )
+
+    with TestClient(app) as client:
+        r = client.get(f"/api/files/{rows['photo.jpg'].id}/similar")
+        assert r.status_code == 200
+        assert any(entry["file_id"] == rows["twin.png"].id for entry in r.json()["similar"])
+
+    with engine.connect() as conn:
+        assert (
+            conn.execute(
+                text("SELECT 1 FROM file_similarity_signatures WHERE file_id = :id"), {"id": rows["photo.jpg"].id}
+            ).fetchone()
+            is not None
+        )
 
 
 def test_similar_files_endpoint(engine, source):

@@ -80,7 +80,6 @@ export function LibrarySearchBox({ activeSearch, onSearch, onClear, onOpenDirect
         if (wantFiles) {
           const params = new URLSearchParams({
             search: term,
-            video_only: 'true',
             limit: String(searchLimits.files),
           })
           const res = await fetch(`/api/files?${params.toString()}`)

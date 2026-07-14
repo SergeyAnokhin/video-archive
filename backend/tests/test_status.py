@@ -51,13 +51,14 @@ def _add_file(
     converted: bool = False,
     previewed: bool = False,
     size_bytes: int = 1,
+    is_image: bool = False,
 ) -> None:
     conn.execute(
         text(
             "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
-            "size_bytes, discovered_at, last_scanned_at, is_video_supported, converted_at, "
+            "size_bytes, discovered_at, last_scanned_at, is_video_supported, is_image_supported, converted_at, "
             "has_preview_asset, created_at, updated_at) "
-            "VALUES (:id, :sid, :did, :rel, :name, :ext, :size, :now, :now, :supported, :converted_at, "
+            "VALUES (:id, :sid, :did, :rel, :name, :ext, :size, :now, :now, :supported, :is_image, :converted_at, "
             ":previewed, :now, :now)"
         ),
         {
@@ -68,6 +69,7 @@ def _add_file(
             "name": rel_path.rsplit("/", 1)[-1],
             "ext": rel_path.rsplit(".", 1)[-1],
             "supported": 1 if supported else 0,
+            "is_image": 1 if is_image else 0,
             "converted_at": _now() if converted else None,
             "previewed": 1 if previewed else 0,
             "size": size_bytes,
@@ -142,6 +144,25 @@ def test_compute_directory_status_total_size_bytes(engine, source):
     # exclusions as total_supported_files).
     assert root_status["total_size_bytes"] == 4
     assert a_status["total_size_bytes"] == 2
+
+
+def test_compute_directory_status_includes_images_in_totals_not_completeness(engine, source):
+    """Standalone images count toward `total_supported_files`/
+    `total_size_bytes` (folder card size/count should reflect photos too),
+    but `conversion_complete`/`preview_complete` stay computed over the
+    video-only subset -- an image never gets converted/previewed."""
+    with engine.begin() as conn:
+        photos = _add_dir(conn, source["id"], "photos", "")
+        _add_file(conn, source["id"], photos, "photos/clip.mp4", converted=True, previewed=True, size_bytes=5)
+        _add_file(conn, source["id"], photos, "photos/pic.jpg", supported=False, is_image=True, size_bytes=3)
+
+    with engine.connect() as conn:
+        status = compute_directory_status(conn, source["id"], "photos")
+
+    assert status["total_supported_files"] == 2
+    assert status["total_size_bytes"] == 8
+    assert status["conversion_complete"] is True
+    assert status["preview_complete"] is True
 
 
 def test_compute_directory_status_top_variant_tags(engine, source):

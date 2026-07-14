@@ -18,6 +18,13 @@ SUPPORTED_VIDEO_EXTENSIONS = frozenset(
     }
 )
 
+# Standalone images (post-V1, user request): natively decodable by cv2/PIL
+# without extra codecs. Disjoint from SUPPORTED_VIDEO_EXTENSIONS by
+# construction -- a file is classified as at most one of the two.
+SUPPORTED_IMAGE_EXTENSIONS = frozenset(
+    {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif"}
+)
+
 # Technical folder excluded from scanning (Specification §5.3).
 TECHNICAL_FOLDER_NAME = ".video-archive"
 
@@ -56,6 +63,7 @@ def file_row_to_dict(row, **extra) -> dict:
         "size_bytes": row.size_bytes,
         "modified_at": row.modified_at,
         "is_video_supported": bool(row.is_video_supported),
+        "is_image_supported": bool(row.is_image_supported),
         "has_preview_asset": bool(row.has_preview_asset),
         "converted_at": row.converted_at,
         "tagged_at": row.tagged_at,

@@ -334,7 +334,9 @@ export function FileInfoPanel({
           style={{ '--fip-split': `${splitPercent}%` } as CSSProperties}
         >
           <div className="file-info-panel__thumb">
-            {showThumbnail ? (
+            {file.is_image_supported ? (
+              <img src={`/api/files/${file.id}/stream`} alt="" className="file-info-panel__thumb-img" />
+            ) : showThumbnail ? (
               <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
             ) : (
               <Film size={40} />
@@ -486,18 +488,24 @@ export function FileInfoPanel({
         </div>
 
         <div className="convert-dialog__actions">
-          <button type="button" className="convert-dialog__button" onClick={onPreview} disabled={previewing}>
-            <Images size={14} /> {t('library.previewFile')}
-          </button>
+          {file.is_video_supported && (
+            <button type="button" className="convert-dialog__button" onClick={onPreview} disabled={previewing}>
+              <Images size={14} /> {t('library.previewFile')}
+            </button>
+          )}
           <button type="button" className="convert-dialog__button" onClick={onTag} disabled={tagging}>
             <Tags size={14} /> {t('library.tagFile')}
           </button>
-          <button type="button" className="convert-dialog__button" onClick={onConvert}>
-            <Wand2 size={14} /> {t('library.convertFile')}
-          </button>
-          <button type="button" className="convert-dialog__button" onClick={onTune}>
-            <SlidersHorizontal size={14} /> {t('library.tuneFile')}
-          </button>
+          {file.is_video_supported && (
+            <button type="button" className="convert-dialog__button" onClick={onConvert}>
+              <Wand2 size={14} /> {t('library.convertFile')}
+            </button>
+          )}
+          {file.is_video_supported && (
+            <button type="button" className="convert-dialog__button" onClick={onTune}>
+              <SlidersHorizontal size={14} /> {t('library.tuneFile')}
+            </button>
+          )}
           <button type="button" className="convert-dialog__button" onClick={onSimilar}>
             <Copy size={14} /> {t('library.similar')}
           </button>

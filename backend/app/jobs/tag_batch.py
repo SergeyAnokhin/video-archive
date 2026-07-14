@@ -74,9 +74,10 @@ def run_batch(
         try:
             if not access.exists(row.relative_path):
                 raise RuntimeError("Source file no longer exists on the source.")
-            with access.local_copy(row.relative_path) as video_path:
-                images = tagging.build_tagging_images(
-                    video_path, settings["sample_frame_count"], settings["combine_into_collage"], settings["image_resolution"]
+            with access.local_copy(row.relative_path) as local_path:
+                images = tagging.build_tagging_images_for_file(
+                    local_path, bool(row.is_video_supported),
+                    settings["sample_frame_count"], settings["combine_into_collage"], settings["image_resolution"],
                 )
             items.append((row.id, images))
             keyed_rows[row.id] = (row, item_id)

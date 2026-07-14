@@ -22,7 +22,7 @@ from app.providers import registry
 from app.providers.base import ProviderError, build_prompt, parse_scores
 from app.scan import scan_source
 
-from .conftest import make_video
+from .conftest import make_image, make_video
 
 ffmpeg_missing = shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None
 
@@ -345,6 +345,44 @@ def test_sample_frames_raises_for_non_video(tmp_path):
         tagging.sample_frames(bogus, frame_count=3)
 
 
+# --- standalone image tagging (no ffmpeg needed) ----------------------------
+
+
+def test_load_image_raises_for_undecodable_file(tmp_path):
+    bogus = tmp_path / "not-an-image.jpg"
+    bogus.write_bytes(b"not a real image")
+    with pytest.raises(tagging.TaggingInputError):
+        tagging.load_image(bogus)
+
+
+def test_build_tagging_images_for_file_image_path_returns_one_jpeg(tmp_path):
+    image_path = tmp_path / "photo.jpg"
+    make_image(image_path, size=(320, 240))
+
+    images = tagging.build_tagging_images_for_file(
+        image_path, is_video=False, frame_count=9, combine_into_collage=True, image_resolution=128
+    )
+    assert len(images) == 1
+    assert images[0][:2] == b"\xff\xd8"  # JPEG magic bytes
+    decoded = cv2.imdecode(np.frombuffer(images[0], np.uint8), cv2.IMREAD_COLOR)
+    assert max(decoded.shape[:2]) == 128
+
+
+def test_build_tagging_images_for_file_video_path_delegates_unchanged(tmp_path):
+    """The dispatcher's video branch must behave exactly like calling
+    `build_tagging_images()` directly -- no behavior change for videos."""
+    if ffmpeg_missing:
+        pytest.skip("ffmpeg/ffprobe not on PATH")
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+
+    images = tagging.build_tagging_images_for_file(
+        video_path, is_video=True, frame_count=4, combine_into_collage=False, image_resolution=128
+    )
+    assert len(images) == 4
+    assert all(img[:2] == b"\xff\xd8" for img in images)
+
+
 # --- tag job -----------------------------------------------------------------
 
 
@@ -531,6 +569,62 @@ def test_tag_job_directory_scope_skip_processed_and_test_artifacts(engine, sourc
     status2, message2 = tag_job.run_tag_job(engine, job2)
     assert status2 == "completed"
     assert "1 skipped" in message2
+
+
+def test_tag_job_file_scope_tags_standalone_image(engine, source, stub_provider):
+    """Standalone images get AI auto-tagging too (post-V1, user request):
+    the image itself is sent to the provider, not sampled frames -- no
+    ffmpeg needed for this path at all."""
+    _enable_openrouter(engine)
+    for name in ("Beach", "Birthday", "Snow", "Dog"):
+        tags_service.create_tag(engine, {"display_name": name})
+
+    make_image(source["root"] / "photos" / "pic.jpg", size=(320, 240))
+    scan_source(engine, source["id"], source["root"])
+
+    with engine.connect() as conn:
+        file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'photos/pic.jpg'")).fetchone()
+    assert file_row.is_image_supported == 1
+    assert file_row.is_video_supported == 0
+
+    job = service.create_job(engine, "tag", "file", file_row.id, {"file_id": file_row.id})
+    service.start_job(engine, job["id"])
+    status, message = tag_job.run_tag_job(engine, job)
+
+    assert status == "completed"
+    assert "2 tag(s)" in message
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT tc.display_name FROM file_tags ft JOIN tag_catalog tc ON tc.id = ft.tag_id "
+                "WHERE ft.file_id = :fid ORDER BY ft.score DESC"
+            ),
+            {"fid": file_row.id},
+        ).all()
+    assert [row.display_name for row in rows] == ["Beach", "Birthday"]
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_tag_job_directory_scope_tags_video_and_image_together(engine, source, stub_provider):
+    _enable_openrouter(engine)
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+
+    make_video(source["root"] / "clip.mp4", duration=2.0, size="320x240")
+    make_image(source["root"] / "pic.jpg", size=(320, 240))
+    scan_source(engine, source["id"], source["root"])
+
+    job = service.create_job(engine, "tag", "source", None, {"path": ""})
+    status, message = tag_job.run_tag_job(engine, job)
+
+    assert status == "completed"
+    assert "2 of 2" in message
+
+    with engine.connect() as conn:
+        tagged_count = conn.execute(
+            text("SELECT COUNT(*) FROM files WHERE tagged_at IS NOT NULL")
+        ).scalar()
+    assert tagged_count == 2
 
 
 def test_tag_job_fails_without_vocabulary(engine, source):

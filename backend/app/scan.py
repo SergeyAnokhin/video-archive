@@ -17,7 +17,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine, text
 
-from app.media import FOLDER_PREVIEW_FILENAME, SUPPORTED_VIDEO_EXTENSIONS
+from app.media import FOLDER_PREVIEW_FILENAME, SUPPORTED_IMAGE_EXTENSIONS, SUPPORTED_VIDEO_EXTENSIONS
 from app.sources import SourceAccess
 from app.sources.local_backend import LocalBackend
 
@@ -79,6 +79,7 @@ def discover_filesystem(
 
             rel_file = f"{rel_dir}/{filename}" if rel_dir else filename
             is_video = ext in SUPPORTED_VIDEO_EXTENSIONS
+            is_image = ext in SUPPORTED_IMAGE_EXTENSIONS
             has_preview = is_video and f"{stem.lower()}.jpg" in lower_names
 
             touched_files[rel_file] = {
@@ -88,6 +89,7 @@ def discover_filesystem(
                 "size_bytes": entry.stat.size,
                 "modified_at": entry.stat.modified_at,
                 "is_video_supported": is_video,
+                "is_image_supported": is_image,
                 "has_preview_asset": has_preview,
             }
 
@@ -191,7 +193,8 @@ def upsert_file(
                 UPDATE files
                 SET directory_id = :dir_id, file_name = :file_name, extension = :ext,
                     size_bytes = :size, modified_at = :modified_at,
-                    is_video_supported = :is_video, has_preview_asset = :has_preview,
+                    is_video_supported = :is_video, is_image_supported = :is_image,
+                    has_preview_asset = :has_preview,
                     last_scanned_at = :now, updated_at = :now
                 WHERE id = :id
                 """
@@ -203,6 +206,7 @@ def upsert_file(
                 "size": attrs["size_bytes"],
                 "modified_at": attrs["modified_at"],
                 "is_video": attrs["is_video_supported"],
+                "is_image": attrs["is_image_supported"],
                 "has_preview": attrs["has_preview_asset"],
                 "now": now,
                 "id": existing_id,
@@ -217,11 +221,11 @@ def upsert_file(
             INSERT INTO files
                 (id, source_id, directory_id, relative_path, file_name, extension,
                  size_bytes, modified_at, discovered_at, last_scanned_at,
-                 is_video_supported, has_preview_asset, created_at, updated_at)
+                 is_video_supported, is_image_supported, has_preview_asset, created_at, updated_at)
             VALUES
                 (:id, :sid, :dir_id, :rel, :file_name, :ext,
                  :size, :modified_at, :now, :now,
-                 :is_video, :has_preview, :now, :now)
+                 :is_video, :is_image, :has_preview, :now, :now)
             """
         ),
         {
@@ -235,6 +239,7 @@ def upsert_file(
             "modified_at": attrs["modified_at"],
             "now": now,
             "is_video": attrs["is_video_supported"],
+            "is_image": attrs["is_image_supported"],
             "has_preview": attrs["has_preview_asset"],
         },
     )

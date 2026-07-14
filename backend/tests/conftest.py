@@ -283,3 +283,12 @@ def make_video(path: Path, *, size: str = "160x120", duration: float = 0.5) -> N
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to generate test video: {result.stderr[-500:]}")
+
+
+def make_image(path: Path, *, size: tuple[int, int] = (160, 120), color: tuple[int, int, int] = (0, 0, 0)) -> None:
+    """Writes a real, decodable JPEG/PNG (PIL, already a dependency) so
+    standalone-image tests don't need ffmpeg."""
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, color).save(path)

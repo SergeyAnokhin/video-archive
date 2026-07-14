@@ -36,9 +36,7 @@ interface SearchResultsProps {
 }
 
 function fileSearchParams(scope: 'tag' | 'file', term: string): URLSearchParams {
-  return new URLSearchParams(
-    scope === 'file' ? { search: term, video_only: 'true' } : { tag_search: term, video_only: 'true' },
-  )
+  return new URLSearchParams(scope === 'file' ? { search: term } : { tag_search: term })
 }
 
 async function fetchFilePage(params: URLSearchParams, limit: number, offset: number): Promise<FileEntry[]> {

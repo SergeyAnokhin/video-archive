@@ -18,6 +18,7 @@ from io import BytesIO
 from pathlib import Path
 
 import cv2
+import numpy as np
 from PIL import Image
 
 from app import conversion
@@ -105,3 +106,31 @@ def build_tagging_images(
     while len(padded) < cell_count:
         padded.append(images[len(padded) % len(images)])
     return [_compose_grid(padded[:cell_count], rows, cols, image_resolution)]
+
+
+def load_image(image_path: Path) -> list:
+    """Loads a standalone image as the tagging pipeline's single "frame" --
+    no ffprobe/duration involved, unlike `sample_frames()`. Windows
+    non-ASCII-path safe (`np.fromfile()` + `cv2.imdecode()`, never
+    `cv2.imread()`, same convention as `preview.py`)."""
+    data = np.fromfile(str(image_path), dtype=np.uint8)
+    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if image is None:
+        raise TaggingInputError("Could not decode the image file.")
+    return [image]
+
+
+def build_tagging_images_for_file(
+    path: Path, is_video: bool, frame_count: int, combine_into_collage: bool,
+    image_resolution: int = DEFAULT_IMAGE_RESOLUTION,
+) -> list[bytes]:
+    """Dispatches to the video (multi-frame, optional collage) or standalone
+    image (single frame, never combined -- nothing to combine) path. A
+    single image is always sent as one JPEG at `image_resolution`, reusing
+    the same resize/encode helpers a per-frame video request already uses,
+    so an image-tagging request is shaped identically to a one-frame video
+    request (post-V1, user request -- images get AI auto-tagging too)."""
+    if is_video:
+        return build_tagging_images(path, frame_count, combine_into_collage, image_resolution)
+    images = load_image(path)
+    return [_encode_jpeg(_resize_max_dim(img, image_resolution)) for img in images]

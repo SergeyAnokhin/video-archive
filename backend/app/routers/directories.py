@@ -76,9 +76,9 @@ def get_directory_children(
             text(
                 """
                 SELECT id, relative_path, file_name, extension, size_bytes, modified_at, is_video_supported,
-                       has_preview_asset, converted_at, tagged_at, duration_seconds
+                       is_image_supported, has_preview_asset, converted_at, tagged_at, duration_seconds
                 FROM files
-                WHERE directory_id = :dir_id AND is_video_supported = 1
+                WHERE directory_id = :dir_id AND (is_video_supported = 1 OR is_image_supported = 1)
                 ORDER BY file_name COLLATE NOCASE
                 """
             ),

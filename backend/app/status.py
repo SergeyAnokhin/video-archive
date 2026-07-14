@@ -27,11 +27,12 @@ def compute_directory_status(conn, source_id: str, relative_path: str) -> dict:
             f"""
             SELECT
                 COUNT(*) AS total,
-                SUM(CASE WHEN converted_at IS NOT NULL THEN 1 ELSE 0 END) AS converted,
-                SUM(CASE WHEN has_preview_asset = 1 THEN 1 ELSE 0 END) AS previewed,
+                SUM(CASE WHEN is_video_supported = 1 THEN 1 ELSE 0 END) AS video_total,
+                SUM(CASE WHEN is_video_supported = 1 AND converted_at IS NOT NULL THEN 1 ELSE 0 END) AS converted,
+                SUM(CASE WHEN is_video_supported = 1 AND has_preview_asset = 1 THEN 1 ELSE 0 END) AS previewed,
                 SUM(size_bytes) AS total_size
             FROM files
-            WHERE source_id = :sid AND is_video_supported = 1 {clause}
+            WHERE source_id = :sid AND (is_video_supported = 1 OR is_image_supported = 1) {clause}
               AND file_name NOT LIKE '%.original.%' AND file_name NOT LIKE '%.variant-%'
             """
         ),
@@ -39,6 +40,7 @@ def compute_directory_status(conn, source_id: str, relative_path: str) -> dict:
     ).fetchone()
 
     total = row.total or 0
+    video_total = row.video_total or 0
     converted = row.converted or 0
     previewed = row.previewed or 0
 
@@ -62,8 +64,8 @@ def compute_directory_status(conn, source_id: str, relative_path: str) -> dict:
         "total_supported_files": total,
         "converted_count": converted,
         "preview_count": previewed,
-        "conversion_complete": converted == total,
-        "preview_complete": previewed == total,
+        "conversion_complete": converted == video_total,
+        "preview_complete": previewed == video_total,
         "total_size_bytes": row.total_size or 0,
         "top_variant_tags": [{"param": param, "value": value} for param, value in top_tags],
     }

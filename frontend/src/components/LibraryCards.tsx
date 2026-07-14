@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, File as FileIcon, Film, Folder, Info, SlidersHorizontal, Star, Trash2 } from 'lucide-react'
+import { Archive, File as FileIcon, Film, Folder, Image as ImageIcon, Info, SlidersHorizontal, Star, Trash2 } from 'lucide-react'
 import type { DirectoryEntry, FileEntry, VariantTag } from '../types/api'
 import { formatDuration, formatSize } from '../utils/format'
 import './LibraryView.css'
@@ -145,6 +145,7 @@ interface FileCardProps {
 export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
   const { t } = useTranslation()
   const [gifFailed, setGifFailed] = useState(false)
+  const [imageFailed, setImageFailed] = useState(false)
   const showConversionDot = file.is_video_supported && !file.converted_at
   const showPreviewDot = file.is_video_supported && !file.has_preview_asset
   const showThumbnail = file.is_video_supported && file.has_preview_asset
@@ -153,7 +154,14 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
     <div className="library-card">
       <div className="library-card__thumb-frame">
         <button type="button" className="library-card__thumb" aria-label={t('library.play')} title={t('library.play')} onClick={onPlay}>
-          {showThumbnail ? (
+          {file.is_image_supported && !imageFailed ? (
+            <img
+              src={`/api/files/${file.id}/stream`}
+              alt=""
+              className="library-card__thumb-img"
+              onError={() => setImageFailed(true)}
+            />
+          ) : showThumbnail ? (
             <img
               src={gifFailed ? `/api/files/${file.id}/preview.jpg` : `/api/files/${file.id}/preview.gif`}
               alt=""
@@ -162,6 +170,8 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
             />
           ) : file.is_video_supported ? (
             <Film size={28} />
+          ) : file.is_image_supported ? (
+            <ImageIcon size={28} />
           ) : (
             <FileIcon size={28} />
           )}
