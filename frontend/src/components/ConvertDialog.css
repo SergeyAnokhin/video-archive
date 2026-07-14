@@ -19,6 +19,10 @@
   padding: var(--space-4);
 }
 
+.convert-dialog--wide {
+  width: min(720px, 100%);
+}
+
 .convert-dialog__title {
   margin: 0 0 var(--space-2);
   font-size: 16px;

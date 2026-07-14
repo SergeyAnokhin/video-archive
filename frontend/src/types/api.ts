@@ -304,6 +304,30 @@ export interface ProviderEntry {
   updated_at: string
 }
 
+export interface TagLabRankedTag {
+  tag_id: string
+  display_name: string
+  score: number
+}
+
+export interface TagLabImage {
+  data_url: string
+  width: number
+  height: number
+}
+
+export interface TagLabRunResult {
+  images: TagLabImage[]
+  prompt: string
+  raw_response: string | null
+  tokens_in: number | null
+  tokens_out: number | null
+  estimated_cost_usd: number | null
+  provider_type: ProviderType
+  model_name: string | null
+  tags: TagLabRankedTag[]
+}
+
 export interface BatchSubmission {
   id: string
   job_id: string

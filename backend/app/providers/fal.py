@@ -45,5 +45,8 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
 
     # FAL has no fixed response schema (see module docstring), so there's no
     # reliable field to pull token usage from -- usage stats log the call
-    # itself but never tokens/cost for this provider.
-    return parse_scores(json.dumps(data), len(tags)), UsageInfo()
+    # itself but never tokens/cost for this provider. The "raw text" is the
+    # whole response body serialized back to text, since there's no single
+    # message/content field to isolate.
+    raw_text = json.dumps(data)
+    return parse_scores(raw_text, len(tags)), UsageInfo(raw_text=raw_text)

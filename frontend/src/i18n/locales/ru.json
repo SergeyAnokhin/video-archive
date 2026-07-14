@@ -296,6 +296,24 @@
     "directoryTitle": "Тегировать папку",
     "skipProcessed": "Пропускать уже тегированные файлы"
   },
+  "tagLab": {
+    "title": "Лаборатория тегов",
+    "modelLabel": "Модель",
+    "modelEmptyHint": "Нет включённых записей AI-провайдеров. Сначала настройте одну в Настройки → AI-провайдеры.",
+    "run": "Запустить",
+    "running": "Ожидание ответа модели…",
+    "imagesTitle": "Картинки, отправленные модели",
+    "promptTitle": "Prompt",
+    "rawResponseTitle": "Необработанный ответ модели",
+    "tokensIn": "Токенов на входе: {{count}}",
+    "tokensOut": "Токенов на выходе: {{count}}",
+    "estimatedCost": "Оценка стоимости: ${{cost}}",
+    "costUnavailable": "Оценка стоимости: недоступна",
+    "suggestedTagsTitle": "Предложенные теги",
+    "noTagsSuggested": "Модель не нашла подходящих тегов.",
+    "apply": "Применить",
+    "applying": "Применение…"
+  },
   "previewSettings": {
     "title": "Превью",
     "tabCollage": "Коллаж",

@@ -29,6 +29,7 @@ import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import { SearchResults } from './SearchResults'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
+import { TagLabModal } from './TagLabModal'
 import type { DirectoryChildrenResponse, FileEntry, JobSummary } from '../types/api'
 import { getRecentFolderVisits, recordFolderVisit, recordRecentFolder } from '../utils/recentFolders'
 import { recordRecentlyViewed } from '../utils/recentlyViewed'
@@ -72,7 +73,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const [previewDirOpen, setPreviewDirOpen] = useState(false)
   const [previewingFileId, setPreviewingFileId] = useState<string | null>(null)
   const [tagDirOpen, setTagDirOpen] = useState(false)
-  const [taggingFileId, setTaggingFileId] = useState<string | null>(null)
+  const [tagLabFile, setTagLabFile] = useState<FileEntry | null>(null)
   const [playingFile, setPlayingFile] = useState<FileEntry | null>(null)
   const [similarFile, setSimilarFile] = useState<FileEntry | null>(null)
   const [infoFile, setInfoFile] = useState<FileEntry | null>(null)
@@ -303,20 +304,6 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
       await refreshJobs()
     } finally {
       setPreviewingFileId(null)
-    }
-  }
-
-  async function handleTagFile(fileId: string) {
-    setTaggingFileId(fileId)
-    try {
-      await fetch('/api/jobs/tag-file', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_id: fileId }),
-      })
-      await refreshJobs()
-    } finally {
-      setTaggingFileId(null)
     }
   }
 
@@ -634,14 +621,26 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
         />
       )}
       {similarFile && <SimilarFilesModal file={similarFile} onClose={() => setSimilarFile(null)} />}
+      {tagLabFile && (
+        <TagLabModal
+          file={tagLabFile}
+          onClose={() => setTagLabFile(null)}
+          onApplied={() => {
+            setTagLabFile(null)
+            setReloadTick((tick) => tick + 1)
+          }}
+        />
+      )}
       {infoFile && (
         <FileInfoPanel
           file={infoFile}
           previewing={previewingFileId === infoFile.id}
-          tagging={taggingFileId === infoFile.id}
           onClose={closeInfoPanel}
           onPreview={() => void handlePreviewFile(infoFile.id)}
-          onTag={() => void handleTagFile(infoFile.id)}
+          onTag={() => {
+            setTagLabFile(infoFile)
+            closeInfoPanel()
+          }}
           onConvert={() => {
             setConvertFile(infoFile)
             closeInfoPanel()

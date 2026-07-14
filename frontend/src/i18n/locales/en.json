@@ -296,6 +296,24 @@
     "directoryTitle": "Tag folder",
     "skipProcessed": "Skip files that are already tagged"
   },
+  "tagLab": {
+    "title": "Tag Lab",
+    "modelLabel": "Model",
+    "modelEmptyHint": "No enabled AI provider entries yet. Configure one in Settings → AI providers first.",
+    "run": "Run",
+    "running": "Waiting for the model's response…",
+    "imagesTitle": "Images sent to the model",
+    "promptTitle": "Prompt",
+    "rawResponseTitle": "Raw model response",
+    "tokensIn": "Tokens in: {{count}}",
+    "tokensOut": "Tokens out: {{count}}",
+    "estimatedCost": "Estimated cost: ${{cost}}",
+    "costUnavailable": "Estimated cost: unavailable",
+    "suggestedTagsTitle": "Suggested tags",
+    "noTagsSuggested": "The model didn't match any tags.",
+    "apply": "Apply",
+    "applying": "Applying…"
+  },
   "previewSettings": {
     "title": "Preview",
     "tabCollage": "Collage",

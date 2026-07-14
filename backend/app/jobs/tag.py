@@ -23,9 +23,6 @@ back to for anything it can't resolve.
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
-
 from sqlalchemy import text
 
 from app import batch_submissions, provider_entries, similarity, tagging, tagging_settings, tags as tags_service
@@ -33,38 +30,6 @@ from app.jobs import service
 from app.media import is_test_artifact
 from app.providers import registry
 from app.sources import SourceAccess, get_source_access
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _assign_tags(engine, file_id: str, scored_tags: list[dict], provider_type: str, model_name: str | None) -> None:
-    now = _now()
-    with engine.begin() as conn:
-        conn.execute(text("DELETE FROM file_tags WHERE file_id = :file_id"), {"file_id": file_id})
-        for entry in scored_tags:
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at)
-                    VALUES (:id, :file_id, :tag_id, :score, :provider_name, :model_name, :now)
-                    """
-                ),
-                {
-                    "id": str(uuid.uuid4()),
-                    "file_id": file_id,
-                    "tag_id": entry["id"],
-                    "score": entry["score"],
-                    "provider_name": provider_type,
-                    "model_name": model_name,
-                    "now": now,
-                },
-            )
-        conn.execute(
-            text("UPDATE files SET tagged_at = :now, updated_at = :now WHERE id = :id"),
-            {"now": now, "id": file_id},
-        )
 
 
 def _try_store_similarity_signature_for_image(engine, job_id: str | None, file_id: str, image_path) -> None:
@@ -103,11 +68,19 @@ def _tag_one_file(
 
     ranked = sorted(zip(vocabulary, scores), key=lambda pair: pair[1], reverse=True)
     top = [pair for pair in ranked if pair[1] > 0][: settings["top_tag_count"]]
-    scored_tags = [{"id": tag["id"], "score": score} for tag, score in top]
+    scored_tags = [
+        {
+            "id": tag["id"],
+            "score": score,
+            "provider_name": used_entry["provider_type"],
+            "model_name": used_entry["vision_model"],
+        }
+        for tag, score in top
+    ]
 
     if job_id is not None:
         _log_tag_scores(engine, job_id, file_row, top, used_entry["provider_type"], used_entry["vision_model"])
-    _assign_tags(engine, file_row.id, scored_tags, used_entry["provider_type"], used_entry["vision_model"])
+    tags_service.replace_scored_tags(engine, file_row.id, scored_tags)
     return f"{len(scored_tags)} tag(s) assigned"
 
 

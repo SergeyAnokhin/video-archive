@@ -88,7 +88,9 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
     except (KeyError, IndexError, TypeError) as exc:
         raise ProviderError(f"Unexpected Mistral response shape: {exc}") from exc
 
-    return parse_scores(text_reply, len(tags)), _usage_from_response(data.get("usage"))
+    usage_info = _usage_from_response(data.get("usage"))
+    usage_info.raw_text = text_reply
+    return parse_scores(text_reply, len(tags)), usage_info
 
 
 def _build_batch_request_line(key: str, images: list[bytes], prompt: str, model: str | None) -> str:

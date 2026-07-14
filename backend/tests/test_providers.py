@@ -55,6 +55,7 @@ def test_openrouter_builds_expected_request_and_parses_scores(monkeypatch):
     assert scores == [80, 20]
     assert usage.tokens_in is None
     assert usage.tokens_out is None
+    assert usage.raw_text == "[80, 20]"
     assert captured["url"] == openrouter.API_URL
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     assert captured["json"]["model"] == "openai/gpt-4o-mini"
@@ -149,6 +150,7 @@ def test_gemini_builds_expected_request_and_parses_scores(monkeypatch):
     assert scores == [55, 5]
     assert usage.tokens_in is None
     assert usage.tokens_out is None
+    assert usage.raw_text == "[55, 5]"
     assert captured["url"] == gemini.API_URL_TEMPLATE.format(model="gemini-2.5-flash")
     assert captured["params"] == {"key": "gm-test"}
     parts = captured["json"]["contents"][0]["parts"]
@@ -218,6 +220,7 @@ def test_mistral_builds_expected_request_and_parses_scores(monkeypatch):
     assert scores == [10, 90]
     assert usage.tokens_in is None
     assert usage.tokens_out is None
+    assert usage.raw_text == "[10, 90]"
     assert captured["url"] == mistral.API_URL
     assert captured["headers"]["Authorization"] == "Bearer ms-test"
     assert captured["json"]["model"] == mistral.DEFAULT_MODEL
@@ -281,6 +284,7 @@ def test_fal_builds_expected_request_and_parses_scores(monkeypatch):
     assert scores == [33, 67]
     assert usage.tokens_in is None
     assert usage.tokens_out is None
+    assert usage.raw_text == json.dumps({"output": "[33, 67]"})
     assert captured["url"] == fal.API_URL_TEMPLATE.format(model="fal-ai/moondream2/visual-query")
     assert captured["headers"]["Authorization"] == "Key fal-test"
     assert captured["json"]["image_url"].startswith("data:image/jpeg;base64,")

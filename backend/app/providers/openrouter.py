@@ -69,5 +69,7 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
         raise ProviderError(f"Unexpected OpenRouter response shape: {exc}") from exc
 
     usage = data.get("usage") or {}
-    usage_info = UsageInfo(tokens_in=usage.get("prompt_tokens"), tokens_out=usage.get("completion_tokens"))
+    usage_info = UsageInfo(
+        tokens_in=usage.get("prompt_tokens"), tokens_out=usage.get("completion_tokens"), raw_text=text_reply
+    )
     return parse_scores(text_reply, len(tags)), usage_info

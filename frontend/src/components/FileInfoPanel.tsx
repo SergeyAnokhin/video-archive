@@ -34,7 +34,6 @@ import './FileInfoPanel.css'
 interface FileInfoPanelProps {
   file: FileEntry
   previewing: boolean
-  tagging: boolean
   onClose: () => void
   onPreview: () => void
   onTag: () => void
@@ -68,7 +67,6 @@ function detectInitialSplit(): number {
 export function FileInfoPanel({
   file,
   previewing,
-  tagging,
   onClose,
   onPreview,
   onTag,
@@ -493,7 +491,7 @@ export function FileInfoPanel({
               <Images size={14} /> {t('library.previewFile')}
             </button>
           )}
-          <button type="button" className="convert-dialog__button" onClick={onTag} disabled={tagging}>
+          <button type="button" className="convert-dialog__button" onClick={onTag}>
             <Tags size={14} /> {t('library.tagFile')}
           </button>
           {file.is_video_supported && (

@@ -28,6 +28,7 @@ from app.routers import (
     providers,
     source,
     sources,
+    tag_lab,
     tagging_settings,
     tags,
     tree,
@@ -77,6 +78,7 @@ app.include_router(preview_layouts.router, prefix="/api")
 app.include_router(preview_settings.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
 app.include_router(tagging_settings.router, prefix="/api")
+app.include_router(tag_lab.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(playback.router, prefix="/api")
 app.include_router(playback_settings.router, prefix="/api")

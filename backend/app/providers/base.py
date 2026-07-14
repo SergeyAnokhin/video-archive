@@ -32,6 +32,13 @@ class UsageInfo:
 
     tokens_in: int | None = None
     tokens_out: int | None = None
+    raw_text: str | None = None
+    """The provider's raw reply text before parsing (user request -- Tag Lab
+    shows the exact model output). For OpenRouter/Gemini/Mistral this is the
+    model's message/content text (the same string `parse_scores()` reads);
+    for FAL, which has no fixed response schema, this is the full JSON
+    response body serialized back to text, same as `BatchPollResult.
+    raw_texts`'s per-file convention on the batch path."""
 
 
 @dataclass

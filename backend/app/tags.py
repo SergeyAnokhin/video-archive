@@ -266,6 +266,50 @@ def assign_tuning_parameter_tags(engine, file_id: str, display_names: list[str])
             )
 
 
+def replace_scored_tags(engine, file_id: str, scored_tags: list[dict]) -> None:
+    """Full replace of `file_id`'s `file_tags` rows (Data Model §9
+    "re-tagging replaces the previous set") -- used by the `tag` job
+    (`app/jobs/tag.py`) and by Tag Lab's apply step
+    (`app/tag_lab.py::apply_tag_lab_result`). Each item is `{id, score,
+    provider_name, model_name}`; unlike the old job-only helper this
+    generalizes to a per-item provider/model instead of one pair for the
+    whole batch, since a Tag Lab apply can mix model-scored tags and
+    manually-added ones in a single write. Any `id` that no longer exists in
+    `tag_catalog` (vocabulary changed between scoring and applying) is
+    silently dropped rather than inserting an orphaned row -- SQLite foreign
+    keys aren't enforced in this database."""
+    now = _now()
+    valid_ids = {
+        tag["id"] for tag in list_tags_by_ids(engine, [entry["id"] for entry in scored_tags]) if tag is not None
+    }
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM file_tags WHERE file_id = :file_id"), {"file_id": file_id})
+        for entry in scored_tags:
+            if entry["id"] not in valid_ids:
+                continue
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at)
+                    VALUES (:id, :file_id, :tag_id, :score, :provider_name, :model_name, :now)
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "file_id": file_id,
+                    "tag_id": entry["id"],
+                    "score": entry["score"],
+                    "provider_name": entry["provider_name"],
+                    "model_name": entry["model_name"],
+                    "now": now,
+                },
+            )
+        conn.execute(
+            text("UPDATE files SET tagged_at = :now, updated_at = :now WHERE id = :id"),
+            {"now": now, "id": file_id},
+        )
+
+
 def remove_file_tag(engine, file_id: str, tag_id: str) -> bool:
     """Un-assign `tag_id` from `file_id` (user request -- editable tags in
     `FileInfoPanel`). Returns whether an assignment actually existed."""

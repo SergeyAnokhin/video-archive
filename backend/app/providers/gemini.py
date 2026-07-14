@@ -88,7 +88,9 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
     except (KeyError, IndexError, TypeError) as exc:
         raise ProviderError(f"Unexpected Gemini response shape: {exc}") from exc
 
-    return parse_scores(text_reply, len(tags)), _usage_from_metadata(data.get("usageMetadata"))
+    usage_info = _usage_from_metadata(data.get("usageMetadata"))
+    usage_info.raw_text = text_reply
+    return parse_scores(text_reply, len(tags)), usage_info
 
 
 def create_batch(items: list[tuple[str, list[bytes]]], tags: list[str], model: str | None, api_key: str) -> str:
