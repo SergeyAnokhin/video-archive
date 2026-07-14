@@ -1,4 +1,3 @@
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,6 +7,8 @@ from app.config import APP_VERSION
 from app.db import get_engine, init_db
 from app.ffmpeg import check_ffmpeg
 from app.jobs.worker import JobWorker
+from app.logging_config import configure_logging
+from app.request_logging import RequestLoggingMiddleware
 from app.routers import (
     app_info,
     backup_settings,
@@ -34,9 +35,11 @@ from app.routers import (
 
 # Background-job errors (failed preview/convert/tag items, whole-job
 # crashes) are otherwise only recorded in the DB-backed event log -- this
-# makes them show up in the terminal running the backend too. Root-level so
-# it also covers loggers elsewhere in `app.*` should any start using them.
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# makes them show up in the terminal running the backend too, and (via the
+# rotating file handler) in `backend/logs/backend.log` for after-the-fact
+# analysis. Root-level so it also covers loggers elsewhere in `app.*` should
+# any start using them.
+configure_logging()
 
 _worker = JobWorker()
 
@@ -59,6 +62,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Video Archive API", version=APP_VERSION, lifespan=lifespan)
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(health.router, prefix="/api")
 app.include_router(app_info.router, prefix="/api")

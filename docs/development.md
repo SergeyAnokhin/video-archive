@@ -15,6 +15,12 @@ Both dev servers bind `0.0.0.0` (post-V1, user request — reachable from a phon
 
 Running a second frontend dev session against an already-running backend (e.g. a second AI coding session doing UI verification while another one's server is still up on `:5173`): use the `frontend-only` entry in [`.claude/launch.json`](../.claude/launch.json) (`npm run dev --prefix frontend`, `autoPort: true`) — `frontend/vite.config.ts` reads `PORT` from the environment (falling back to `5173`), so a second instance gets its own port and proxies to the same backend on `:8000` instead of failing to bind.
 
+## Backend console logging
+
+`app/request_logging.py`'s `RequestLoggingMiddleware` replaces uvicorn's default access log (one bare `"GET /api/jobs?limit=200 HTTP/1.1" 200 OK` line per hit, indistinguishable between endpoints — `app/logging_config.py` disables `uvicorn.access` outright so it isn't logged twice). Every request now logs one line instead — an emoji by method, the route's path template, path/query params, status, and duration — except `GET /api/jobs`, `GET /api/jobs/{job_id}/items`, and `GET /api/jobs/batch-submissions`, which `JobsContext.tsx`/`BatchSubmissionsModal.tsx`/`FileTuneModal.tsx` poll every 1-3s for live job progress: these stay silent while they succeed and only log when they error (`_QUIET_ROUTES` in that file — add a new route there if it becomes another high-frequency poll target). Request bodies are never logged (some settings endpoints carry provider API keys in the body).
+
+All console output — these request logs, background-job errors (`app/jobs/service.py`, already mirrored to the console before this change), and any uncaught exception — is also mirrored to `logs/backend.log` at the repo root, so a failure can be pulled up and pasted into chat afterward instead of relying on whatever's still scrolled into view. That file rotates every 5 minutes (one backup kept), so it always holds at least the last 5-10 minutes. The directory is deliberately `logs/` at repo root and not `backend/logs/` — `uvicorn --reload` watches the whole `backend/` tree (see the reload-wedging note below), so a log file written inside it would retrigger the reloader on every single line logged.
+
 ## Tests
 
 | Suite | Command | Notes |
@@ -35,9 +41,15 @@ Test conventions (per-suite details in [`code-map-tests.md`](code-map-tests.md))
 - Provider clients are tested with `httpx` monkeypatched — tests must never hit real AI provider APIs.
 - Per [`CLAUDE.md`](../CLAUDE.md): run the smallest relevant suite after every change; a task is not complete while required tests fail.
 
+## Before starting a nontrivial feature
+
+Run `git status`/`git diff HEAD` first, before exploring or planning. This repo has been worked on across multiple sessions (and sometimes multiple concurrent sessions — see the stale-dev-server note above); an earlier session can leave substantial uncommitted progress on the very feature you're about to start, sitting silently in the working tree. Missing this can cost an entire session's worth of redundant exploration/implementation before the overlap is noticed — cross-check the diff against your plan early, not after you've already re-implemented half of it.
+
 ## Manual / visual verification
 
 Use the git-ignored local sample archive `test-data/VideoArchive/` as the source — see [README § Local Test Data](../README.md#local-test-data) for layout and safety rules (never modify the samples in place; use test mode for conversion; prefer scratch subfolders over replacing the active source).
+
+When adding a synthetic test fixture file (e.g. a fake image) into an existing sample folder for a manual pass, check whether a file of that exact name already exists there first — writing over it can silently clobber a real, previously-generated artifact (e.g. a video's actual `.jpg` preview collage) with throwaway content, and this directory has no git history to recover the original from. If you do overwrite something real by mistake, regenerate it for real through the app's own job (e.g. re-run "Generate preview" on that file) rather than trying to reconstruct the bytes yourself.
 
 Because the scanned library metadata (and the preview cache) persists in the SQLite db across sessions, files under `test-data/VideoArchive/` that a previous session already previewed/tagged/converted still carry that state — a preview/tag directory job with its default "skip already processed" checkbox checked will report every item `skipped` instead of `completed` and prove nothing. To actually exercise the processing path (e.g. verifying a UI change that reacts to job-item completion), uncheck that box in the dialog first, or pick files/folders not yet touched.
 
