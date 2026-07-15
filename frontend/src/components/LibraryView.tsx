@@ -183,7 +183,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
     async function load() {
       try {
-        const params = new URLSearchParams({ path, include_status: 'true' })
+        const params = new URLSearchParams({ path, include_status: 'true', include_top_tags: 'true' })
         const res = await fetch(`/api/directories/children?${params.toString()}`)
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`)

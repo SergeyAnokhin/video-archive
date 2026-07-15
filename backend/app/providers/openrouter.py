@@ -102,7 +102,7 @@ def score_tags(
     except httpx.HTTPError as exc:
         raise ProviderError(f"OpenRouter request failed: {exc}") from exc
     except (KeyError, IndexError, TypeError) as exc:
-        raise ProviderError(f"Unexpected OpenRouter response shape: {exc}") from exc
+        raise ProviderError(f"Unexpected OpenRouter response shape: {exc}", raw_full_response=data) from exc
 
     usage = data.get("usage") or {}
     usage_info = UsageInfo(
@@ -111,4 +111,4 @@ def score_tags(
         raw_text=text_reply,
         raw_full_response=data,
     )
-    return parse_scores(text_reply, len(tags)), usage_info
+    return parse_scores(text_reply, len(tags), raw_full_response=data), usage_info

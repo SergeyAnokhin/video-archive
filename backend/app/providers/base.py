@@ -19,7 +19,18 @@ from dataclasses import dataclass
 class ProviderError(Exception):
     """Raised when a provider request fails or its response can't be parsed
     into scores. Callers (the tagging job) treat this as a failed job item,
-    never as something that should invent placeholder tags."""
+    never as something that should invent placeholder tags.
+
+    `raw_text`/`raw_full_response` carry whatever of the provider's actual
+    reply was successfully received before the failure (user request -- the
+    model's raw answer should still be inspectable even when interpreting it
+    fails, e.g. "Unexpected Gemini response shape"). Both are `None` when
+    nothing was received yet (e.g. the HTTP request itself failed)."""
+
+    def __init__(self, message: str, *, raw_text: str | None = None, raw_full_response: dict | None = None):
+        super().__init__(message)
+        self.raw_text = raw_text
+        self.raw_full_response = raw_full_response
 
 
 @dataclass
@@ -88,16 +99,25 @@ def build_prompt(tags: list[str]) -> str:
 _ARRAY_RE = re.compile(r"\[[\s\S]*\]")
 
 
-def parse_scores(response_text: str, expected_count: int) -> list[int]:
+def parse_scores(response_text: str, expected_count: int, *, raw_full_response: dict | None = None) -> list[int]:
     match = _ARRAY_RE.search(response_text or "")
     if not match:
-        raise ProviderError("Provider response did not contain a JSON array of scores.")
+        raise ProviderError(
+            "Provider response did not contain a JSON array of scores.",
+            raw_text=response_text, raw_full_response=raw_full_response,
+        )
     try:
         values = json.loads(match.group(0))
     except json.JSONDecodeError as exc:
-        raise ProviderError(f"Provider response was not valid JSON: {exc}") from exc
+        raise ProviderError(
+            f"Provider response was not valid JSON: {exc}",
+            raw_text=response_text, raw_full_response=raw_full_response,
+        ) from exc
     if not isinstance(values, list):
-        raise ProviderError("Provider response JSON array was expected but not found.")
+        raise ProviderError(
+            "Provider response JSON array was expected but not found.",
+            raw_text=response_text, raw_full_response=raw_full_response,
+        )
 
     scores = [max(0, min(100, int(v))) for v in values[:expected_count]]
     while len(scores) < expected_count:

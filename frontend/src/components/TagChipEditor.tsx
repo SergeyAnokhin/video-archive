@@ -1,32 +1,8 @@
-import { Check, Copy, Plus, X } from 'lucide-react'
-import { useState, type CSSProperties } from 'react'
+import { Check, Copy, Plus } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TagBadge } from './TagBadge'
 import type { Tag } from '../types/api'
-
-// Cheerful, high-contrast-on-dark palette (Design System dark surfaces) so
-// tags stay easy to tell apart even with 20-30 of them on screen at once.
-const TAG_PALETTE = [
-  '#ff6b6b',
-  '#f59f00',
-  '#ffd43b',
-  '#69db7c',
-  '#38d9a9',
-  '#4dabf7',
-  '#748ffc',
-  '#da77f2',
-  '#f783ac',
-  '#ff922b',
-  '#20c997',
-  '#22b8cf',
-]
-
-function tagColor(id: string): string {
-  let hash = 0
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) | 0
-  }
-  return TAG_PALETTE[Math.abs(hash) % TAG_PALETTE.length]
-}
 
 interface TagChipEditorProps {
   tags: Tag[]
@@ -100,6 +76,15 @@ export function TagChipEditor({
     await onChanged()
   }
 
+  async function handleSetColor(tag: Tag, color: string) {
+    await fetch(`/api/tags/${tag.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...tag, color }),
+    })
+    await onChanged()
+  }
+
   async function handleDeleteTag(tag: Tag) {
     await fetch(`/api/tags/${tag.id}`, { method: 'DELETE' })
     await onChanged()
@@ -143,13 +128,9 @@ export function TagChipEditor({
       {tags.length === 0 && <p className="settings-modal__hint">{emptyText}</p>}
 
       <div className="tag-chip-list">
-        {tags.map((tag) => (
-          <span
-            key={tag.id}
-            className={`tag-chip${tag.is_active ? '' : ' tag-chip--inactive'}`}
-            style={{ '--tag-color': tagColor(tag.id) } as CSSProperties}
-          >
-            {editingTagId === tag.id ? (
+        {tags.map((tag) =>
+          editingTagId === tag.id ? (
+            <span key={tag.id} className="tag-chip tag-chip--editing">
               <input
                 className="tag-chip__label-input"
                 autoFocus
@@ -161,28 +142,21 @@ export function TagChipEditor({
                   if (event.key === 'Escape') setEditingTagId(null)
                 }}
               />
-            ) : (
-              <button
-                type="button"
-                className="tag-chip__label"
-                onClick={() => void handleToggleActive(tag)}
-                onDoubleClick={() => startEditing(tag)}
-                title={tag.is_active ? t('tagging.deactivate') : t('tagging.activate')}
-              >
-                {tag.display_name}
-              </button>
-            )}
-            <button
-              type="button"
-              className="tag-chip__remove"
-              onClick={() => void handleDeleteTag(tag)}
-              aria-label={t('tagging.delete')}
-              title={t('tagging.delete')}
-            >
-              <X size={12} />
-            </button>
-          </span>
-        ))}
+            </span>
+          ) : (
+            <TagBadge
+              key={tag.id}
+              displayName={tag.display_name}
+              color={tag.color}
+              inactive={!tag.is_active}
+              title={tag.is_active ? t('tagging.deactivate') : t('tagging.activate')}
+              onClick={() => void handleToggleActive(tag)}
+              onDoubleClick={() => startEditing(tag)}
+              onColorChange={(color) => void handleSetColor(tag, color)}
+              onRemove={() => void handleDeleteTag(tag)}
+            />
+          ),
+        )}
       </div>
 
       <div className="settings-modal__actions">

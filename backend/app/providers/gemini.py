@@ -88,12 +88,12 @@ def score_tags(
     except httpx.HTTPError as exc:
         raise ProviderError(f"Gemini request failed: {exc}") from exc
     except (KeyError, IndexError, TypeError) as exc:
-        raise ProviderError(f"Unexpected Gemini response shape: {exc}") from exc
+        raise ProviderError(f"Unexpected Gemini response shape: {exc}", raw_full_response=data) from exc
 
     usage_info = _usage_from_metadata(data.get("usageMetadata"))
     usage_info.raw_text = text_reply
     usage_info.raw_full_response = data
-    return parse_scores(text_reply, len(tags)), usage_info
+    return parse_scores(text_reply, len(tags), raw_full_response=data), usage_info
 
 
 def create_batch(items: list[tuple[str, list[bytes]]], tags: list[str], model: str | None, api_key: str) -> str:

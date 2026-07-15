@@ -12,7 +12,7 @@ from app.db import get_engine
 from app.media import compute_variant_tags, file_row_to_dict, resolve_variant_preview_flags
 from app.source_access import get_active_source_or_404
 from app.status import compute_directory_status
-from app.tags import list_top_tags_for_files
+from app.tags import list_top_tags_for_files, top_tags_for_directory_subtree
 
 router = APIRouter()
 
@@ -36,6 +36,7 @@ def _dir_op_http_error(err: directory_ops.DirectoryOperationError) -> HTTPExcept
 def get_directory_children(
     path: str = Query(default=""),
     include_status: bool = Query(default=False),
+    include_top_tags: bool = Query(default=False),
 ):
     engine = get_engine()
     with engine.connect() as conn:
@@ -70,6 +71,8 @@ def get_directory_children(
             }
             if include_status:
                 entry["status"] = compute_directory_status(conn, source.id, row.relative_path)
+            if include_top_tags:
+                entry["top_tags"] = top_tags_for_directory_subtree(conn, source.id, row.relative_path)
             directories.append(entry)
 
         file_rows = conn.execute(

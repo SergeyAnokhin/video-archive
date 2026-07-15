@@ -88,12 +88,12 @@ def score_tags(
     except httpx.HTTPError as exc:
         raise ProviderError(f"Mistral request failed: {exc}") from exc
     except (KeyError, IndexError, TypeError) as exc:
-        raise ProviderError(f"Unexpected Mistral response shape: {exc}") from exc
+        raise ProviderError(f"Unexpected Mistral response shape: {exc}", raw_full_response=data) from exc
 
     usage_info = _usage_from_response(data.get("usage"))
     usage_info.raw_text = text_reply
     usage_info.raw_full_response = data
-    return parse_scores(text_reply, len(tags)), usage_info
+    return parse_scores(text_reply, len(tags), raw_full_response=data), usage_info
 
 
 def _build_batch_request_line(key: str, images: list[bytes], prompt: str, model: str | None) -> str:

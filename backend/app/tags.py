@@ -27,6 +27,32 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Mirrors `frontend/src/utils/tagColor.ts`'s `hashTagColor()` exactly (same
+# palette, same hash fold) so a tag with no explicit `color` gets the same
+# deterministic color server- and client-side -- the fallback used before
+# `tag_catalog.color` existed, kept as the default for any tag nobody has
+# explicitly recolored yet.
+_FALLBACK_PALETTE = [
+    "#ff6b6b", "#f59f00", "#ffd43b", "#69db7c", "#38d9a9", "#4dabf7",
+    "#748ffc", "#da77f2", "#f783ac", "#ff922b", "#20c997", "#22b8cf",
+]
+
+
+def resolve_tag_color(tag_id: str, color: str | None) -> str:
+    """The stored `color`, or -- when a tag has never had one explicitly set
+    -- a deterministic hash-based fallback (kept identical to the client-side
+    hash this app used before `tag_catalog.color` existed), so every tag
+    always has a usable color regardless of whether it was ever repicked."""
+    if color:
+        return color
+    hash_value = 0
+    for ch in tag_id:
+        hash_value = (hash_value * 31 + ord(ch)) & 0xFFFFFFFF
+    if hash_value >= 0x80000000:
+        hash_value -= 0x100000000
+    return _FALLBACK_PALETTE[abs(hash_value) % len(_FALLBACK_PALETTE)]
+
+
 def _row_to_dict(row) -> dict:
     return {
         "id": row.id,
@@ -36,6 +62,7 @@ def _row_to_dict(row) -> dict:
         "is_ai_vocabulary": bool(row.is_ai_vocabulary),
         "is_user_defined": bool(row.is_user_defined),
         "sort_order": row.sort_order,
+        "color": resolve_tag_color(row.id, row.color),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -159,9 +186,9 @@ def create_tag(engine, data: dict) -> dict:
                 """
                 INSERT INTO tag_catalog
                     (id, tag_key, display_name, is_active, is_ai_vocabulary, is_user_defined,
-                     sort_order, created_at, updated_at)
+                     sort_order, color, created_at, updated_at)
                 VALUES (:id, :tag_key, :display_name, :is_active, :is_ai_vocabulary, :is_user_defined,
-                        :sort_order, :now, :now)
+                        :sort_order, :color, :now, :now)
                 """
             ),
             {
@@ -172,6 +199,7 @@ def create_tag(engine, data: dict) -> dict:
                 "is_ai_vocabulary": bool(data.get("is_ai_vocabulary", True)),
                 "is_user_defined": bool(data.get("is_user_defined", False)),
                 "sort_order": data.get("sort_order", 0),
+                "color": data.get("color"),
                 "now": now,
             },
         )
@@ -196,7 +224,7 @@ def update_tag(engine, tag_id: str, data: dict) -> dict | None:
                 """
                 UPDATE tag_catalog
                 SET tag_key = :tag_key, display_name = :display_name, is_active = :is_active,
-                    sort_order = :sort_order, updated_at = :now
+                    sort_order = :sort_order, color = :color, updated_at = :now
                 WHERE id = :id
                 """
             ),
@@ -205,6 +233,7 @@ def update_tag(engine, tag_id: str, data: dict) -> dict | None:
                 "display_name": merged["display_name"].strip(),
                 "is_active": bool(merged["is_active"]),
                 "sort_order": merged["sort_order"],
+                "color": merged["color"],
                 "now": now,
                 "id": tag_id,
             },
@@ -421,7 +450,7 @@ def list_top_tags_for_files(engine, file_ids: list[str], limit_per_file: int = 4
         rows = conn.execute(
             text(
                 f"""
-                SELECT ft.file_id, tc.id AS tag_id, tc.display_name, ft.score,
+                SELECT ft.file_id, tc.id AS tag_id, tc.display_name, tc.color, ft.score,
                        ft.provider_name, ft.model_name
                 FROM file_tags ft
                 JOIN tag_catalog tc ON tc.id = ft.tag_id
@@ -440,9 +469,58 @@ def list_top_tags_for_files(engine, file_ids: list[str], limit_per_file: int = 4
                 {
                     "tag_id": row.tag_id,
                     "display_name": row.display_name,
+                    "color": resolve_tag_color(row.tag_id, row.color),
                     "score": row.score,
                     "provider_name": row.provider_name,
                     "model_name": row.model_name,
                 }
             )
     return result
+
+
+_TOP_FOLDER_TAG_COUNT = 5
+
+
+def top_tags_for_directory_subtree(conn, source_id: str, relative_path: str, limit: int = _TOP_FOLDER_TAG_COUNT) -> list[dict]:
+    """The `limit` most frequently assigned tags among every file in this
+    directory's subtree (recursively, user request), across all three tag
+    pools -- AI vocabulary, user-defined, and ad-hoc (anything actually
+    attached to a file via `file_tags`, same "every pool" scope as
+    `list_used_tags()`). Ties broken alphabetically for determinism. Dynamic,
+    uncached, same `relative_path LIKE` subtree-scoping convention as
+    `status.compute_directory_status()`; takes an already-open `conn` for the
+    same reason that function does -- both callers (`routers/tree.py`,
+    `routers/directories.py`) call this once per directory node inside one
+    already-open connection, so opening a fresh one per node would be
+    wasteful."""
+    if relative_path == "":
+        clause = ""
+        params: dict = {"sid": source_id, "limit": limit}
+    else:
+        clause = "AND f.relative_path LIKE :prefix"
+        params = {"sid": source_id, "prefix": f"{relative_path}/%", "limit": limit}
+
+    rows = conn.execute(
+        text(
+            f"""
+            SELECT tc.id AS tag_id, tc.display_name, tc.color, COUNT(*) AS usage_count
+            FROM file_tags ft
+            JOIN files f ON f.id = ft.file_id
+            JOIN tag_catalog tc ON tc.id = ft.tag_id
+            WHERE f.source_id = :sid AND ft.score > 0 {clause}
+            GROUP BY tc.id
+            ORDER BY usage_count DESC, tc.display_name COLLATE NOCASE
+            LIMIT :limit
+            """
+        ),
+        params,
+    ).all()
+    return [
+        {
+            "tag_id": row.tag_id,
+            "display_name": row.display_name,
+            "color": resolve_tag_color(row.tag_id, row.color),
+            "usage_count": row.usage_count,
+        }
+        for row in rows
+    ]

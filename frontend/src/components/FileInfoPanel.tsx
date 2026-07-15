@@ -27,6 +27,7 @@ import { formatBitrate, formatDuration, formatSize } from '../utils/format'
 import type { FileEntry, FileMediaInfo, FileTagAssignment, Tag } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
+import { TagBadge } from './TagBadge'
 import { UserDefinedTagButton } from './UserDefinedTagButton'
 import './ConvertDialog.css'
 import './FileInfoPanel.css'
@@ -425,9 +426,10 @@ export function FileInfoPanel({
                   <ul className="file-info-panel__tags-list">
                     {tags.map((tag) => (
                       <li key={tag.tag_id} className="file-info-panel__tags-row">
-                        <span className="file-info-panel__tags-name">{tag.display_name}</span>
-                        <span
-                          className="file-info-panel__tags-score"
+                        <TagBadge
+                          displayName={tag.display_name}
+                          color={tag.color}
+                          scoreLabel={`${tag.score}%`}
                           title={
                             tag.provider_name === 'manual'
                               ? t('library.tagsManualLabel')
@@ -435,18 +437,9 @@ export function FileInfoPanel({
                                 ? t('library.tagsTuningLabel')
                                 : undefined
                           }
-                        >
-                          {tag.score}%
-                        </span>
-                        <button
-                          type="button"
-                          className="file-info-panel__tags-remove"
-                          aria-label={t('library.tagsRemove', { name: tag.display_name })}
-                          title={t('library.tagsRemove', { name: tag.display_name })}
-                          onClick={() => handleRemoveTag(tag.tag_id)}
-                        >
-                          <X size={12} />
-                        </button>
+                          onRemove={() => handleRemoveTag(tag.tag_id)}
+                          removeLabel={t('library.tagsRemove', { name: tag.display_name })}
+                        />
                       </li>
                     ))}
                   </ul>

@@ -660,6 +660,15 @@ MIGRATIONS: dict[int, list[str]] = {
     30: [
         "ALTER TABLE tagging_settings ADD COLUMN request_timeout_seconds INTEGER NOT NULL DEFAULT 30",
     ],
+    # User request -- a per-tag background color, shown identically for that
+    # tag everywhere it's rendered (library cards, file info panel, Tag Lab,
+    # tag pickers). Nullable: a tag with no explicit color falls back to the
+    # same deterministic hash-based color the UI already computed client-side
+    # before this column existed (`app/tags.py::_fallback_color`), so nothing
+    # changes visually for existing tags until a user actually picks one.
+    31: [
+        "ALTER TABLE tag_catalog ADD COLUMN color TEXT",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

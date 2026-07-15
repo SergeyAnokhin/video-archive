@@ -19,6 +19,7 @@ from sqlalchemy import text
 import app.db as db_module
 from app.main import app
 from app.providers import registry
+from app.tags import resolve_tag_color
 
 from .conftest import make_video
 
@@ -90,6 +91,29 @@ def test_tag_crud_and_prefix_autocomplete_over_http(tmp_path, monkeypatch):
         assert r.status_code == 404
 
 
+def test_tag_color_round_trip_and_fallback_over_http(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        tag_id = client.post("/api/tags", json={"display_name": "Sunset"}).json()["id"]
+
+        # No color ever picked: a stable, deterministic fallback is returned
+        # every time, not null/empty.
+        fallback = resolve_tag_color(tag_id, None)
+        r = client.get("/api/tags", params={"query": "sunset"})
+        assert r.json()["tags"][0]["color"] == fallback
+        r = client.get("/api/tags", params={"query": "sunset"})
+        assert r.json()["tags"][0]["color"] == fallback
+
+        # Explicitly picking a color persists it and it round-trips exactly.
+        r = client.put(
+            f"/api/tags/{tag_id}",
+            json={"display_name": "Sunset", "color": "#123456"},
+        )
+        assert r.status_code == 200
+        assert r.json()["color"] == "#123456"
+        r = client.get("/api/tags", params={"query": "sunset"})
+        assert r.json()["tags"][0]["color"] == "#123456"
+
+
 def test_get_file_tags_and_tag_filtered_listing_over_http(tmp_path, monkeypatch):
     with _fresh_client(tmp_path, monkeypatch) as client:
         engine = db_module.get_engine()
@@ -116,6 +140,7 @@ def test_get_file_tags_and_tag_filtered_listing_over_http(tmp_path, monkeypatch)
             {
                 "tag_id": tag_id,
                 "display_name": "Beach",
+                "color": resolve_tag_color(tag_id, None),
                 "score": 87,
                 "provider_name": "openrouter",
                 "model_name": None,
@@ -148,6 +173,7 @@ def test_manual_tag_assign_and_remove_over_http(tmp_path, monkeypatch):
             {
                 "tag_id": tag_id,
                 "display_name": "Beach",
+                "color": resolve_tag_color(tag_id, None),
                 "score": 100,
                 "provider_name": "manual",
                 "model_name": None,

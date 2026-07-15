@@ -117,10 +117,18 @@ export interface DirectoryStatus {
   top_variant_tags: VariantTag[]
 }
 
+export interface FolderTagSummary {
+  tag_id: string
+  display_name: string
+  color: string
+  usage_count: number
+}
+
 export interface TreeNode {
   path: string
   name: string
   status?: DirectoryStatus
+  top_tags?: FolderTagSummary[]
   children: TreeNode[]
 }
 
@@ -128,6 +136,7 @@ export interface DirectoryEntry {
   path: string
   name: string
   status?: DirectoryStatus
+  top_tags?: FolderTagSummary[]
   has_folder_preview: boolean
   is_favorite: boolean
 }
@@ -145,6 +154,7 @@ export interface VariantTag {
 export interface FileTagSummary {
   tag_id: string
   display_name: string
+  color: string
   score: number
   provider_name: string | null
   model_name: string | null
@@ -268,6 +278,7 @@ export interface Tag {
   is_ai_vocabulary: boolean
   is_user_defined: boolean
   sort_order: number
+  color: string
   created_at: string
   updated_at: string
 }
@@ -275,6 +286,7 @@ export interface Tag {
 export interface FileTagAssignment {
   tag_id: string
   display_name: string
+  color: string
   score: number
   provider_name: string | null
   model_name: string | null
@@ -310,6 +322,7 @@ export interface ProviderEntry {
 export interface TagLabRankedTag {
   tag_id: string
   display_name: string
+  color: string
   score: number
 }
 

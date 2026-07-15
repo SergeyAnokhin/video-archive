@@ -156,13 +156,17 @@ def test_run_tag_lab_provider_error_maps_to_tag_lab_failed(engine, source, monke
     file_id = _scanned_video_id(engine, source)
 
     def fake_score(engine, entry, images, tags, **_kwargs):
-        raise ProviderError("boom")
+        raise ProviderError("boom", raw_text="not json", raw_full_response={"unexpected": "shape"})
 
     monkeypatch.setattr(registry, "score_tags_with_entry", fake_score)
 
     with pytest.raises(tag_lab.TagLabError) as excinfo:
         tag_lab.run_tag_lab(engine, file_id, entry["id"])
     assert excinfo.value.code == "tag_lab_failed"
+    # The provider's raw reply (whatever was received before parsing failed)
+    # must survive into the TagLabError so the router/UI can still show it.
+    assert excinfo.value.raw_response == "not json"
+    assert excinfo.value.raw_full_response == {"unexpected": "shape"}
 
 
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")

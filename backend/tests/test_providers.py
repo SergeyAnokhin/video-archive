@@ -96,8 +96,12 @@ def test_openrouter_raises_provider_error_on_http_error(monkeypatch):
 
 def test_openrouter_raises_provider_error_on_malformed_response(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResponse({"unexpected": "shape"}))
-    with pytest.raises(ProviderError):
+    with pytest.raises(ProviderError) as excinfo:
         openrouter.score_tags([FAKE_IMAGE], TAGS, None, "sk-test")
+    # The raw response body must still be attached to the error even though
+    # the expected `choices` shape wasn't found (user request -- always show
+    # what the model actually replied, even on a parse failure).
+    assert excinfo.value.raw_full_response == {"unexpected": "shape"}
 
 
 def test_openrouter_list_models_filters_to_vision_capable(monkeypatch):
@@ -175,8 +179,22 @@ def test_gemini_parses_usage_metadata_when_present(monkeypatch):
 
 def test_gemini_raises_provider_error_on_malformed_response(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResponse({"candidates": []}))
-    with pytest.raises(ProviderError):
+    with pytest.raises(ProviderError) as excinfo:
         gemini.score_tags([FAKE_IMAGE], TAGS, None, "gm-test")
+    assert excinfo.value.raw_full_response == {"candidates": []}
+
+
+def test_gemini_raises_provider_error_with_raw_text_on_unparseable_scores(monkeypatch):
+    # The Gemini-shape extraction succeeds (a `text` reply comes back), but
+    # it doesn't contain a JSON scores array -- the raw text the model
+    # actually said must still reach the caller.
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: FakeResponse({"candidates": [{"content": {"parts": [{"text": "I cannot help with that."}]}}]}),
+    )
+    with pytest.raises(ProviderError) as excinfo:
+        gemini.score_tags([FAKE_IMAGE], TAGS, None, "gm-test")
+    assert excinfo.value.raw_text == "I cannot help with that."
 
 
 def test_gemini_list_models_filters_to_generate_content_and_strips_prefix(monkeypatch):
@@ -248,6 +266,13 @@ def test_mistral_raises_provider_error_on_http_error(monkeypatch):
         mistral.score_tags([FAKE_IMAGE], TAGS, None, "ms-test")
 
 
+def test_mistral_raises_provider_error_on_malformed_response(monkeypatch):
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResponse({"unexpected": "shape"}))
+    with pytest.raises(ProviderError) as excinfo:
+        mistral.score_tags([FAKE_IMAGE], TAGS, None, "ms-test")
+    assert excinfo.value.raw_full_response == {"unexpected": "shape"}
+
+
 def test_mistral_list_models_sorted(monkeypatch):
     monkeypatch.setattr(
         httpx, "get", lambda *a, **k: FakeResponse({"data": [{"id": "mistral-large"}, {"id": "pixtral-12b"}]})
@@ -304,6 +329,13 @@ def test_fal_searches_whole_response_body_for_score_array(monkeypatch):
 def test_fal_raises_provider_error_without_images():
     with pytest.raises(ProviderError):
         fal.score_tags([], TAGS, None, "fal-test")
+
+
+def test_fal_raises_provider_error_with_raw_body_when_no_array_found(monkeypatch):
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResponse({"result": "no scores here"}))
+    with pytest.raises(ProviderError) as excinfo:
+        fal.score_tags([FAKE_IMAGE], TAGS, None, "fal-test")
+    assert excinfo.value.raw_full_response == {"result": "no scores here"}
 
 
 def test_fal_raises_provider_error_on_http_error(monkeypatch):

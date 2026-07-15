@@ -146,6 +146,21 @@
   background: var(--color-accent);
 }
 
+.directory-tree__tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: var(--space-1);
+}
+
+.directory-tree__tag-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .directory-tree__children {
   display: flex;
   flex-direction: column;

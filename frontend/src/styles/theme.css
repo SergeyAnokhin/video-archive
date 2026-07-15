@@ -311,10 +311,10 @@
 
 /* Vivid Glam: the mockup's `panel`/`panel2` are diagonal gradients. Keeping
  * `--color-surface(-raised)` as flat colors (as every other preset does)
- * avoids breaking `color-mix()` callers like `.tag-chip`
- * (SettingsModal.css) that require a solid color operand -- the gradient
- * feel is reproduced separately via the `body` background below, same
- * technique as Casino. */
+ * avoids breaking `color-mix()` callers (e.g. JobsModal.css's status
+ * borders) that require a solid color operand -- the gradient feel is
+ * reproduced separately via the `body` background below, same technique as
+ * Casino. */
 [data-theme='vivid'] {
   --color-bg: #1a0512;
   --color-surface: #32081f;

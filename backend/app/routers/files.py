@@ -23,7 +23,14 @@ from app.media import (
 )
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
-from app.tags import assign_file_tag, assign_user_defined_tag, get_or_create_tag, list_top_tags_for_files, remove_file_tag
+from app.tags import (
+    assign_file_tag,
+    assign_user_defined_tag,
+    get_or_create_tag,
+    list_top_tags_for_files,
+    remove_file_tag,
+    resolve_tag_color,
+)
 
 router = APIRouter()
 
@@ -383,7 +390,8 @@ def get_file_tags(file_id: str):
         rows = conn.execute(
             text(
                 """
-                SELECT tc.id AS tag_id, tc.display_name, ft.score, ft.provider_name, ft.model_name, ft.assigned_at
+                SELECT tc.id AS tag_id, tc.display_name, tc.color, ft.score, ft.provider_name, ft.model_name,
+                       ft.assigned_at
                 FROM file_tags ft
                 JOIN tag_catalog tc ON tc.id = ft.tag_id
                 WHERE ft.file_id = :file_id AND ft.score > 0
@@ -398,6 +406,7 @@ def get_file_tags(file_id: str):
             {
                 "tag_id": row.tag_id,
                 "display_name": row.display_name,
+                "color": resolve_tag_color(row.tag_id, row.color),
                 "score": row.score,
                 "provider_name": row.provider_name,
                 "model_name": row.model_name,

@@ -15,6 +15,7 @@ from sqlalchemy import text
 from app import tag_lab as service
 from app import tag_lab_feedback
 from app.db import get_engine
+from app.tags import resolve_tag_color
 
 router = APIRouter()
 
@@ -29,10 +30,12 @@ _TAG_LAB_ERROR_STATUS = {
 
 
 def _tag_lab_http_error(err: service.TagLabError) -> HTTPException:
-    return HTTPException(
-        status_code=_TAG_LAB_ERROR_STATUS[err.code],
-        detail={"error": {"code": err.code, "message": err.message}},
-    )
+    error: dict = {"code": err.code, "message": err.message}
+    if err.raw_response is not None:
+        error["raw_response"] = err.raw_response
+    if err.raw_full_response is not None:
+        error["raw_full_response"] = err.raw_full_response
+    return HTTPException(status_code=_TAG_LAB_ERROR_STATUS[err.code], detail={"error": error})
 
 
 @router.post("/files/{file_id}/tag-lab/prepare")
@@ -84,7 +87,8 @@ def apply_tag_lab(file_id: str, body: TagLabApplyRequest):
         rows = conn.execute(
             text(
                 """
-                SELECT tc.id AS tag_id, tc.display_name, ft.score, ft.provider_name, ft.model_name, ft.assigned_at
+                SELECT tc.id AS tag_id, tc.display_name, tc.color, ft.score, ft.provider_name, ft.model_name,
+                       ft.assigned_at
                 FROM file_tags ft
                 JOIN tag_catalog tc ON tc.id = ft.tag_id
                 WHERE ft.file_id = :file_id AND ft.score > 0
@@ -99,6 +103,7 @@ def apply_tag_lab(file_id: str, body: TagLabApplyRequest):
             {
                 "tag_id": row.tag_id,
                 "display_name": row.display_name,
+                "color": resolve_tag_color(row.tag_id, row.color),
                 "score": row.score,
                 "provider_name": row.provider_name,
                 "model_name": row.model_name,

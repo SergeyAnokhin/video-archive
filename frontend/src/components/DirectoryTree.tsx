@@ -54,7 +54,7 @@ export function DirectoryTree({ selectedPath, onSelect }: DirectoryTreeProps) {
 
     async function load() {
       try {
-        const res = await fetch('/api/tree?include_status=true')
+        const res = await fetch('/api/tree?include_status=true&include_top_tags=true')
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`)
         }
@@ -270,6 +270,18 @@ function TreeEntry({ node, depth, selectedPath, onSelect, collapsedPaths, onTogg
               total: status?.total_supported_files,
             })}
           />
+        )}
+        {node.top_tags && node.top_tags.length > 0 && (
+          <span className="directory-tree__tags">
+            {node.top_tags.map((tag) => (
+              <span
+                key={tag.tag_id}
+                className="directory-tree__tag-dot"
+                style={{ background: tag.color }}
+                title={`${tag.display_name} (${tag.usage_count})`}
+              />
+            ))}
+          </span>
         )}
       </div>
 

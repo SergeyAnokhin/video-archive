@@ -20,6 +20,8 @@ convention) rather than folded into `routers/tag_lab.py` directly.
 from __future__ import annotations
 
 import base64
+import logging
+import time
 import uuid
 from io import BytesIO
 
@@ -32,18 +34,29 @@ from app.providers import registry
 from app.providers.base import ProviderError, build_prompt
 from app.sources import get_source_access
 
+logger = logging.getLogger("app.tag_lab")
+
 
 class TagLabError(Exception):
     """A Tag Lab run/apply cannot proceed. `code` matches the API error
     code (`file_not_found`, `source_file_missing`, `provider_entry_not_found`,
     `empty_tag_vocabulary`, `provider_not_configured`, `tag_lab_failed`) --
     the router maps it to an HTTP status, same convention as
-    `file_ops.FileOperationError`."""
+    `file_ops.FileOperationError`.
 
-    def __init__(self, code: str, message: str):
+    `raw_response`/`raw_full_response` (only set for `tag_lab_failed`, when
+    the provider call itself carried them -- see `ProviderError`) let the
+    router surface whatever the model actually replied even though
+    interpreting it failed, so the UI isn't left with just an error string."""
+
+    def __init__(
+        self, code: str, message: str, *, raw_response: str | None = None, raw_full_response: dict | None = None
+    ):
         super().__init__(message)
         self.code = code
         self.message = message
+        self.raw_response = raw_response
+        self.raw_full_response = raw_full_response
 
 
 # In-process cache of the last images/prompt built for each file (user
@@ -154,6 +167,19 @@ def run_tag_lab(engine, file_id: str, provider_entry_id: str) -> dict:
     images, prompt, images_out, vocabulary, settings = _images_and_prompt(engine, file_id, row)
     display_names = [tag["display_name"] for tag in vocabulary]
 
+    # Chat request (2026-07-15): the modal occasionally reported a logged 200
+    # response with the UI still stuck on "waiting" -- the exact cause wasn't
+    # pinned down (see `TagLabModal.tsx`'s client-side timeout, added
+    # alongside this), so these two log lines exist to correlate a future
+    # recurrence: was the provider call itself slow, or did something happen
+    # between it returning and the HTTP response going out? No request
+    # bodies/images/prompts/raw model text here, matching `request_logging.
+    # py`'s no-body-logging rule -- just ids, provider/model, and timing.
+    logger.info(
+        "tag_lab run starting file_id=%s provider_entry_id=%s provider_type=%s model=%s",
+        file_id, provider_entry_id, entry["provider_type"], entry["vision_model"],
+    )
+    call_started = time.monotonic()
     try:
         scores, usage = registry.score_tags_with_entry(
             engine, entry, images, display_names, timeout=settings["request_timeout_seconds"]
@@ -161,10 +187,23 @@ def run_tag_lab(engine, file_id: str, provider_entry_id: str) -> dict:
     except registry.ProviderNotConfiguredError as exc:
         raise TagLabError("provider_not_configured", str(exc)) from exc
     except ProviderError as exc:
-        raise TagLabError("tag_lab_failed", str(exc)) from exc
+        logger.warning(
+            "tag_lab provider call failed file_id=%s after %.0fms: %s",
+            file_id, (time.monotonic() - call_started) * 1000, exc,
+        )
+        raise TagLabError(
+            "tag_lab_failed", str(exc), raw_response=exc.raw_text, raw_full_response=exc.raw_full_response
+        ) from exc
+    logger.info(
+        "tag_lab provider call succeeded file_id=%s after %.0fms",
+        file_id, (time.monotonic() - call_started) * 1000,
+    )
 
     ranked = sorted(zip(vocabulary, scores), key=lambda pair: pair[1], reverse=True)
-    tags_out = [{"tag_id": tag["id"], "display_name": tag["display_name"], "score": score} for tag, score in ranked]
+    tags_out = [
+        {"tag_id": tag["id"], "display_name": tag["display_name"], "color": tag["color"], "score": score}
+        for tag, score in ranked
+    ]
 
     run_id = str(uuid.uuid4())
     suggested_tags = [tag for tag in tags_out if tag["score"] > 0]

@@ -8,6 +8,7 @@ from sqlalchemy import text
 from app.db import get_engine
 from app.source_access import get_active_source_or_404
 from app.status import compute_directory_status
+from app.tags import top_tags_for_directory_subtree
 
 router = APIRouter()
 
@@ -17,6 +18,7 @@ def get_tree(
     path: str = Query(default=""),
     depth: int | None = Query(default=None),
     include_status: bool = Query(default=False),
+    include_top_tags: bool = Query(default=False),
 ):
     engine = get_engine()
     with engine.connect() as conn:
@@ -44,6 +46,8 @@ def get_tree(
             node: dict = {"path": rel_path, "name": name}
             if include_status:
                 node["status"] = compute_directory_status(conn, source.id, rel_path)
+            if include_top_tags:
+                node["top_tags"] = top_tags_for_directory_subtree(conn, source.id, rel_path)
 
             if depth is None or level < depth:
                 children = sorted(by_parent.get(rel_path, []), key=lambda r: r.name.lower())

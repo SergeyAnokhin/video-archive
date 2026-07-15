@@ -19,6 +19,7 @@ class TagRequest(BaseModel):
     is_ai_vocabulary: bool = True
     is_user_defined: bool = False
     sort_order: int = 0
+    color: str | None = None
 
 
 def _not_found_error(tag_id: str) -> HTTPException:

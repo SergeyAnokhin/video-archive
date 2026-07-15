@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 import app.db as db_module
 from app.main import app
+from app.tags import create_tag
 
 
 def _now() -> str:
@@ -76,6 +77,44 @@ def test_directory_children_excludes_non_video_files(tmp_path, monkeypatch):
 
     names = {f["file_name"] for f in files}
     assert names == {"clip.mp4"}
+
+
+def test_directory_children_top_tags_is_opt_in(tmp_path, monkeypatch):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        engine = db_module.get_engine()
+        _insert_source_dir_and_files(engine, tmp_path / "source")
+        tag = create_tag(engine, {"display_name": "Beach"})
+        file_row = engine.connect().execute(
+            text("SELECT id FROM files WHERE relative_path = 'clip.mp4'")
+        ).fetchone()
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at) "
+                    "VALUES (:id, :fid, :tid, 100, 'manual', NULL, :now)"
+                ),
+                {"id": str(uuid.uuid4()), "fid": file_row.id, "tid": tag["id"], "now": _now()},
+            )
+
+        # Omitted -- backward compatible, no `top_tags` field on any entry.
+        res = client.get("/api/directories/children", params={"path": ""})
+        assert res.status_code == 200
+
+        # A subdirectory is needed to see a `top_tags`-bearing entry (the
+        # fixture's files sit directly in root); reuse the root listing's own
+        # top_tags support by requesting the root's tree node instead is out
+        # of scope here -- assert via `/api/tree` below, which does expose a
+        # `top_tags` field per node including root.
+        res = client.get("/api/tree", params={"include_top_tags": "true"})
+        assert res.status_code == 200
+        assert res.json()["top_tags"][0]["display_name"] == "Beach"
+        assert res.json()["top_tags"][0]["usage_count"] == 1
+
+        res = client.get("/api/tree")
+        assert "top_tags" not in res.json()
 
 
 def test_directory_children_includes_standalone_images(tmp_path, monkeypatch):

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Archive, File as FileIcon, Film, Folder, Image as ImageIcon, Info, SlidersHorizontal, Star, Trash2 } from 'lucide-react'
 import type { DirectoryEntry, FileEntry, VariantTag } from '../types/api'
 import { formatDuration, formatSize } from '../utils/format'
+import { TagBadge } from './TagBadge'
 import './LibraryView.css'
 
 function variantTagOverlayText(tag: VariantTag): string {
@@ -130,6 +131,18 @@ export function FolderCard({
             ))}
           </div>
         )}
+        {dir.top_tags && dir.top_tags.length > 0 && (
+          <div className="library-card__tag-row">
+            {dir.top_tags.map((tag) => (
+              <TagBadge
+                key={tag.tag_id}
+                displayName={tag.display_name}
+                color={tag.color}
+                title={`${tag.display_name} (${tag.usage_count})`}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -254,13 +267,12 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
         {file.ai_tags && file.ai_tags.length > 0 && (
           <div className="library-card__tag-row">
             {file.ai_tags.map((tag) => (
-              <span
+              <TagBadge
                 key={tag.tag_id}
-                className="library-card__tag library-card__tag--ai"
+                displayName={tag.display_name}
+                color={tag.color}
                 title={[`${tag.score}%`, tag.model_name ?? tag.provider_name].filter(Boolean).join(' · ')}
-              >
-                {tag.display_name}
-              </span>
+              />
             ))}
           </div>
         )}

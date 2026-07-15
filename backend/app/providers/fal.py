@@ -51,4 +51,4 @@ def score_tags(
     # whole response body serialized back to text, since there's no single
     # message/content field to isolate.
     raw_text = json.dumps(data)
-    return parse_scores(raw_text, len(tags)), UsageInfo(raw_text=raw_text, raw_full_response=data)
+    return parse_scores(raw_text, len(tags), raw_full_response=data), UsageInfo(raw_text=raw_text, raw_full_response=data)

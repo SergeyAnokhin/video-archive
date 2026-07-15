@@ -7,9 +7,11 @@ import type {
   ModelStats,
   ProviderEntry,
   Tag,
+  TaggingSettings,
   TagLabPreparedResult,
   TagLabRunResult,
 } from '../types/api'
+import { TagBadge } from './TagBadge'
 import './ConvertDialog.css'
 import './TagLabModal.css'
 
@@ -22,6 +24,7 @@ interface TagLabModalProps {
 interface SelectedTag {
   tag_id: string | null
   display_name: string
+  color?: string | null
   score: number
   source: 'model' | 'manual'
 }
@@ -34,6 +37,47 @@ function statsKey(providerType: string, modelName: string | null): string {
   return `${providerType}:${modelName ?? ''}`
 }
 
+// Defensive client-side ceiling on top of the backend's own
+// `request_timeout_seconds` (user request -- the modal must never wait
+// forever on "Ожидание ответа модели…", even if the root cause of an
+// occasional hang, seen as a logged 200 with no UI update, turns out to be
+// outside this component). The margin over the backend timeout leaves room
+// for the backend's own timeout to fire and produce a normal HTTP error
+// first, so this only fires when even that didn't happen.
+const DEFAULT_REQUEST_TIMEOUT_SECONDS = 30
+const CLIENT_TIMEOUT_MARGIN_SECONDS = 15
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Shared by the success and error paths -- the model's raw reply must stay
+// inspectable even when interpreting it failed (user request: written first,
+// collapsed, so a parse failure is still self-diagnosable from what actually
+// came back).
+function RawResponseDetails({ rawResponse, rawFullResponse }: { rawResponse?: string; rawFullResponse?: unknown }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <details className="tag-lab__details">
+        <summary>{t('tagLab.rawResponseTitle')}</summary>
+        <pre className="tag-lab__pre">{rawResponse ?? ''}</pre>
+      </details>
+
+      <details className="tag-lab__details">
+        <summary>{t('tagLab.rawJsonTitle')}</summary>
+        <pre className="tag-lab__pre">{JSON.stringify(rawFullResponse ?? {}, null, 2)}</pre>
+      </details>
+    </>
+  )
+}
+
 export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const { t } = useTranslation()
   const [tagOptions, setTagOptions] = useState<Tag[]>([])
@@ -44,6 +88,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const [ratings, setRatings] = useState<ModelStats[]>([])
   const [running, setRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
+  const [runErrorRaw, setRunErrorRaw] = useState<{ raw_response?: string; raw_full_response?: unknown } | null>(null)
   const [result, setResult] = useState<TagLabRunResult | null>(null)
   const [preparing, setPreparing] = useState<TagLabPreparedResult | null>(null)
   const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([])
@@ -55,6 +100,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const [editingPrice, setEditingPrice] = useState(false)
   const [priceDraft, setPriceDraft] = useState({ input: '', output: '' })
   const [savingPrice, setSavingPrice] = useState(false)
+  const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState(DEFAULT_REQUEST_TIMEOUT_SECONDS)
 
   useEffect(() => {
     let cancelled = false
@@ -84,6 +130,16 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
       .then((data: { tags: Tag[] } | null) => setTagOptions(data?.tags ?? []))
   }, [])
 
+  useEffect(() => {
+    fetch('/api/tagging-settings')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: TaggingSettings | null) => {
+        if (data) {
+          setRequestTimeoutSeconds(data.request_timeout_seconds)
+        }
+      })
+  }, [])
+
   async function refreshPrices() {
     const res = await fetch('/api/settings/model-pricing')
     if (res.ok) {
@@ -110,39 +166,69 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   async function handleRun() {
     setRunning(true)
     setRunError(null)
+    setRunErrorRaw(null)
     setResult(null)
     setPreparing(null)
     setSelectedTags([])
     setTagVotes({})
     setEditingPrice(false)
+    const timeoutMs = (requestTimeoutSeconds + CLIENT_TIMEOUT_MARGIN_SECONDS) * 1000
     try {
       // Show the images/prompt as soon as they're ready, without waiting for
       // the (potentially slow) model call below (user request).
       try {
-        const prepRes = await fetch(`/api/files/${file.id}/tag-lab/prepare`, { method: 'POST' })
+        const prepRes = await fetchWithTimeout(`/api/files/${file.id}/tag-lab/prepare`, { method: 'POST' }, timeoutMs)
         if (prepRes.ok) {
           setPreparing(await prepRes.json())
         }
       } catch {
-        // Best-effort -- if this fails, the run request below still shows
-        // the same error handling it always has.
+        // Best-effort (including a timeout) -- if this fails, the run
+        // request below still shows the same error handling it always has.
       }
 
-      const res = await fetch(`/api/files/${file.id}/tag-lab/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider_entry_id: entryId }),
-      })
+      let res: Response
+      try {
+        res = await fetchWithTimeout(
+          `/api/files/${file.id}/tag-lab/run`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider_entry_id: entryId }),
+          },
+          timeoutMs,
+        )
+      } catch (err) {
+        // A defensive ceiling on top of the backend's own timeout (user
+        // request -- this modal must never wait on "Ожидание ответа
+        // модели…" forever, even if a hang's root cause turns out to be
+        // outside this component). Distinct, recognizable message so a
+        // future occurrence is diagnosable as "the client gave up waiting"
+        // rather than a generic network error.
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          throw new Error(t('tagLab.runTimedOut'))
+        }
+        throw err
+      }
       if (!res.ok) {
         const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
+        const error = json?.detail?.error
+        if (error?.raw_response || error?.raw_full_response) {
+          setRunErrorRaw({ raw_response: error.raw_response, raw_full_response: error.raw_full_response })
+        }
+        throw new Error(error?.message ?? `HTTP ${res.status}`)
       }
       const data: TagLabRunResult = await res.json()
       setResult(data)
       setSelectedTags(
         data.tags
           .filter((tag) => tag.score > 0)
-          .map((tag) => ({ tag_id: tag.tag_id, display_name: tag.display_name, score: tag.score, source: 'model' })),
+          .map((tag) => ({
+            tag_id: tag.tag_id,
+            display_name: tag.display_name,
+            color: tag.color,
+            score: tag.score,
+            source: 'model',
+          })),
       )
     } catch (err) {
       setRunError(err instanceof Error ? err.message : String(err))
@@ -335,6 +421,12 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
 
         {running && <p className="convert-dialog__hint">{t('tagLab.running')}</p>}
         {runError && <p className="convert-dialog__hint convert-dialog__hint--error">{runError}</p>}
+        {runErrorRaw && (
+          <RawResponseDetails
+            rawResponse={runErrorRaw.raw_response}
+            rawFullResponse={runErrorRaw.raw_full_response}
+          />
+        )}
 
         {preparing && !result && (
           <div className="convert-dialog__results">
@@ -445,15 +537,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
               )}
             </p>
 
-            <details className="tag-lab__details">
-              <summary>{t('tagLab.rawResponseTitle')}</summary>
-              <pre className="tag-lab__pre">{result.raw_response ?? ''}</pre>
-            </details>
-
-            <details className="tag-lab__details">
-              <summary>{t('tagLab.rawJsonTitle')}</summary>
-              <pre className="tag-lab__pre">{JSON.stringify(result.raw_full_response ?? {}, null, 2)}</pre>
-            </details>
+            <RawResponseDetails rawResponse={result.raw_response} rawFullResponse={result.raw_full_response} />
 
             <h3 className="tag-lab__section-title">{t('tagLab.suggestedTagsTitle')}</h3>
             {selectedTags.length === 0 && <p className="file-info-panel__tags-empty">{t('tagLab.noTagsSuggested')}</p>}
@@ -461,8 +545,13 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
               <ul className="file-info-panel__tags-list">
                 {selectedTags.map((tag) => (
                   <li key={tag.display_name} className="file-info-panel__tags-row">
-                    <span className="file-info-panel__tags-name">{tag.display_name}</span>
-                    <span className="file-info-panel__tags-score">{tag.score}%</span>
+                    <TagBadge
+                      displayName={tag.display_name}
+                      color={tag.color}
+                      scoreLabel={`${tag.score}%`}
+                      onRemove={() => handleRemoveTag(tag.display_name)}
+                      removeLabel={t('library.tagsRemove', { name: tag.display_name })}
+                    />
                     {tag.source === 'model' && tag.tag_id && (
                       <span className="tag-lab__vote">
                         <button
@@ -485,15 +574,6 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
                         </button>
                       </span>
                     )}
-                    <button
-                      type="button"
-                      className="file-info-panel__tags-remove"
-                      aria-label={t('library.tagsRemove', { name: tag.display_name })}
-                      title={t('library.tagsRemove', { name: tag.display_name })}
-                      onClick={() => handleRemoveTag(tag.display_name)}
-                    >
-                      <X size={12} />
-                    </button>
                   </li>
                 ))}
               </ul>

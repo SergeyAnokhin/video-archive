@@ -634,36 +634,14 @@
   margin: var(--space-2) 0;
 }
 
-.tag-chip {
+.tag-chip--editing {
   display: inline-flex;
   align-items: center;
   height: 30px;
-  padding-left: var(--space-2);
-  background: color-mix(in srgb, var(--tag-color, var(--color-border)) 22%, var(--color-surface-raised));
-  border: 1px solid color-mix(in srgb, var(--tag-color, var(--color-border)) 55%, transparent);
+  padding: 0 var(--space-2);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  transition: opacity 150ms ease;
-}
-
-.tag-chip--inactive {
-  opacity: 0.5;
-}
-
-.tag-chip__label {
-  min-width: unset;
-  min-height: unset;
-  height: 100%;
-  padding: 0 var(--space-1);
-  background: transparent;
-  border: none;
-  color: var(--color-text);
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tag-chip--inactive .tag-chip__label {
-  text-decoration: line-through;
 }
 
 .tag-chip__label-input {
@@ -676,28 +654,6 @@
   border-radius: var(--radius-sm);
   color: var(--color-text);
   font-size: 13px;
-}
-
-.tag-chip__remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  min-width: unset;
-  min-height: unset;
-  margin-right: 4px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
-
-.tag-chip__remove:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: var(--color-text);
 }
 
 /* Mobile: modals become full-screen sheets (Design System §5). */

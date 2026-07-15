@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { useTranslation } from 'react-i18next'
 import { Sparkles, X } from 'lucide-react'
 import type { Tag } from '../types/api'
+import { TagBadge } from './TagBadge'
 import './QuickTagAdd.css'
 import './UserDefinedTagButton.css'
 
@@ -101,7 +102,6 @@ export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }
   const formClass = variant === 'overlay' ? 'quick-tag-add__form' : 'user-defined-tag-button__form'
   const inputClass = variant === 'overlay' ? 'quick-tag-add__input' : 'user-defined-tag-button__input'
   const suggestionsClass = variant === 'overlay' ? 'quick-tag-add__suggestions' : 'user-defined-tag-button__options'
-  const suggestionClass = variant === 'overlay' ? 'quick-tag-add__suggestion' : 'user-defined-tag-button__option'
   const errorClass = variant === 'overlay' ? 'quick-tag-add__error' : 'user-defined-tag-button__error'
 
   return (
@@ -131,15 +131,12 @@ export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }
           {options.length > 0 && (
             <div className={suggestionsClass}>
               {options.map((tag) => (
-                <button
+                <TagBadge
                   key={tag.id}
-                  type="button"
-                  className={suggestionClass}
-                  disabled={adding}
-                  onClick={() => void assign({ tag_id: tag.id })}
-                >
-                  {tag.display_name}
-                </button>
+                  displayName={tag.display_name}
+                  color={tag.color}
+                  onClick={adding ? undefined : () => void assign({ tag_id: tag.id })}
+                />
               ))}
             </div>
           )}
