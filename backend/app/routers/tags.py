@@ -16,6 +16,8 @@ router = APIRouter()
 class TagRequest(BaseModel):
     display_name: str
     is_active: bool = True
+    is_ai_vocabulary: bool = True
+    is_user_defined: bool = False
     sort_order: int = 0
 
 
@@ -35,8 +37,13 @@ def list_tags(
     query: str | None = Query(default=None),
     active_only: bool = Query(default=False),
     limit: int | None = Query(default=None, ge=1, le=1000),
+    category: str | None = Query(default=None),
 ):
-    return {"tags": service.list_tags(get_engine(), query=query, active_only=active_only, limit=limit)}
+    return {
+        "tags": service.list_tags(
+            get_engine(), query=query, active_only=active_only, limit=limit, category=category
+        )
+    }
 
 
 @router.get("/tags/used")

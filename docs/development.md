@@ -39,6 +39,7 @@ Test conventions (per-suite details in [`code-map-tests.md`](code-map-tests.md))
 - When hand-inserting a `directories` row for a fixture: the **root** row's `parent_relative_path` is `NULL`, but every direct child of root uses `''` (empty string) as its `parent_relative_path` — `GET /api/directories/children`'s `path` query param defaults to `''` and is matched against `parent_relative_path` literally, so a root row seeded with `parent_relative_path = ''` would incorrectly appear as its own child. See existing fixtures in `test_directories_router.py`/`test_directory_ops.py` for the working pattern.
 - SMB is tested against an in-memory `FakeSMBFS` fixture — no real SMB server is available.
 - Provider clients are tested with `httpx` monkeypatched — tests must never hit real AI provider APIs.
+- A jsdom component test's mock `fetch` (`fetchRouter()`'s strict `handlers` map, see `TaggingSettingsSection.test.tsx`) throws `Unhandled fetch in test` for any URL it doesn't recognize. Mounting a new child component inside an already-tested parent (e.g. adding `<UserDefinedTagsSection />` as a sibling inside `TaggingSettingsSection`'s render) means that child's own `fetch` calls need handlers added to every existing test case's map too, or the test fails even though nothing about the test's own assertions changed.
 - Per [`CLAUDE.md`](../CLAUDE.md): run the smallest relevant suite after every change; a task is not complete while required tests fail.
 
 ## Before starting a nontrivial feature

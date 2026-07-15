@@ -24,10 +24,10 @@ import {
   X,
 } from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
-import type { FileEntry, FileMediaInfo, FileTagAssignment } from '../types/api'
-import { useTags } from '../context/TagsContext'
+import type { FileEntry, FileMediaInfo, FileTagAssignment, Tag } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
+import { UserDefinedTagButton } from './UserDefinedTagButton'
 import './ConvertDialog.css'
 import './FileInfoPanel.css'
 
@@ -83,7 +83,6 @@ export function FileInfoPanel({
   onNext,
 }: FileInfoPanelProps) {
   const { t } = useTranslation()
-  const { tags: vocabularyTags, refresh: refreshVocabulary } = useTags()
   const showThumbnail = file.is_video_supported && file.has_preview_asset
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const draggingRef = useRef(false)
@@ -95,6 +94,19 @@ export function FileInfoPanel({
   const [tagInput, setTagInput] = useState('')
   const [addingTag, setAddingTag] = useState(false)
   const [tagError, setTagError] = useState<string | null>(null)
+  const [tagOptions, setTagOptions] = useState<Tag[]>([])
+
+  const refreshTagOptions = useCallback(async () => {
+    const res = await fetch('/api/tags/used?limit=500')
+    if (res.ok) {
+      const data: { tags: Tag[] } = await res.json()
+      setTagOptions(data.tags)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshTagOptions()
+  }, [refreshTagOptions])
 
   useEffect(() => {
     let cancelled = false
@@ -168,7 +180,7 @@ export function FileInfoPanel({
       }
       setTagInput('')
       await refetchTags()
-      void refreshVocabulary()
+      void refreshTagOptions()
       onTagsChanged?.()
     } catch {
       setTagError(t('library.tagsAddError'))
@@ -455,11 +467,9 @@ export function FileInfoPanel({
                   onChange={(event) => setTagInput(event.target.value)}
                 />
                 <datalist id="file-info-panel-tag-options">
-                  {vocabularyTags
-                    .filter((vocabularyTag) => vocabularyTag.is_active)
-                    .map((vocabularyTag) => (
-                      <option key={vocabularyTag.id} value={vocabularyTag.display_name} />
-                    ))}
+                  {tagOptions.map((option) => (
+                    <option key={option.id} value={option.display_name} />
+                  ))}
                 </datalist>
                 <button
                   type="submit"
@@ -472,6 +482,14 @@ export function FileInfoPanel({
                 </button>
               </form>
               {tagError && <p className="file-info-panel__tags-error">{tagError}</p>}
+              <UserDefinedTagButton
+                fileId={file.id}
+                variant="panel"
+                onTagAdded={() => {
+                  void refetchTags()
+                  onTagsChanged?.()
+                }}
+              />
             </div>
 
             <dl className={`file-info-panel__media-grid ${mediaInfoLoading ? 'file-info-panel__media-grid--loading' : ''}`}>

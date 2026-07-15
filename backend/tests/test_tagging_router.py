@@ -161,12 +161,14 @@ def test_manual_tag_assign_and_remove_over_http(tmp_path, monkeypatch):
         assert r.status_code == 200
         assert len(client.get(f"/api/files/{file_id}/tags").json()["tags"]) == 1
 
-        # Typing a brand-new name creates a vocabulary entry and assigns it.
+        # Typing a brand-new name creates an ad-hoc tag and assigns it -- it
+        # must NOT silently join the AI vocabulary (user request: only
+        # Settings' own "add" flow populates that list).
         r = client.post(f"/api/files/{file_id}/tags", json={"display_name": "Sunset"})
         assert r.status_code == 200
         names = {t["display_name"] for t in client.get(f"/api/files/{file_id}/tags").json()["tags"]}
         assert names == {"Beach", "Sunset"}
-        assert {t["display_name"] for t in client.get("/api/tags").json()["tags"]} == {"Beach", "Sunset"}
+        assert {t["display_name"] for t in client.get("/api/tags").json()["tags"]} == {"Beach"}
 
         # Neither tag_id nor display_name -> 422.
         r = client.post(f"/api/files/{file_id}/tags", json={})
@@ -184,6 +186,62 @@ def test_manual_tag_assign_and_remove_over_http(tmp_path, monkeypatch):
 
         # Removing an assignment that no longer exists -> 404.
         r = client.delete(f"/api/files/{file_id}/tags/{tag_id}")
+        assert r.status_code == 404
+
+
+def test_tags_category_query_param_scopes_to_one_pool(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        client.post("/api/tags", json={"display_name": "Beach"})  # AI vocabulary (default)
+        client.post(
+            "/api/tags",
+            json={"display_name": "Favorite", "is_ai_vocabulary": False, "is_user_defined": True},
+        )
+
+        assert {t["display_name"] for t in client.get("/api/tags").json()["tags"]} == {"Beach"}
+        assert {t["display_name"] for t in client.get("/api/tags", params={"category": "user"}).json()["tags"]} == {
+            "Favorite"
+        }
+
+
+def test_user_defined_tag_endpoint_over_http(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        engine = db_module.get_engine()
+        _source_id, file_id = _insert_source_and_folder(engine, tmp_path / "source")
+
+        favorite_id = client.post(
+            "/api/tags",
+            json={"display_name": "Favorite", "is_ai_vocabulary": False, "is_user_defined": True},
+        ).json()["id"]
+
+        # Pick an existing user-defined tag by id.
+        r = client.post(f"/api/files/{file_id}/tags/user-defined", json={"tag_id": favorite_id})
+        assert r.status_code == 200
+        names = {t["display_name"] for t in client.get(f"/api/files/{file_id}/tags").json()["tags"]}
+        assert names == {"Favorite"}
+
+        # Type a brand-new user-defined tag -- it must join the user-defined
+        # pool, not the AI vocabulary or a bare ad-hoc tag.
+        r = client.post(f"/api/files/{file_id}/tags/user-defined", json={"display_name": "Rewatch"})
+        assert r.status_code == 200
+        names = {t["display_name"] for t in client.get(f"/api/files/{file_id}/tags").json()["tags"]}
+        assert names == {"Favorite", "Rewatch"}
+        assert {t["display_name"] for t in client.get("/api/tags", params={"category": "user"}).json()["tags"]} == {
+            "Favorite",
+            "Rewatch",
+        }
+        assert client.get("/api/tags").json()["tags"] == []  # never joins the AI vocabulary
+
+        # Unknown tag_id -> 404.
+        r = client.post(f"/api/files/{file_id}/tags/user-defined", json={"tag_id": str(uuid.uuid4())})
+        assert r.status_code == 404
+        assert r.json()["detail"]["error"]["code"] == "tag_not_found"
+
+        # Neither tag_id nor display_name -> 422.
+        r = client.post(f"/api/files/{file_id}/tags/user-defined", json={})
+        assert r.status_code == 422
+
+        # Unknown file -> 404.
+        r = client.post(f"/api/files/{uuid.uuid4()}/tags/user-defined", json={"tag_id": favorite_id})
         assert r.status_code == 404
 
 

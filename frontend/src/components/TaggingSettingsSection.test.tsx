@@ -57,6 +57,7 @@ describe('TaggingSettingsSection preview demo', () => {
       'fetch',
       fetchRouter({
         'GET /api/tags': () => jsonResponse({ tags: [] }),
+        'GET /api/tags?category=user': () => jsonResponse({ tags: [] }),
         'GET /api/tagging-settings': () => jsonResponse(SETTINGS),
         'POST /api/tagging-settings/preview': () =>
           jsonResponse({
@@ -88,6 +89,7 @@ describe('TaggingSettingsSection preview demo', () => {
       'fetch',
       fetchRouter({
         'GET /api/tags': () => jsonResponse({ tags: [] }),
+        'GET /api/tags?category=user': () => jsonResponse({ tags: [] }),
         'GET /api/tagging-settings': () => jsonResponse({ ...SETTINGS, combine_into_collage: false }),
         'POST /api/tagging-settings/preview': () =>
           jsonResponse({
@@ -117,6 +119,7 @@ describe('TaggingSettingsSection preview demo', () => {
       'fetch',
       fetchRouter({
         'GET /api/tags': () => jsonResponse({ tags: [] }),
+        'GET /api/tags?category=user': () => jsonResponse({ tags: [] }),
         'GET /api/tagging-settings': () => jsonResponse(SETTINGS),
         'GET /api/files?video_only=true&limit=20': () => jsonResponse({ files: [] }),
       }),

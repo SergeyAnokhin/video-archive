@@ -265,6 +265,8 @@ export interface Tag {
   tag_key: string
   display_name: string
   is_active: boolean
+  is_ai_vocabulary: boolean
+  is_user_defined: boolean
   sort_order: number
   created_at: string
   updated_at: string

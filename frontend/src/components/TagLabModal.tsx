@@ -1,8 +1,7 @@
 import { Play, Plus, Tags, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { FileEntry, ProviderEntry, TagLabRunResult } from '../types/api'
-import { useTags } from '../context/TagsContext'
+import type { FileEntry, ProviderEntry, Tag, TagLabRunResult } from '../types/api'
 import './ConvertDialog.css'
 import './TagLabModal.css'
 
@@ -25,7 +24,7 @@ function normalizeName(name: string): string {
 
 export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const { t } = useTranslation()
-  const { tags: vocabularyTags } = useTags()
+  const [tagOptions, setTagOptions] = useState<Tag[]>([])
   const [entries, setEntries] = useState<ProviderEntry[]>([])
   const [entriesLoaded, setEntriesLoaded] = useState(false)
   const [entryId, setEntryId] = useState('')
@@ -36,6 +35,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const [tagInput, setTagInput] = useState('')
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -57,6 +57,12 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     return () => {
       cancelled = true
     }
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/tags/used?limit=500')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { tags: Tag[] } | null) => setTagOptions(data?.tags ?? []))
   }, [])
 
   async function handleRun() {
@@ -189,7 +195,13 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
             <p className="convert-dialog__hint">{t('tagLab.imagesTitle')}</p>
             <div className="tag-lab__images">
               {result.images.map((image, index) => (
-                <img key={index} src={image.data_url} alt="" className="tag-lab__image" />
+                <img
+                  key={index}
+                  src={image.data_url}
+                  alt=""
+                  className="tag-lab__image"
+                  onClick={() => setZoomedImage(image.data_url)}
+                />
               ))}
             </div>
 
@@ -244,11 +256,9 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
                 onChange={(event) => setTagInput(event.target.value)}
               />
               <datalist id="tag-lab-tag-options">
-                {vocabularyTags
-                  .filter((vocabularyTag) => vocabularyTag.is_active)
-                  .map((vocabularyTag) => (
-                    <option key={vocabularyTag.id} value={vocabularyTag.display_name} />
-                  ))}
+                {tagOptions.map((option) => (
+                  <option key={option.id} value={option.display_name} />
+                ))}
               </datalist>
               <button
                 type="submit"
@@ -281,6 +291,18 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
           </button>
         </div>
       </div>
+
+      {zoomedImage && (
+        <div
+          className="tag-lab__zoom-overlay"
+          onClick={(event) => {
+            event.stopPropagation()
+            setZoomedImage(null)
+          }}
+        >
+          <img src={zoomedImage} alt="" className="tag-lab__zoom-image" />
+        </div>
+      )}
     </div>
   )
 }

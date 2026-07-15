@@ -212,8 +212,10 @@ def test_apply_tag_lab_result_mixes_model_and_manual_tags(engine, source):
     assert by_name["Brand New Tag"].score == 100
     assert by_name["Brand New Tag"].provider_name == "manual"
     assert by_name["Brand New Tag"].model_name is None
-    # The manually-typed tag must have been added to the vocabulary too.
-    assert any(t["display_name"] == "Brand New Tag" for t in tags_service.list_tags(engine))
+    # A manually-typed Tag Lab tag is an ordinary ad-hoc tag (user request) --
+    # it must NOT silently join the AI vocabulary just because it was typed
+    # during a Tag Lab review.
+    assert all(t["display_name"] != "Brand New Tag" for t in tags_service.list_tags(engine))
 
 
 def test_apply_tag_lab_result_drops_stale_tag_id(engine, source):

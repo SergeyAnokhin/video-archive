@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Info, X } from 'lucide-react'
 import type { FileEntry } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { QuickTagAdd } from './QuickTagAdd'
+import { UserDefinedTagButton } from './UserDefinedTagButton'
 import './ImageViewerModal.css'
 
 interface ImageViewerModalProps {
@@ -62,6 +63,7 @@ export function ImageViewerModal({
             </button>
           )}
           <QuickTagAdd fileId={file.id} onTagAdded={onTagAdded} />
+          <UserDefinedTagButton fileId={file.id} onTagAdded={onTagAdded} />
         </div>
       </div>
 

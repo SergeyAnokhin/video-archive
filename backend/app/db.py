@@ -557,6 +557,39 @@ MIGRATIONS: dict[int, list[str]] = {
     25: [
         "ALTER TABLE files ADD COLUMN is_image_supported INTEGER NOT NULL DEFAULT 0",
     ],
+    # Post-V1 (user request -- Tag Lab surfaced that tuning-parameter tags
+    # like "640px"/"H265" were leaking into the AI-tagging vocabulary and the
+    # Settings tag list): `tag_catalog` rows auto-created as a side effect of
+    # `tags.assign_tuning_parameter_tags()` no longer count as vocabulary --
+    # excluded from `list_tags()`/`list_used_tags()` (Settings management,
+    # autocomplete, and the vocabulary sent to every AI-tagging prompt), but
+    # still fully usable as ordinary `file_tags` rows. Backfills existing
+    # databases: a tag whose *only* file_tags rows are `provider_name =
+    # 'tuning'` is flipped to non-vocabulary; a tag used for anything else
+    # (including alongside tuning) is left alone, since it's a real tag that
+    # happens to share a name with a swept parameter.
+    26: [
+        "ALTER TABLE tag_catalog ADD COLUMN is_ai_vocabulary INTEGER NOT NULL DEFAULT 1",
+        """
+        UPDATE tag_catalog
+        SET is_ai_vocabulary = 0
+        WHERE id IN (SELECT DISTINCT tag_id FROM file_tags WHERE provider_name = 'tuning')
+          AND id NOT IN (
+              SELECT DISTINCT tag_id FROM file_tags
+              WHERE provider_name IS NULL OR provider_name != 'tuning'
+          )
+        """,
+    ],
+    # Post-V1 (user request): a third tag pool alongside the AI vocabulary
+    # (`is_ai_vocabulary`, migration 26) and ordinary ad-hoc tags typed
+    # directly onto a file -- a short, centrally-managed list of purely
+    # subjective tags that a vision model could never determine, attached to
+    # a file through their own dedicated picker (not the free-text add
+    # field) in the info panel and the playback screen. New rows default to
+    # 0; nothing existing needs backfilling into this pool.
+    27: [
+        "ALTER TABLE tag_catalog ADD COLUMN is_user_defined INTEGER NOT NULL DEFAULT 0",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

@@ -206,6 +206,8 @@
     "tagsRemove": "Remove tag \"{{name}}\"",
     "tagsAddError": "Could not add this tag.",
     "tagsRemoveError": "Could not remove this tag.",
+    "userDefinedTagButton": "Add a user-defined tag",
+    "userDefinedTagPlaceholder": "Pick or type a user-defined tag…",
     "tuningSectionTitle": "Tuning parameters",
     "createFolder": "Create folder",
     "createFolderTitle": "Create folder",
@@ -386,7 +388,11 @@
     "previewLoading": "Generating…",
     "previewHint": "Runs the current settings against the most recently viewed video so you can check the sampled frames and resolution before saving.",
     "previewNoVideo": "No video available yet to generate a preview from.",
-    "previewDimensions": "{{width}}×{{height}} px"
+    "previewDimensions": "{{width}}×{{height}} px",
+    "userDefinedTitle": "User-defined tags",
+    "userDefinedHint": "A short, purely subjective list a vision model could never determine on its own — attached to a file through its own picker button, never sent to any AI provider.",
+    "userDefinedEmpty": "No user-defined tags yet. Add one below, or create one on the fly from a video's picker button.",
+    "userDefinedNewTagPlaceholder": "New user-defined tag name"
   },
   "backupMaintenance": {
     "title": "Backup & Maintenance",

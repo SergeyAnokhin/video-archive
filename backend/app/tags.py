@@ -33,6 +33,8 @@ def _row_to_dict(row) -> dict:
         "tag_key": row.tag_key,
         "display_name": row.display_name,
         "is_active": bool(row.is_active),
+        "is_ai_vocabulary": bool(row.is_ai_vocabulary),
+        "is_user_defined": bool(row.is_user_defined),
         "sort_order": row.sort_order,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -40,9 +42,20 @@ def _row_to_dict(row) -> dict:
 
 
 def list_tags(
-    engine, query: str | None = None, active_only: bool = False, limit: int | None = None
+    engine, query: str | None = None, active_only: bool = False, limit: int | None = None,
+    category: str | None = None,
 ) -> list[dict]:
-    clauses = []
+    """Scoped to one managed tag pool, never the whole `tag_catalog` (user
+    request): `category="user"` returns the user-defined pool
+    (`is_user_defined = 1`, Settings' own section + the per-file
+    user-defined-tag picker); anything else (the default) returns the AI
+    vocabulary (`is_ai_vocabulary = 1`) -- Settings' vocabulary editor and
+    every AI-tagging prompt builder. A tag auto-created purely as a side
+    effect of `assign_tuning_parameter_tags()`, or typed ad-hoc directly onto
+    a file (`get_or_create_tag()`'s default), belongs to neither pool and
+    never appears from this function -- see `list_used_tags()` for a listing
+    that covers every pool."""
+    clauses = ["is_user_defined = 1"] if category == "user" else ["is_ai_vocabulary = 1"]
     params: dict = {}
     if query:
         clauses.append("tag_key LIKE :prefix")
@@ -67,11 +80,15 @@ def list_tags(
 
 
 def list_used_tags(engine, query: str | None = None, limit: int | None = None) -> list[dict]:
-    """Tags actually assigned to at least one file in this archive (as
-    opposed to `list_tags()`'s full vocabulary, which also includes tags
-    only configured for AI tagging but never applied) -- feeds the playback
-    screen's quick tag-add autocomplete (user request), ordered by how often
-    each tag is used so the most locally-relevant matches surface first."""
+    """Tags actually assigned to at least one file in this archive, from
+    *any* pool -- AI vocabulary, user-defined, or plain ad-hoc (as opposed to
+    `list_tags()`, which is always scoped to a single managed pool and
+    includes vocabulary/user-defined entries never actually applied to a
+    file). Feeds every "type a tag to add it to this file" suggestion list
+    (playback screen's quick tag-add, `FileInfoPanel`, Tag Lab's review step
+    -- user request: suggestions while typing must cover every tag type, not
+    just the AI vocabulary), ordered by how often each tag is used so the
+    most locally-relevant matches surface first."""
     clauses = []
     params: dict = {}
     if query:
@@ -140,8 +157,11 @@ def create_tag(engine, data: dict) -> dict:
         conn.execute(
             text(
                 """
-                INSERT INTO tag_catalog (id, tag_key, display_name, is_active, sort_order, created_at, updated_at)
-                VALUES (:id, :tag_key, :display_name, :is_active, :sort_order, :now, :now)
+                INSERT INTO tag_catalog
+                    (id, tag_key, display_name, is_active, is_ai_vocabulary, is_user_defined,
+                     sort_order, created_at, updated_at)
+                VALUES (:id, :tag_key, :display_name, :is_active, :is_ai_vocabulary, :is_user_defined,
+                        :sort_order, :now, :now)
                 """
             ),
             {
@@ -149,6 +169,8 @@ def create_tag(engine, data: dict) -> dict:
                 "tag_key": tag_key,
                 "display_name": data["display_name"].strip(),
                 "is_active": bool(data.get("is_active", True)),
+                "is_ai_vocabulary": bool(data.get("is_ai_vocabulary", True)),
+                "is_user_defined": bool(data.get("is_user_defined", False)),
                 "sort_order": data.get("sort_order", 0),
                 "now": now,
             },
@@ -190,19 +212,52 @@ def update_tag(engine, tag_id: str, data: dict) -> dict | None:
     return get_tag(engine, tag_id)
 
 
-def get_or_create_tag(engine, display_name: str) -> dict:
-    """Resolve `display_name` to an existing vocabulary entry (case/
-    whitespace-insensitive match on `tag_key`), or create a new one -- used
-    when a user types a tag by hand in `FileInfoPanel` instead of picking
-    one from the existing vocabulary list, so either path ends up assigning
-    a real `tag_catalog` row."""
+def get_or_create_tag(
+    engine, display_name: str, *, is_ai_vocabulary: bool = False, is_user_defined: bool = False
+) -> dict:
+    """Resolve `display_name` to an existing entry (case/whitespace-
+    insensitive match on `tag_key`), or create a new one -- used when a user
+    types a tag by hand in `FileInfoPanel`/`QuickTagAdd`/Tag Lab instead of
+    picking one from an existing list, so either path ends up assigning a
+    real `tag_catalog` row. Neither pool flag is on by default (user
+    request): typing a tag directly onto a file is its own ad-hoc pool,
+    distinct from the AI vocabulary (Settings' own editor) and from
+    user-defined tags (their own picker, `is_user_defined=True`) -- it must
+    not silently join either managed list. `is_ai_vocabulary=True` is passed
+    explicitly by Settings' vocabulary "add" flow; `is_user_defined=True` by
+    the user-defined-tag picker's "create new" flow.
+
+    Either flag, when explicitly requested, promotes an existing row that
+    doesn't yet belong to that pool -- e.g. typing an existing ad-hoc tag's
+    name into the user-defined picker's "new tag" field makes it a real
+    user-defined tag from then on, even though it already existed. The
+    reverse never happens: a flag already set is never cleared just because
+    a caller asking for the other flag (or neither) happens to match the
+    same name."""
     tag_key = normalize_tag_key(display_name)
     with engine.connect() as conn:
         existing = _get_by_key(conn, tag_key)
     if existing is not None:
+        updates: dict = {}
+        if is_ai_vocabulary and not existing.is_ai_vocabulary:
+            updates["is_ai_vocabulary"] = 1
+        if is_user_defined and not existing.is_user_defined:
+            updates["is_user_defined"] = 1
+        if updates:
+            now = _now()
+            set_sql = ", ".join(f"{column} = :{column}" for column in updates)
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"UPDATE tag_catalog SET {set_sql}, updated_at = :now WHERE id = :id"),
+                    {**updates, "now": now, "id": existing.id},
+                )
+            return get_tag(engine, existing.id)
         return _row_to_dict(existing)
     try:
-        return create_tag(engine, {"display_name": display_name})
+        return create_tag(
+            engine,
+            {"display_name": display_name, "is_ai_vocabulary": is_ai_vocabulary, "is_user_defined": is_user_defined},
+        )
     except DuplicateTagError:
         # Lost a race with a concurrent creator of the same key (e.g. two
         # tuning-sweep variant threads tagging the shared codec at once) --
@@ -241,12 +296,37 @@ def assign_file_tag(engine, file_id: str, tag_id: str) -> None:
         )
 
 
+def assign_user_defined_tag(
+    engine, file_id: str, *, tag_id: str | None = None, display_name: str | None = None
+) -> dict | None:
+    """Attach a user-defined tag (purely subjective, never AI-scored, user
+    request) to `file_id` via the dedicated picker button in `FileInfoPanel`
+    and the playback screen -- distinct from the free-text add field, which
+    creates ad-hoc tags in neither managed pool. `tag_id` attaches an
+    existing tag as-is (returns `None` if it doesn't exist -- the caller's
+    job to turn that into a 404, same convention as `get_tag()`);
+    `display_name` creates a new tag (or promotes an existing one to the
+    user-defined pool if the name happens to already exist as some other
+    kind of tag). Returns the tag that was assigned."""
+    if tag_id:
+        tag = get_tag(engine, tag_id)
+        if tag is None:
+            return None
+    else:
+        tag = get_or_create_tag(engine, display_name, is_user_defined=True)
+    assign_file_tag(engine, file_id, tag["id"])
+    return tag
+
+
 def assign_tuning_parameter_tags(engine, file_id: str, display_names: list[str]) -> None:
     """Tag a tuning-sweep variant file with its encode parameters (user
-    request) -- one vocabulary tag per parameter (codec, dimension cap, CRF),
-    so a variant's settings are visible and removable like any other tag.
-    Unlike `assign_file_tag` this does not touch `files.tagged_at`: parameter
-    tags record how the file was produced, not an AI-tagging result."""
+    request) -- one tag per parameter (codec, dimension cap, CRF), so a
+    variant's settings are visible and removable like any other tag. Unlike
+    `assign_file_tag` this does not touch `files.tagged_at`: parameter tags
+    record how the file was produced, not an AI-tagging result. These land
+    in neither managed pool (`get_or_create_tag()`'s own default, user
+    request): a swept parameter like "640px" is not something Settings
+    should list or a vision provider should ever be asked to score."""
     now = _now()
     tag_ids = [get_or_create_tag(engine, name)["id"] for name in display_names]
     with engine.begin() as conn:

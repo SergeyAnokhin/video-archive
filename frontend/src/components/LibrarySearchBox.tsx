@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileVideo, Folder, Search, Tag as TagIcon, X } from 'lucide-react'
-import { useTags } from '../context/TagsContext'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import type { DirectoryEntry, DirectorySearchResponse, FileEntry, Tag } from '../types/api'
 import {
@@ -22,19 +21,26 @@ interface LibrarySearchBoxProps {
 }
 
 // Below this many characters no file/directory suggestion request is sent;
-// tag suggestions stay client-side (the vocabulary is already loaded).
+// tag suggestions stay client-side (loaded once up front, from every tag
+// pool actually used somewhere -- not just the AI vocabulary, user request).
 const MIN_SERVER_TERM = 2
 const DEBOUNCE_MS = 250
 
 export function LibrarySearchBox({ activeSearch, onSearch, onClear, onOpenDirectory }: LibrarySearchBoxProps) {
   const { t } = useTranslation()
-  const { tags } = useTags()
+  const [tags, setTags] = useState<Tag[]>([])
   const { searchLimits } = useInterfaceSettings()
   const [value, setValue] = useState('')
   const [open, setOpen] = useState(false)
   const [fileMatches, setFileMatches] = useState<FileEntry[]>([])
   const [dirMatches, setDirMatches] = useState<DirectoryEntry[]>([])
   const containerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    fetch('/api/tags/used?limit=500')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { tags: Tag[] } | null) => setTags(data?.tags ?? []))
+  }, [])
 
   // The active search can change from outside the box (the results view's
   // "search only in this group" buttons, the clear button on the results

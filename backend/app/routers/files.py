@@ -23,7 +23,7 @@ from app.media import (
 )
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
-from app.tags import assign_file_tag, get_or_create_tag, list_top_tags_for_files, remove_file_tag
+from app.tags import assign_file_tag, assign_user_defined_tag, get_or_create_tag, list_top_tags_for_files, remove_file_tag
 
 router = APIRouter()
 
@@ -438,6 +438,36 @@ def add_file_tag(file_id: str, body: AssignTagRequest):
         )
 
     assign_file_tag(engine, file_id, tag_id)
+    return {"assigned": True}
+
+
+@router.post("/files/{file_id}/tags/user-defined")
+def add_user_defined_file_tag(file_id: str, body: AssignTagRequest):
+    """Dedicated picker endpoint (user request) for the user-defined tag
+    pool, distinct from `POST /files/{id}/tags`'s free-text add: an existing
+    `tag_id` is attached as-is, a typed `display_name` creates (or promotes)
+    a genuine user-defined tag rather than an ad-hoc one -- see
+    `tags.assign_user_defined_tag()`."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        exists = conn.execute(text("SELECT 1 FROM files WHERE id = :id"), {"id": file_id}).fetchone()
+    if exists is None:
+        raise _file_not_found_error(file_id)
+
+    if body.tag_id:
+        assigned = assign_user_defined_tag(engine, file_id, tag_id=body.tag_id)
+        if assigned is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"code": "tag_not_found", "message": f"Tag not found: {body.tag_id}"}},
+            )
+    elif body.display_name and body.display_name.strip():
+        assign_user_defined_tag(engine, file_id, display_name=body.display_name)
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": {"code": "tag_required", "message": "tag_id or display_name is required."}},
+        )
     return {"assigned": True}
 
 

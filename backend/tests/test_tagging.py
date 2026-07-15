@@ -8,6 +8,7 @@ provider verification is a manual/live step, not a unit test).
 from __future__ import annotations
 
 import shutil
+import uuid
 
 import cv2
 import numpy as np
@@ -94,6 +95,205 @@ def test_delete_tag_cascades_file_tags(engine, source):
     with engine.connect() as conn:
         remaining = conn.execute(text("SELECT COUNT(*) FROM file_tags")).scalar()
     assert remaining == 0
+
+
+def test_assign_tuning_parameter_tags_excluded_from_vocabulary(engine, source):
+    """User request (surfaced by Tag Lab): a swept encode parameter like
+    "640px" must not appear in the tag vocabulary -- not in Settings'
+    listing, not in the prompt sent to a vision provider."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, created_at, updated_at) "
+                "VALUES ('f1', :sid, 'd1', 'clip.mp4', 'clip.mp4', 'mp4', 1, '2024', '2024', 1, '2024', '2024')"
+            ),
+            {"sid": source["id"]},
+        )
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+    tags_service.assign_tuning_parameter_tags(engine, "f1", ["640px", "H265"])
+
+    assert [t["display_name"] for t in tags_service.list_tags(engine)] == ["Beach"]
+
+    # But the parameter tags are still real, queryable file_tags rows.
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT tc.display_name FROM file_tags ft JOIN tag_catalog tc ON tc.id = ft.tag_id "
+                "WHERE ft.file_id = 'f1' ORDER BY tc.display_name"
+            )
+        ).all()
+    assert [row.display_name for row in rows] == ["640px", "H265"]
+
+
+def test_list_tags_category_user_returns_only_user_defined_pool(engine):
+    tags_service.create_tag(engine, {"display_name": "Favorite", "is_ai_vocabulary": False, "is_user_defined": True})
+    tags_service.create_tag(engine, {"display_name": "Beach"})  # AI vocabulary, default
+
+    assert [t["display_name"] for t in tags_service.list_tags(engine, category="user")] == ["Favorite"]
+    assert [t["display_name"] for t in tags_service.list_tags(engine)] == ["Beach"]
+
+
+def test_assign_user_defined_tag_by_existing_id(engine, source):
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, created_at, updated_at) "
+                "VALUES ('f1', :sid, 'd1', 'clip.mp4', 'clip.mp4', 'mp4', 1, '2024', '2024', 1, '2024', '2024')"
+            ),
+            {"sid": source["id"]},
+        )
+    favorite = tags_service.create_tag(
+        engine, {"display_name": "Favorite", "is_ai_vocabulary": False, "is_user_defined": True}
+    )
+
+    result = tags_service.assign_user_defined_tag(engine, "f1", tag_id=favorite["id"])
+    assert result["id"] == favorite["id"]
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT tc.display_name, ft.provider_name, ft.score FROM file_tags ft "
+                 "JOIN tag_catalog tc ON tc.id = ft.tag_id WHERE ft.file_id = 'f1'")
+        ).all()
+    assert [(r.display_name, r.provider_name, r.score) for r in rows] == [("Favorite", "manual", 100)]
+
+
+def test_assign_user_defined_tag_unknown_id_returns_none(engine, source):
+    assert tags_service.assign_user_defined_tag(engine, "f1", tag_id=str(uuid.uuid4())) is None
+
+
+def test_assign_user_defined_tag_creates_new_tag_in_user_defined_pool(engine, source):
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, created_at, updated_at) "
+                "VALUES ('f1', :sid, 'd1', 'clip.mp4', 'clip.mp4', 'mp4', 1, '2024', '2024', 1, '2024', '2024')"
+            ),
+            {"sid": source["id"]},
+        )
+    result = tags_service.assign_user_defined_tag(engine, "f1", display_name="Rewatch")
+    assert result["is_user_defined"] is True
+    assert result["is_ai_vocabulary"] is False
+    assert [t["display_name"] for t in tags_service.list_tags(engine, category="user")] == ["Rewatch"]
+
+
+def test_list_used_tags_covers_every_pool(engine, source):
+    """User request: typing-suggestion listings must cover the AI
+    vocabulary, user-defined, and plain ad-hoc pools alike -- unlike
+    `list_tags()`, which is always scoped to one managed pool."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, created_at, updated_at) "
+                "VALUES ('f1', :sid, 'd1', 'clip.mp4', 'clip.mp4', 'mp4', 1, '2024', '2024', 1, '2024', '2024')"
+            ),
+            {"sid": source["id"]},
+        )
+    tags_service.assign_tuning_parameter_tags(engine, "f1", ["640px"])  # neither pool
+    tags_service.assign_user_defined_tag(engine, "f1", display_name="Rewatch")  # user-defined pool
+    ai_tag = tags_service.create_tag(engine, {"display_name": "Beach"})  # AI vocabulary pool
+    tags_service.assign_file_tag(engine, "f1", ai_tag["id"])
+
+    used = {t["display_name"] for t in tags_service.list_used_tags(engine)}
+    assert used == {"640px", "Rewatch", "Beach"}
+
+
+def test_get_or_create_tag_bare_call_joins_no_managed_pool(engine, source):
+    """Typing a tag directly onto a file (the bare default, no explicit
+    pool flag) must not silently join the AI vocabulary or the user-defined
+    pool -- those are only ever populated through their own dedicated
+    Settings/picker flows (user request)."""
+    tag = tags_service.get_or_create_tag(engine, "Beach")
+    assert tag["is_ai_vocabulary"] is False
+    assert tag["is_user_defined"] is False
+    assert tags_service.list_tags(engine) == []
+    assert tags_service.list_tags(engine, category="user") == []
+
+
+def test_get_or_create_tag_promotes_existing_tuning_tag_to_vocabulary(engine, source):
+    """An explicit `is_ai_vocabulary=True` caller (Settings' own vocabulary
+    "add" flow) must end up with a real, visible vocabulary entry -- even if
+    that exact name was first auto-created as a tuning-parameter side
+    effect."""
+    tags_service.get_or_create_tag(engine, "640px")
+    assert tags_service.list_tags(engine) == []
+
+    promoted = tags_service.get_or_create_tag(engine, "640px", is_ai_vocabulary=True)
+    assert promoted["is_ai_vocabulary"] is True
+    assert [t["display_name"] for t in tags_service.list_tags(engine)] == ["640px"]
+
+
+def test_get_or_create_tag_promotes_existing_ad_hoc_tag_to_user_defined(engine, source):
+    """Mirrors the AI-vocabulary promotion above, for the user-defined pool:
+    typing an existing ad-hoc tag's name into the user-defined picker's
+    "create new" field promotes it rather than creating a duplicate."""
+    tags_service.get_or_create_tag(engine, "Beach")
+    assert tags_service.list_tags(engine, category="user") == []
+
+    promoted = tags_service.get_or_create_tag(engine, "Beach", is_user_defined=True)
+    assert promoted["is_user_defined"] is True
+    assert [t["display_name"] for t in tags_service.list_tags(engine, category="user")] == ["Beach"]
+
+
+def test_migration_26_backfill_only_demotes_tuning_only_tags(engine, source):
+    """Exercises the migration 26 backfill statement (`app.db.MIGRATIONS[26]`)
+    directly against pre-existing data, the way an upgraded database would
+    see it: a tag used *only* via a tuning sweep is demoted, but a tag also
+    used for anything else (AI-scored, manual, or both) is left alone."""
+    import app.db as db_module
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                "size_bytes, discovered_at, last_scanned_at, is_video_supported, created_at, updated_at) "
+                "VALUES ('f1', :sid, 'd1', 'clip.mp4', 'clip.mp4', 'mp4', 1, '2024', '2024', 1, '2024', '2024')"
+            ),
+            {"sid": source["id"]},
+        )
+
+    tuning_only = tags_service.create_tag(engine, {"display_name": "640px"})
+    mixed = tags_service.create_tag(engine, {"display_name": "H265"})
+    untouched = tags_service.create_tag(engine, {"display_name": "Beach"})
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, assigned_at) "
+                "VALUES ('ft1', 'f1', :tag_id, 100, 'tuning', '2024')"
+            ),
+            {"tag_id": tuning_only["id"]},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, assigned_at) "
+                "VALUES ('ft2', 'f1', :tag_id, 100, 'tuning', '2024')"
+            ),
+            {"tag_id": mixed["id"]},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, assigned_at) "
+                "VALUES ('ft3', 'f1', :tag_id, 80, 'openrouter', '2024')"
+            ),
+            {"tag_id": mixed["id"]},
+        )
+        # Simulate a pre-migration-26 database: every tag starts as vocabulary.
+        conn.execute(text("UPDATE tag_catalog SET is_ai_vocabulary = 1"))
+        for statement in db_module.MIGRATIONS[26][1:]:
+            conn.execute(text(statement))
+
+    with engine.connect() as conn:
+        rows = {
+            row.id: bool(row.is_ai_vocabulary)
+            for row in conn.execute(text("SELECT id, is_ai_vocabulary FROM tag_catalog"))
+        }
+    assert rows[tuning_only["id"]] is False
+    assert rows[mixed["id"]] is True
+    assert rows[untouched["id"]] is True
 
 
 def _insert_file_and_tags(engine, source, file_id: str, tag_scores: list[tuple[str, int]]) -> None:

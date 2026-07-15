@@ -4,6 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Info, Link, PlayC
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { QuickTagAdd } from './QuickTagAdd'
+import { UserDefinedTagButton } from './UserDefinedTagButton'
 import './PlaybackModal.css'
 
 interface PlaybackModalProps {
@@ -99,6 +100,7 @@ export function PlaybackModal({
             </button>
           )}
           <QuickTagAdd fileId={file.id} onTagAdded={onTagAdded} />
+          <UserDefinedTagButton fileId={file.id} onTagAdded={onTagAdded} />
         </div>
       </div>
 
