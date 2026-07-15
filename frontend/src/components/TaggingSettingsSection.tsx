@@ -151,8 +151,22 @@ export function TaggingSettingsSection() {
                 onBlur={() => void handleSaveSettings(settings)}
               />
             </label>
+
+            <label className="settings-modal__label">
+              {t('tagging.requestTimeoutSeconds')}
+              <input
+                className="settings-modal__input"
+                type="number"
+                min={5}
+                max={300}
+                value={settings.request_timeout_seconds}
+                onChange={(event) => setSettings({ ...settings, request_timeout_seconds: Number(event.target.value) })}
+                onBlur={() => void handleSaveSettings(settings)}
+              />
+            </label>
           </div>
           <p className="settings-modal__hint">{t('tagging.imageResolutionHint')}</p>
+          <p className="settings-modal__hint">{t('tagging.requestTimeoutSecondsHint')}</p>
 
           <label className="settings-modal__field">
             <span className="settings-modal__field-label">{t('tagging.combineIntoCollage')}</span>

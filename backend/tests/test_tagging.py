@@ -445,15 +445,23 @@ def test_tagging_settings_singleton_roundtrip(engine):
     assert defaults["combine_into_collage"] is True
     assert defaults["top_tag_count"] == 10
     assert defaults["image_resolution"] == 360
+    assert defaults["request_timeout_seconds"] == 30
 
     updated = tagging_settings.update_settings(
         engine,
-        {"sample_frame_count": 6, "combine_into_collage": False, "top_tag_count": 5, "image_resolution": 720},
+        {
+            "sample_frame_count": 6,
+            "combine_into_collage": False,
+            "top_tag_count": 5,
+            "image_resolution": 720,
+            "request_timeout_seconds": 45,
+        },
     )
     assert updated["sample_frame_count"] == 6
     assert updated["combine_into_collage"] is False
     assert updated["top_tag_count"] == 5
     assert updated["image_resolution"] == 720
+    assert updated["request_timeout_seconds"] == 45
 
 
 def test_secrets_store_roundtrip():

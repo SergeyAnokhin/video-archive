@@ -286,6 +286,7 @@ export interface TaggingSettings {
   combine_into_collage: boolean
   top_tag_count: number
   image_resolution: number
+  request_timeout_seconds: number
   updated_at: string
 }
 
@@ -323,12 +324,18 @@ export interface TagLabRunResult {
   images: TagLabImage[]
   prompt: string
   raw_response: string | null
+  raw_full_response: Record<string, unknown> | null
   tokens_in: number | null
   tokens_out: number | null
   estimated_cost_usd: number | null
   provider_type: ProviderType
   model_name: string | null
   tags: TagLabRankedTag[]
+}
+
+export interface TagLabPreparedResult {
+  images: TagLabImage[]
+  prompt: string
 }
 
 export type ModelPricingSource = 'manual' | 'openrouter_api'

@@ -21,6 +21,7 @@ DEFAULT_SAMPLE_FRAME_COUNT = 9
 DEFAULT_COMBINE_INTO_COLLAGE = True
 DEFAULT_TOP_TAG_COUNT = 10
 DEFAULT_IMAGE_RESOLUTION = 360
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 30
 
 
 def _now() -> str:
@@ -33,6 +34,7 @@ def _row_to_dict(row) -> dict:
         "combine_into_collage": bool(row.combine_into_collage),
         "top_tag_count": row.top_tag_count,
         "image_resolution": row.image_resolution,
+        "request_timeout_seconds": row.request_timeout_seconds,
         "updated_at": row.updated_at,
     }
 
@@ -54,6 +56,7 @@ def update_settings(engine, data: dict) -> dict:
                     combine_into_collage = :combine,
                     top_tag_count = :top_count,
                     image_resolution = :resolution,
+                    request_timeout_seconds = :timeout,
                     updated_at = :now
                 WHERE id = 1
                 """
@@ -63,6 +66,7 @@ def update_settings(engine, data: dict) -> dict:
                 "combine": bool(data.get("combine_into_collage", DEFAULT_COMBINE_INTO_COLLAGE)),
                 "top_count": data.get("top_tag_count", DEFAULT_TOP_TAG_COUNT),
                 "resolution": data.get("image_resolution", DEFAULT_IMAGE_RESOLUTION),
+                "timeout": data.get("request_timeout_seconds", DEFAULT_REQUEST_TIMEOUT_SECONDS),
                 "now": now,
             },
         )
@@ -76,8 +80,9 @@ def seed_default_settings(conn) -> None:
         text(
             """
             INSERT OR IGNORE INTO tagging_settings
-                (id, sample_frame_count, combine_into_collage, top_tag_count, image_resolution, updated_at)
-            VALUES (1, :frame_count, :combine, :top_count, :resolution, :now)
+                (id, sample_frame_count, combine_into_collage, top_tag_count, image_resolution,
+                 request_timeout_seconds, updated_at)
+            VALUES (1, :frame_count, :combine, :top_count, :resolution, :timeout, :now)
             """
         ),
         {
@@ -85,6 +90,7 @@ def seed_default_settings(conn) -> None:
             "combine": DEFAULT_COMBINE_INTO_COLLAGE,
             "top_count": DEFAULT_TOP_TAG_COUNT,
             "resolution": DEFAULT_IMAGE_RESOLUTION,
+            "timeout": DEFAULT_REQUEST_TIMEOUT_SECONDS,
             "now": _now(),
         },
     )

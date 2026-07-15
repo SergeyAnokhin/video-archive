@@ -62,7 +62,9 @@ def _usage_from_response(usage: dict | None) -> UsageInfo:
     return UsageInfo(tokens_in=usage.get("prompt_tokens"), tokens_out=usage.get("completion_tokens"))
 
 
-def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> tuple[list[int], UsageInfo]:
+def score_tags(
+    images: list[bytes], tags: list[str], model: str | None, api_key: str, *, timeout: float | None = None
+) -> tuple[list[int], UsageInfo]:
     prompt = build_prompt(tags)
     content = [{"type": "text", "text": prompt}]
     for image_bytes in images:
@@ -78,7 +80,7 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
             API_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={"model": model or DEFAULT_MODEL, "messages": [{"role": "user", "content": content}]},
-            timeout=TIMEOUT_SECONDS,
+            timeout=timeout or TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         data = response.json()
@@ -90,6 +92,7 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
 
     usage_info = _usage_from_response(data.get("usage"))
     usage_info.raw_text = text_reply
+    usage_info.raw_full_response = data
     return parse_scores(text_reply, len(tags)), usage_info
 
 

@@ -22,6 +22,7 @@ const SETTINGS = {
   combine_into_collage: true,
   top_tag_count: 10,
   image_resolution: 360,
+  request_timeout_seconds: 30,
   updated_at: '2026-01-01T00:00:00Z',
 }
 

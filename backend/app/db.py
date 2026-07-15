@@ -652,6 +652,14 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Post-V1 (user request -- Tag Lab calls a provider directly and
+    # synchronously, unlike the background `tag` job, so a hung request
+    # blocks the UI with no cancel button): a configurable per-request
+    # timeout for that direct call, alongside tagging's other non-vocabulary
+    # settings. Default 30s.
+    30: [
+        "ALTER TABLE tagging_settings ADD COLUMN request_timeout_seconds INTEGER NOT NULL DEFAULT 30",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

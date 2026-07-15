@@ -39,6 +39,11 @@ class UsageInfo:
     for FAL, which has no fixed response schema, this is the full JSON
     response body serialized back to text, same as `BatchPollResult.
     raw_texts`'s per-file convention on the batch path."""
+    raw_full_response: dict | None = None
+    """The provider's complete parsed JSON response body (user request --
+    `raw_text` alone dropped technical fields like usage/model/finish reason
+    that live outside the message content; Tag Lab shows this one as
+    formatted JSON so those fields are inspectable too)."""
 
 
 @dataclass

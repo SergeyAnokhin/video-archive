@@ -58,7 +58,9 @@ def test_log_usage_and_get_usage_summary_aggregates_across_calls(engine):
 
 def test_score_tags_with_entry_logs_success(engine, monkeypatch):
     entry = {"id": "e1", "provider_type": "gemini", "vision_model": "gemini-2.5-flash", "enabled": True}
-    monkeypatch.setitem(registry._CLIENTS, "gemini", lambda images, tags, model, api_key: ([80], UsageInfo(50, 5)))
+    monkeypatch.setitem(
+        registry._CLIENTS, "gemini", lambda images, tags, model, api_key, **_kwargs: ([80], UsageInfo(50, 5))
+    )
     monkeypatch.setattr(registry, "_resolve_entry_api_key", lambda e: "gm-test")
 
     scores, usage = registry.score_tags_with_entry(engine, entry, [b"img"], ["cat"])
@@ -74,7 +76,7 @@ def test_score_tags_with_entry_logs_success(engine, monkeypatch):
 def test_score_tags_with_entry_logs_failure(engine, monkeypatch):
     entry = {"id": "e1", "provider_type": "gemini", "vision_model": "gemini-2.5-flash", "enabled": True}
 
-    def failing(images, tags, model, api_key):
+    def failing(images, tags, model, api_key, **_kwargs):
         raise ProviderError("quota exceeded")
 
     monkeypatch.setitem(registry._CLIENTS, "gemini", failing)

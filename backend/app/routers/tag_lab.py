@@ -35,6 +35,16 @@ def _tag_lab_http_error(err: service.TagLabError) -> HTTPException:
     )
 
 
+@router.post("/files/{file_id}/tag-lab/prepare")
+def prepare_tag_lab(file_id: str):
+    """Returns just the images + prompt a run would send (user request --
+    show this immediately, before the model call that follows returns)."""
+    try:
+        return service.prepare_tag_lab(get_engine(), file_id)
+    except service.TagLabError as err:
+        raise _tag_lab_http_error(err)
+
+
 class TagLabRunRequest(BaseModel):
     provider_entry_id: str
 

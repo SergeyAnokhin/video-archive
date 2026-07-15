@@ -14,7 +14,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app import provider_entries, tag_lab, tag_lab_feedback
+from app import provider_entries, tag_lab, tag_lab_feedback, tagging_settings
 from app import tags as tags_service
 from app.providers import registry
 from app.providers.base import ProviderError, UsageInfo
@@ -53,7 +53,9 @@ def stub_score_tags_with_entry(monkeypatch):
     def fake_score(engine, entry, images, tags, **_kwargs):
         assert images
         scores = [max(0, 90 - 10 * i) for i in range(len(tags))]
-        return scores, UsageInfo(tokens_in=100, tokens_out=20, raw_text="[90, 80]")
+        return scores, UsageInfo(
+            tokens_in=100, tokens_out=20, raw_text="[90, 80]", raw_full_response={"usage": {"total_tokens": 120}}
+        )
 
     monkeypatch.setattr(registry, "score_tags_with_entry", fake_score)
     return fake_score
@@ -79,6 +81,7 @@ def test_run_tag_lab_returns_images_prompt_response_and_ranked_tags(engine, sour
     assert all(img["data_url"].startswith("data:image/jpeg;base64,") for img in result["images"])
     assert "Beach" in result["prompt"] and "Snow" in result["prompt"]
     assert result["raw_response"] == "[90, 80]"
+    assert result["raw_full_response"] == {"usage": {"total_tokens": 120}}
     assert result["tokens_in"] == 100
     assert result["tokens_out"] == 20
     assert result["estimated_cost_usd"] is not None  # gemini-2.5-flash is in the known-cost table
@@ -172,6 +175,89 @@ def test_run_tag_lab_source_file_missing_raises(engine, source):
     with pytest.raises(tag_lab.TagLabError) as excinfo:
         tag_lab.run_tag_lab(engine, file_id, entry["id"])
     assert excinfo.value.code == "source_file_missing"
+
+
+# --- image cache + prepare/timeout (user request) -----------------------------
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_run_tag_lab_reuses_cached_images_for_same_file(engine, source, monkeypatch, stub_score_tags_with_entry):
+    """Re-running Tag Lab against the same video (e.g. to compare providers)
+    must not re-sample frames from it a second time."""
+    entry = _enable_openrouter(engine)
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+    file_id = _scanned_video_id(engine, source)
+
+    build_calls = []
+    original_build = tag_lab.tagging.build_tagging_images_for_file
+
+    def counting_build(*args, **kwargs):
+        build_calls.append(1)
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(tag_lab.tagging, "build_tagging_images_for_file", counting_build)
+
+    tag_lab.run_tag_lab(engine, file_id, entry["id"])
+    tag_lab.run_tag_lab(engine, file_id, entry["id"])
+
+    assert len(build_calls) == 1
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_run_tag_lab_rebuilds_images_when_settings_change(engine, source, monkeypatch, stub_score_tags_with_entry):
+    entry = _enable_openrouter(engine)
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+    file_id = _scanned_video_id(engine, source)
+
+    tag_lab.run_tag_lab(engine, file_id, entry["id"])
+    tagging_settings.update_settings(engine, {"image_resolution": 128})
+
+    build_calls = []
+    original_build = tag_lab.tagging.build_tagging_images_for_file
+
+    def counting_build(*args, **kwargs):
+        build_calls.append(1)
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(tag_lab.tagging, "build_tagging_images_for_file", counting_build)
+
+    tag_lab.run_tag_lab(engine, file_id, entry["id"])
+    assert len(build_calls) == 1
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_prepare_tag_lab_returns_images_and_prompt_without_calling_provider(engine, source, monkeypatch):
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+    file_id = _scanned_video_id(engine, source)
+
+    def fail_score(*_args, **_kwargs):
+        raise AssertionError("prepare_tag_lab must not call the provider")
+
+    monkeypatch.setattr(registry, "score_tags_with_entry", fail_score)
+
+    result = tag_lab.prepare_tag_lab(engine, file_id)
+    assert result["images"]
+    assert all(img["data_url"].startswith("data:image/jpeg;base64,") for img in result["images"])
+    assert "Beach" in result["prompt"]
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_run_tag_lab_passes_configured_timeout_to_provider(engine, source, monkeypatch):
+    entry = _enable_openrouter(engine)
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+    file_id = _scanned_video_id(engine, source)
+    tagging_settings.update_settings(engine, {"request_timeout_seconds": 5})
+
+    captured = {}
+
+    def fake_score(engine, entry, images, tags, **kwargs):
+        captured.update(kwargs)
+        return [90], UsageInfo(tokens_in=1, tokens_out=1, raw_text="[90]")
+
+    monkeypatch.setattr(registry, "score_tags_with_entry", fake_score)
+
+    tag_lab.run_tag_lab(engine, file_id, entry["id"])
+    assert captured["timeout"] == 5
 
 
 # --- apply_tag_lab_result -----------------------------------------------------

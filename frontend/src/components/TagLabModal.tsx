@@ -1,7 +1,15 @@
 import { Pencil, Play, Plus, Tags, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { FileEntry, ModelPricing, ModelStats, ProviderEntry, Tag, TagLabRunResult } from '../types/api'
+import type {
+  FileEntry,
+  ModelPricing,
+  ModelStats,
+  ProviderEntry,
+  Tag,
+  TagLabPreparedResult,
+  TagLabRunResult,
+} from '../types/api'
 import './ConvertDialog.css'
 import './TagLabModal.css'
 
@@ -37,6 +45,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const [running, setRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
   const [result, setResult] = useState<TagLabRunResult | null>(null)
+  const [preparing, setPreparing] = useState<TagLabPreparedResult | null>(null)
   const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([])
   const [tagVotes, setTagVotes] = useState<Record<string, 1 | -1>>({})
   const [tagInput, setTagInput] = useState('')
@@ -102,10 +111,23 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     setRunning(true)
     setRunError(null)
     setResult(null)
+    setPreparing(null)
     setSelectedTags([])
     setTagVotes({})
     setEditingPrice(false)
     try {
+      // Show the images/prompt as soon as they're ready, without waiting for
+      // the (potentially slow) model call below (user request).
+      try {
+        const prepRes = await fetch(`/api/files/${file.id}/tag-lab/prepare`, { method: 'POST' })
+        if (prepRes.ok) {
+          setPreparing(await prepRes.json())
+        }
+      } catch {
+        // Best-effort -- if this fails, the run request below still shows
+        // the same error handling it always has.
+      }
+
       const res = await fetch(`/api/files/${file.id}/tag-lab/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,6 +148,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
       setRunError(err instanceof Error ? err.message : String(err))
     } finally {
       setRunning(false)
+      setPreparing(null)
     }
   }
 
@@ -313,6 +336,27 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
         {running && <p className="convert-dialog__hint">{t('tagLab.running')}</p>}
         {runError && <p className="convert-dialog__hint convert-dialog__hint--error">{runError}</p>}
 
+        {preparing && !result && (
+          <div className="convert-dialog__results">
+            <p className="convert-dialog__hint">{t('tagLab.imagesTitle')}</p>
+            <div className="tag-lab__images">
+              {preparing.images.map((image, index) => (
+                <img
+                  key={index}
+                  src={image.data_url}
+                  alt=""
+                  className="tag-lab__image"
+                  onClick={() => setZoomedImage(image.data_url)}
+                />
+              ))}
+            </div>
+            <details className="tag-lab__details">
+              <summary>{t('tagLab.promptTitle')}</summary>
+              <pre className="tag-lab__pre">{preparing.prompt}</pre>
+            </details>
+          </div>
+        )}
+
         {result && (
           <div className="convert-dialog__results">
             <p className="convert-dialog__hint">{t('tagLab.imagesTitle')}</p>
@@ -404,6 +448,11 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
             <details className="tag-lab__details">
               <summary>{t('tagLab.rawResponseTitle')}</summary>
               <pre className="tag-lab__pre">{result.raw_response ?? ''}</pre>
+            </details>
+
+            <details className="tag-lab__details">
+              <summary>{t('tagLab.rawJsonTitle')}</summary>
+              <pre className="tag-lab__pre">{JSON.stringify(result.raw_full_response ?? {}, null, 2)}</pre>
             </details>
 
             <h3 className="tag-lab__section-title">{t('tagLab.suggestedTagsTitle')}</h3>

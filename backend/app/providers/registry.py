@@ -77,7 +77,8 @@ def _resolve_entry_api_key(entry: dict) -> str:
 
 
 def score_tags_with_entry(
-    engine, entry: dict, images: list[bytes], tags: list[str], *, job_id: str | None = None
+    engine, entry: dict, images: list[bytes], tags: list[str], *, job_id: str | None = None,
+    timeout: float | None = None,
 ) -> tuple[list[int], UsageInfo]:
     client = _CLIENTS.get(entry["provider_type"])
     if client is None:
@@ -87,7 +88,7 @@ def score_tags_with_entry(
 
     api_key = _resolve_entry_api_key(entry)
     try:
-        scores, usage = client(images, tags, entry["vision_model"], api_key)
+        scores, usage = client(images, tags, entry["vision_model"], api_key, timeout=timeout)
     except ProviderError as exc:
         provider_usage.log_usage(
             engine,

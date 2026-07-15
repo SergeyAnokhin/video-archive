@@ -24,7 +24,9 @@ DEFAULT_MODEL = "fal-ai/moondream2/visual-query"
 TIMEOUT_SECONDS = 60
 
 
-def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> tuple[list[int], UsageInfo]:
+def score_tags(
+    images: list[bytes], tags: list[str], model: str | None, api_key: str, *, timeout: float | None = None
+) -> tuple[list[int], UsageInfo]:
     if not images:
         raise ProviderError("No images to send.")
     prompt = build_prompt(tags)
@@ -36,7 +38,7 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
             url,
             headers={"Authorization": f"Key {api_key}", "Content-Type": "application/json"},
             json={"prompt": prompt, "image_url": image_data_uri},
-            timeout=TIMEOUT_SECONDS,
+            timeout=timeout or TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         data = response.json()
@@ -49,4 +51,4 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
     # whole response body serialized back to text, since there's no single
     # message/content field to isolate.
     raw_text = json.dumps(data)
-    return parse_scores(raw_text, len(tags)), UsageInfo(raw_text=raw_text)
+    return parse_scores(raw_text, len(tags)), UsageInfo(raw_text=raw_text, raw_full_response=data)

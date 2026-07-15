@@ -32,6 +32,7 @@ class TaggingSettingsRequest(BaseModel):
     combine_into_collage: bool = service.DEFAULT_COMBINE_INTO_COLLAGE
     top_tag_count: int = service.DEFAULT_TOP_TAG_COUNT
     image_resolution: int = service.DEFAULT_IMAGE_RESOLUTION
+    request_timeout_seconds: int = service.DEFAULT_REQUEST_TIMEOUT_SECONDS
 
 
 class TaggingPreviewRequest(BaseModel):

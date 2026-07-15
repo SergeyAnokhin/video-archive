@@ -66,7 +66,9 @@ def _usage_from_metadata(usage_metadata: dict | None) -> UsageInfo:
     )
 
 
-def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> tuple[list[int], UsageInfo]:
+def score_tags(
+    images: list[bytes], tags: list[str], model: str | None, api_key: str, *, timeout: float | None = None
+) -> tuple[list[int], UsageInfo]:
     prompt = build_prompt(tags)
     parts = [{"text": prompt}]
     for image_bytes in images:
@@ -78,7 +80,7 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
             url,
             params={"key": api_key},
             json={"contents": [{"parts": parts}]},
-            timeout=TIMEOUT_SECONDS,
+            timeout=timeout or TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         data = response.json()
@@ -90,6 +92,7 @@ def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key:
 
     usage_info = _usage_from_metadata(data.get("usageMetadata"))
     usage_info.raw_text = text_reply
+    usage_info.raw_full_response = data
     return parse_scores(text_reply, len(tags)), usage_info
 
 

@@ -435,10 +435,10 @@ def test_per_file_fallback_tries_next_entry_after_first_fails(engine, source, mo
         tagging, "build_tagging_images", lambda video_path, count, combine, resolution=None: [FAKE_IMAGE]
     )
 
-    def fake_score(images, tags, model, api_key):
+    def fake_score(images, tags, model, api_key, **_kwargs):
         raise ProviderError("openrouter is down")
 
-    def fake_score_gemini(images, tags, model, api_key):
+    def fake_score_gemini(images, tags, model, api_key, **_kwargs):
         return [10, 90], UsageInfo()
 
     # `registry._CLIENTS` captured `openrouter.score_tags`/`gemini.score_tags`
