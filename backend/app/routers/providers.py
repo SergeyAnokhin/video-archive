@@ -20,8 +20,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from app import provider_entries as service
-from app import provider_usage, secrets_store
+from app import model_pricing, provider_entries as service
+from app import provider_usage, secrets_store, tag_lab_feedback
 from app.config import APP_VERSION
 from app.db import get_engine
 from app.providers import registry
@@ -71,6 +71,13 @@ class ModelListRequest(BaseModel):
     api_key: str
 
 
+class ModelPricingUpsertRequest(BaseModel):
+    provider_type: str
+    model_name: str
+    input_per_million: float
+    output_per_million: float
+
+
 def _not_found_error(entry_id: str) -> HTTPException:
     return HTTPException(
         status_code=404,
@@ -93,6 +100,46 @@ def get_provider_usage():
     used across the app, with token counts and an estimated cost where the
     provider exposes usage metadata), for the Settings usage panel."""
     return {"usage": provider_usage.get_usage_summary(get_engine())}
+
+
+@router.get("/settings/model-pricing")
+def get_model_pricing():
+    """Editable, sourced $/1M-token pricing per (provider_type, model_name)
+    (user request -- Tag Lab's cost estimate should be correctable, not just
+    a hardcoded guess), for the Settings pricing table and Tag Lab's inline
+    price display."""
+    return {"prices": model_pricing.list_prices(get_engine())}
+
+
+@router.put("/settings/model-pricing")
+def upsert_model_pricing(body: ModelPricingUpsertRequest):
+    return model_pricing.upsert_price(
+        get_engine(), body.provider_type, body.model_name,
+        body.input_per_million, body.output_per_million, "manual",
+    )
+
+
+@router.post("/settings/model-pricing/refresh-openrouter")
+def refresh_model_pricing_from_openrouter():
+    """Fetches live pricing from OpenRouter's public `/models` endpoint for
+    every OpenRouter model currently configured on a provider entry, and
+    upserts matches. Returns which model strings were/weren't found so the
+    Settings UI can report it."""
+    try:
+        return model_pricing.refresh_openrouter_prices(get_engine())
+    except registry.ProviderError as exc:
+        raise HTTPException(
+            status_code=400, detail={"error": {"code": "pricing_refresh_failed", "message": str(exc)}}
+        )
+
+
+@router.get("/settings/model-ratings")
+def get_model_ratings():
+    """Per-model like/dislike accuracy rating and apply-behavior KPI (user
+    request -- know at a glance which model is worth picking), aggregated
+    the same way pricing is (`provider_type`, `model_name`), for Tag Lab's
+    model picker."""
+    return {"ratings": tag_lab_feedback.get_all_model_stats(get_engine())}
 
 
 @router.post("/settings/provider-entries")

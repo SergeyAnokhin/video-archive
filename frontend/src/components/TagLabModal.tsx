@@ -1,7 +1,7 @@
-import { Play, Plus, Tags, X } from 'lucide-react'
+import { Pencil, Play, Plus, Tags, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { FileEntry, ProviderEntry, Tag, TagLabRunResult } from '../types/api'
+import type { FileEntry, ModelPricing, ModelStats, ProviderEntry, Tag, TagLabRunResult } from '../types/api'
 import './ConvertDialog.css'
 import './TagLabModal.css'
 
@@ -22,20 +22,30 @@ function normalizeName(name: string): string {
   return name.trim().toLowerCase()
 }
 
+function statsKey(providerType: string, modelName: string | null): string {
+  return `${providerType}:${modelName ?? ''}`
+}
+
 export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const { t } = useTranslation()
   const [tagOptions, setTagOptions] = useState<Tag[]>([])
   const [entries, setEntries] = useState<ProviderEntry[]>([])
   const [entriesLoaded, setEntriesLoaded] = useState(false)
   const [entryId, setEntryId] = useState('')
+  const [prices, setPrices] = useState<ModelPricing[]>([])
+  const [ratings, setRatings] = useState<ModelStats[]>([])
   const [running, setRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
   const [result, setResult] = useState<TagLabRunResult | null>(null)
   const [selectedTags, setSelectedTags] = useState<SelectedTag[]>([])
+  const [tagVotes, setTagVotes] = useState<Record<string, 1 | -1>>({})
   const [tagInput, setTagInput] = useState('')
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [zoomedImage, setZoomedImage] = useState<string | null>(null)
+  const [editingPrice, setEditingPrice] = useState(false)
+  const [priceDraft, setPriceDraft] = useState({ input: '', output: '' })
+  const [savingPrice, setSavingPrice] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -65,11 +75,36 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
       .then((data: { tags: Tag[] } | null) => setTagOptions(data?.tags ?? []))
   }, [])
 
+  async function refreshPrices() {
+    const res = await fetch('/api/settings/model-pricing')
+    if (res.ok) {
+      const json: { prices: ModelPricing[] } = await res.json()
+      setPrices(json.prices)
+    }
+  }
+
+  useEffect(() => {
+    void refreshPrices()
+    fetch('/api/settings/model-ratings')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ratings: ModelStats[] } | null) => setRatings(json?.ratings ?? []))
+  }, [])
+
+  const selectedEntry = entries.find((entry) => entry.id === entryId) ?? null
+  const selectedStats = selectedEntry
+    ? ratings.find((row) => statsKey(row.provider_type, row.model_name) === statsKey(selectedEntry.provider_type, selectedEntry.vision_model))
+    : undefined
+  const currentPrice = result
+    ? prices.find((row) => row.provider_type === result.provider_type && row.model_name === result.model_name)
+    : undefined
+
   async function handleRun() {
     setRunning(true)
     setRunError(null)
     setResult(null)
     setSelectedTags([])
+    setTagVotes({})
+    setEditingPrice(false)
     try {
       const res = await fetch(`/api/files/${file.id}/tag-lab/run`, {
         method: 'POST',
@@ -113,6 +148,72 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     setTagInput('')
   }
 
+  async function handleVote(tag: SelectedTag, vote: 1 | -1) {
+    if (!result || !tag.tag_id) {
+      return
+    }
+    const nextVote: 1 | -1 | null = tagVotes[tag.tag_id] === vote ? null : vote
+    try {
+      const res = await fetch(`/api/tag-lab/runs/${result.run_id}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_id: tag.tag_id, display_name: tag.display_name, vote: nextVote }),
+      })
+      if (!res.ok) {
+        return
+      }
+      setTagVotes((current) => {
+        const next = { ...current }
+        if (nextVote === null) {
+          delete next[tag.tag_id as string]
+        } else {
+          next[tag.tag_id as string] = nextVote
+        }
+        return next
+      })
+    } catch {
+      // Best-effort -- a failed vote just leaves the button unchanged.
+    }
+  }
+
+  function startEditPrice() {
+    setPriceDraft({
+      input: currentPrice?.input_per_million?.toString() ?? '',
+      output: currentPrice?.output_per_million?.toString() ?? '',
+    })
+    setEditingPrice(true)
+  }
+
+  async function handleSavePrice() {
+    if (!result) {
+      return
+    }
+    const input = Number.parseFloat(priceDraft.input)
+    const output = Number.parseFloat(priceDraft.output)
+    if (Number.isNaN(input) || Number.isNaN(output)) {
+      return
+    }
+    setSavingPrice(true)
+    try {
+      const res = await fetch('/api/settings/model-pricing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider_type: result.provider_type,
+          model_name: result.model_name,
+          input_per_million: input,
+          output_per_million: output,
+        }),
+      })
+      if (res.ok) {
+        await refreshPrices()
+        setEditingPrice(false)
+      }
+    } finally {
+      setSavingPrice(false)
+    }
+  }
+
   async function handleApply() {
     if (!result) {
       return
@@ -126,6 +227,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
         body: JSON.stringify({
           provider_type: result.provider_type,
           model_name: result.model_name,
+          run_id: result.run_id,
           tags: selectedTags.map((tag) =>
             tag.source === 'model' ? { tag_id: tag.tag_id, score: tag.score } : { display_name: tag.display_name },
           ),
@@ -175,6 +277,27 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
         {entriesLoaded && entries.length === 0 && (
           <p className="convert-dialog__hint convert-dialog__hint--warning">{t('tagLab.modelEmptyHint')}</p>
         )}
+        {selectedEntry && (
+          <p className="tag-lab__model-stats">
+            <span title={t('tagLab.statsLikeRatioTooltip')}>
+              👍{' '}
+              {selectedStats && selectedStats.likes + selectedStats.dislikes > 0
+                ? t('tagLab.statsLikeRatioValue', {
+                    percent: Math.round((selectedStats.likes / (selectedStats.likes + selectedStats.dislikes)) * 100),
+                  })
+                : t('tagLab.statsNoData')}
+            </span>
+            <span title={t('tagLab.statsUnchangedTooltip')}>
+              ✅ {selectedStats?.applied_unchanged_count ?? 0}
+            </span>
+            <span title={t('tagLab.statsChangedTooltip')}>
+              ✏️ {selectedStats?.applied_changed_count ?? 0}
+            </span>
+            <span title={t('tagLab.statsNotAppliedTooltip')}>
+              🚫 {selectedStats?.not_applied_count ?? 0}
+            </span>
+          </p>
+        )}
 
         <div className="convert-dialog__actions">
           <button
@@ -220,6 +343,64 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
                 : t('tagLab.costUnavailable')}
             </p>
 
+            <p className="tag-lab__price">
+              {!editingPrice ? (
+                <>
+                  {currentPrice?.input_per_million != null && currentPrice.output_per_million != null
+                    ? t('tagLab.pricePerMillion', {
+                        input: currentPrice.input_per_million,
+                        output: currentPrice.output_per_million,
+                      })
+                    : t('tagLab.priceUnavailable')}
+                  {currentPrice && (
+                    <span className="tag-lab__price-source">
+                      {' '}
+                      ({t(`tagLab.priceSource.${currentPrice.source}`)})
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="tag-lab__price-edit"
+                    onClick={startEditPrice}
+                    aria-label={t('tagLab.editPrice')}
+                    title={t('tagLab.editPrice')}
+                  >
+                    <Pencil size={12} />
+                  </button>
+                </>
+              ) : (
+                <span className="tag-lab__price-form">
+                  <input
+                    type="number"
+                    step="any"
+                    className="tag-lab__price-input"
+                    placeholder={t('tagLab.priceInputPlaceholder')}
+                    value={priceDraft.input}
+                    onChange={(event) => setPriceDraft((current) => ({ ...current, input: event.target.value }))}
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    className="tag-lab__price-input"
+                    placeholder={t('tagLab.priceOutputPlaceholder')}
+                    value={priceDraft.output}
+                    onChange={(event) => setPriceDraft((current) => ({ ...current, output: event.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    className="tag-lab__price-save"
+                    onClick={() => void handleSavePrice()}
+                    disabled={savingPrice}
+                  >
+                    {t('tagLab.priceSave')}
+                  </button>
+                  <button type="button" className="tag-lab__price-cancel" onClick={() => setEditingPrice(false)}>
+                    {t('convertDialog.cancel')}
+                  </button>
+                </span>
+              )}
+            </p>
+
             <details className="tag-lab__details">
               <summary>{t('tagLab.rawResponseTitle')}</summary>
               <pre className="tag-lab__pre">{result.raw_response ?? ''}</pre>
@@ -233,6 +414,28 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
                   <li key={tag.display_name} className="file-info-panel__tags-row">
                     <span className="file-info-panel__tags-name">{tag.display_name}</span>
                     <span className="file-info-panel__tags-score">{tag.score}%</span>
+                    {tag.source === 'model' && tag.tag_id && (
+                      <span className="tag-lab__vote">
+                        <button
+                          type="button"
+                          className={`tag-lab__vote-btn${tagVotes[tag.tag_id] === 1 ? ' tag-lab__vote-btn--active-like' : ''}`}
+                          aria-label={t('tagLab.like')}
+                          title={t('tagLab.like')}
+                          onClick={() => void handleVote(tag, 1)}
+                        >
+                          <ThumbsUp size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          className={`tag-lab__vote-btn${tagVotes[tag.tag_id] === -1 ? ' tag-lab__vote-btn--active-dislike' : ''}`}
+                          aria-label={t('tagLab.dislike')}
+                          title={t('tagLab.dislike')}
+                          onClick={() => void handleVote(tag, -1)}
+                        >
+                          <ThumbsDown size={12} />
+                        </button>
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="file-info-panel__tags-remove"

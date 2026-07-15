@@ -590,6 +590,68 @@ MIGRATIONS: dict[int, list[str]] = {
     27: [
         "ALTER TABLE tag_catalog ADD COLUMN is_user_defined INTEGER NOT NULL DEFAULT 0",
     ],
+    # Post-V1 (user request -- editable, sourced per-model $/1M-token pricing
+    # for Tag Lab's cost estimate). Replaces the hand-maintained Python dict
+    # `provider_usage._COST_PER_MILLION_TOKENS_USD` with a DB-backed table
+    # keyed the same way `provider_usage_log` already is
+    # (`provider_type`, `model_name`) -- shared across every provider entry
+    # that points at the same model, editable from Settings, and refreshable
+    # from OpenRouter's public pricing API for that provider type. `source`
+    # distinguishes a manually-entered/curated price (`'manual'`) from one
+    # fetched live (`'openrouter_api'`). See `app/model_pricing.py`.
+    28: [
+        """
+        CREATE TABLE IF NOT EXISTS model_pricing (
+            provider_type TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            input_per_million REAL,
+            output_per_million REAL,
+            source TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (provider_type, model_name)
+        )
+        """,
+    ],
+    # Post-V1 (user request -- per-model rating: like/dislike on each
+    # suggested tag right in Tag Lab's result list, plus a separate KPI on
+    # how often a run's suggestion was applied unchanged/edited/never
+    # applied). `tag_lab_runs` snapshots what a run suggested so later
+    # feedback/apply events can be compared against it without re-deriving
+    # from `file_tags` (which may have since changed again). `not_applied` is
+    # deliberately not a stored column -- it's `tag_lab_runs` rows with no
+    # matching `tag_lab_applies` row, so an abandoned session (closed tab,
+    # no explicit event) is still counted correctly. See
+    # `app/tag_lab_feedback.py`.
+    29: [
+        """
+        CREATE TABLE IF NOT EXISTS tag_lab_runs (
+            id TEXT PRIMARY KEY,
+            provider_type TEXT NOT NULL,
+            model_name TEXT,
+            file_id TEXT NOT NULL,
+            suggested_tags_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_tag_lab_runs_provider_model ON tag_lab_runs (provider_type, model_name)",
+        """
+        CREATE TABLE IF NOT EXISTS tag_lab_tag_feedback (
+            run_id TEXT NOT NULL REFERENCES tag_lab_runs(id),
+            tag_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            vote INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, tag_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS tag_lab_applies (
+            run_id TEXT PRIMARY KEY REFERENCES tag_lab_runs(id),
+            unchanged INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -680,6 +742,11 @@ def init_db() -> int:
             from app.performance_settings import seed_default_settings as seed_default_performance_settings
 
             seed_default_performance_settings(conn)
+
+        if current_version < 28 <= SCHEMA_VERSION:
+            from app.model_pricing import seed_default_prices
+
+            seed_default_prices(conn)
 
     return SCHEMA_VERSION
 

@@ -15,12 +15,13 @@ convention) rather than folded into `routers/tag_lab.py` directly.
 from __future__ import annotations
 
 import base64
+import uuid
 from io import BytesIO
 
 from PIL import Image
 from sqlalchemy import text
 
-from app import provider_entries, provider_usage, tagging, tagging_settings
+from app import provider_entries, provider_usage, tag_lab_feedback, tagging, tagging_settings
 from app import tags as tags_service
 from app.providers import registry
 from app.providers.base import ProviderError, build_prompt
@@ -105,13 +106,20 @@ def run_tag_lab(engine, file_id: str, provider_entry_id: str) -> dict:
         data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")
         images_out.append({"data_url": data_url, "width": width, "height": height})
 
+    run_id = str(uuid.uuid4())
+    suggested_tags = [tag for tag in tags_out if tag["score"] > 0]
+    tag_lab_feedback.record_run(engine, run_id, entry["provider_type"], entry["vision_model"], file_id, suggested_tags)
+
     return {
+        "run_id": run_id,
         "images": images_out,
         "prompt": prompt,
         "raw_response": usage.raw_text,
         "tokens_in": usage.tokens_in,
         "tokens_out": usage.tokens_out,
-        "estimated_cost_usd": provider_usage.estimate_cost_usd(entry["vision_model"], usage.tokens_in, usage.tokens_out),
+        "estimated_cost_usd": provider_usage.estimate_cost_usd(
+            engine, entry["provider_type"], entry["vision_model"], usage.tokens_in, usage.tokens_out
+        ),
         "provider_type": entry["provider_type"],
         "model_name": entry["vision_model"],
         "tags": tags_out,
@@ -119,7 +127,7 @@ def run_tag_lab(engine, file_id: str, provider_entry_id: str) -> dict:
 
 
 def apply_tag_lab_result(
-    engine, file_id: str, tags: list[dict], provider_type: str, model_name: str | None
+    engine, file_id: str, tags: list[dict], provider_type: str, model_name: str | None, run_id: str | None = None
 ) -> None:
     """`tags`: each item is either `{"tag_id": str, "score": int}` (a tag
     Tag Lab's model run suggested, kept in the review list) or
@@ -127,7 +135,10 @@ def apply_tag_lab_result(
     sourced entries are recorded under `provider_type`/`model_name` with
     their real score; user-typed ones use the same `provider_name='manual',
     score=100` convention `tags.assign_file_tag()` already uses for a
-    hand-picked tag."""
+    hand-picked tag. `run_id`, when given (the run this apply follows),
+    records the apply-behavior KPI (unchanged/edited) against that run's
+    suggested-tag snapshot -- omitted for an apply with no prior Tag Lab
+    run to compare against."""
     with engine.connect() as conn:
         exists = conn.execute(text("SELECT 1 FROM files WHERE id = :id"), {"id": file_id}).fetchone()
     if exists is None:
@@ -145,3 +156,6 @@ def apply_tag_lab_result(
             resolved.append({"id": tag["id"], "score": 100, "provider_name": "manual", "model_name": None})
 
     tags_service.replace_scored_tags(engine, file_id, resolved)
+
+    if run_id:
+        tag_lab_feedback.record_apply(engine, run_id, [entry["id"] for entry in resolved])

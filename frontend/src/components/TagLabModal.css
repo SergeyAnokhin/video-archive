@@ -73,3 +73,105 @@
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
+
+.tag-lab__model-stats {
+  display: flex;
+  gap: var(--space-3);
+  margin: var(--space-1) 0 var(--space-2);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.tag-lab__model-stats span {
+  cursor: default;
+}
+
+.tag-lab__price {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.tag-lab__price-source {
+  color: var(--color-text-muted);
+}
+
+.tag-lab__price-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.tag-lab__price-edit:hover {
+  color: var(--color-text);
+}
+
+.tag-lab__price-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.tag-lab__price-input {
+  width: 80px;
+  padding: 2px var(--space-1);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.tag-lab__price-save,
+.tag-lab__price-cancel {
+  padding: 2px var(--space-2);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tag-lab__vote {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tag-lab__vote-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.tag-lab__vote-btn:hover {
+  color: var(--color-text);
+}
+
+.tag-lab__vote-btn--active-like {
+  color: var(--color-success);
+}
+
+.tag-lab__vote-btn--active-dislike {
+  color: var(--color-danger);
+}

@@ -14,7 +14,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app import provider_entries, tag_lab
+from app import provider_entries, tag_lab, tag_lab_feedback
 from app import tags as tags_service
 from app.providers import registry
 from app.providers.base import ProviderError, UsageInfo
@@ -64,13 +64,17 @@ def stub_score_tags_with_entry(monkeypatch):
 
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
 def test_run_tag_lab_returns_images_prompt_response_and_ranked_tags(engine, source, stub_score_tags_with_entry):
-    entry = _enable_openrouter(engine, vision_model="gemini-2.5-flash")
+    # provider_type='gemini' so the model matches app/model_pricing.py's seeded
+    # ("gemini", "gemini-2.5-flash") row -- pricing is keyed by (provider_type,
+    # model_name), not model_name alone.
+    entry = _enable_openrouter(engine, provider_type="gemini", vision_model="gemini-2.5-flash")
     tags_service.create_tag(engine, {"display_name": "Beach"})
     tags_service.create_tag(engine, {"display_name": "Snow"})
     file_id = _scanned_video_id(engine, source)
 
     result = tag_lab.run_tag_lab(engine, file_id, entry["id"])
 
+    assert result["run_id"]
     assert result["images"]
     assert all(img["data_url"].startswith("data:image/jpeg;base64,") for img in result["images"])
     assert "Beach" in result["prompt"] and "Snow" in result["prompt"]
@@ -78,7 +82,7 @@ def test_run_tag_lab_returns_images_prompt_response_and_ranked_tags(engine, sour
     assert result["tokens_in"] == 100
     assert result["tokens_out"] == 20
     assert result["estimated_cost_usd"] is not None  # gemini-2.5-flash is in the known-cost table
-    assert result["provider_type"] == "openrouter"
+    assert result["provider_type"] == "gemini"
     assert result["model_name"] == "gemini-2.5-flash"
     assert [t["display_name"] for t in result["tags"]] == ["Beach", "Snow"]
     assert [t["score"] for t in result["tags"]] == [90, 80]
@@ -244,6 +248,29 @@ def test_apply_tag_lab_result_drops_stale_tag_id(engine, source):
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT tag_id FROM file_tags WHERE file_id = :fid"), {"fid": file_id}).all()
     assert [row.tag_id for row in rows] == [valid["id"]]
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg/ffprobe not on PATH")
+def test_apply_tag_lab_result_with_run_id_records_apply_kpi(engine, source, stub_score_tags_with_entry):
+    entry = _enable_openrouter(engine, vision_model="gemini-2.5-flash")
+    tags_service.create_tag(engine, {"display_name": "Beach"})
+    tags_service.create_tag(engine, {"display_name": "Snow"})
+    file_id = _scanned_video_id(engine, source)
+
+    result = tag_lab.run_tag_lab(engine, file_id, entry["id"])
+    suggested_ids = [t["tag_id"] for t in result["tags"] if t["score"] > 0]
+
+    tag_lab.apply_tag_lab_result(
+        engine, file_id,
+        [{"tag_id": tag_id, "score": 90} for tag_id in suggested_ids],
+        provider_type=result["provider_type"], model_name=result["model_name"], run_id=result["run_id"],
+    )
+
+    stats = tag_lab_feedback.get_model_stats(engine, result["provider_type"], result["model_name"])
+    assert stats["runs_total"] == 1
+    assert stats["applied_count"] == 1
+    assert stats["applied_unchanged_count"] == 1
+    assert stats["applied_changed_count"] == 0
 
 
 def test_apply_tag_lab_result_missing_file_raises(engine):

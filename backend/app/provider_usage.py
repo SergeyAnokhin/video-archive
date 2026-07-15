@@ -8,10 +8,12 @@ Token counts are only as good as what the provider's response exposes:
 Gemini/Mistral/OpenRouter return usage metadata the provider clients parse
 (see `app/providers/{gemini,mistral,openrouter}.py`), FAL does not (no
 fixed response schema -- see `app/providers/fal.py`), so its rows always
-have `tokens_in`/`tokens_out` `NULL`. Cost is then estimated from a
-hand-maintained $/token rate table below -- treat it as a rough estimate
-that can drift as vendors reprice, not a billing-accurate figure -- and is
-`NULL` for any model string not in the table (including FAL's, always).
+have `tokens_in`/`tokens_out` `NULL`. Cost is then estimated from the
+editable, sourced per-model rate table in `app/model_pricing.py` -- treat
+it as a rough estimate that can drift as vendors reprice, not a
+billing-accurate figure -- and is `NULL` for any (provider_type,
+model_name) pair with no price on file (including FAL's, always, since it
+has no live pricing source and isn't seeded).
 """
 
 from __future__ import annotations
@@ -21,29 +23,19 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-# (input, output) USD per 1,000,000 tokens, for models this app's "Load
-# models" flow is likely to surface. Missing/unrecognized model -> no cost
-# estimate, tokens are still logged and shown.
-_COST_PER_MILLION_TOKENS_USD: dict[str, tuple[float, float]] = {
-    "gemini-2.5-flash": (0.30, 2.50),
-    "gemini-2.5-flash-lite": (0.10, 0.40),
-    "gemini-2.0-flash": (0.10, 0.40),
-    "gemini-2.0-flash-lite": (0.075, 0.30),
-    "pixtral-12b-2409": (0.15, 0.15),
-    "mistral-large-latest": (2.00, 6.00),
-    "mistral-small-latest": (0.20, 0.60),
-    "pixtral-large-latest": (2.00, 6.00),
-}
+from app import model_pricing
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def estimate_cost_usd(model_name: str | None, tokens_in: int | None, tokens_out: int | None) -> float | None:
-    if not model_name or tokens_in is None or tokens_out is None:
+def estimate_cost_usd(
+    engine, provider_type: str | None, model_name: str | None, tokens_in: int | None, tokens_out: int | None
+) -> float | None:
+    if not provider_type or not model_name or tokens_in is None or tokens_out is None:
         return None
-    rates = _COST_PER_MILLION_TOKENS_USD.get(model_name)
+    rates = model_pricing.get_price(engine, provider_type, model_name)
     if rates is None:
         return None
     input_rate, output_rate = rates
@@ -67,7 +59,7 @@ def log_usage(
     (the fallback/batch dispatch in `app/providers/registry.py`) log this
     around a call that may itself be failing, so a logging bug must not mask
     or replace the real provider error."""
-    cost = estimate_cost_usd(model_name, tokens_in, tokens_out)
+    cost = estimate_cost_usd(engine, provider_type, model_name, tokens_in, tokens_out)
     with engine.begin() as conn:
         conn.execute(
             text(

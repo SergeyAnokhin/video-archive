@@ -1,7 +1,7 @@
-import { Download, GripVertical, Pencil, Plus, Save, Settings, Trash2, Upload, X } from 'lucide-react'
+import { Download, GripVertical, Pencil, Plus, RefreshCw, Save, Settings, Trash2, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ProviderEntry, ProviderType, ProviderUsageSummary } from '../types/api'
+import type { ModelPricing, ProviderEntry, ProviderType, ProviderUsageSummary } from '../types/api'
 
 const PROVIDER_TYPES: ProviderType[] = ['openrouter', 'gemini', 'mistral', 'fal']
 const MODEL_LISTING_SUPPORTED: ProviderType[] = ['openrouter', 'gemini', 'mistral']
@@ -275,8 +275,128 @@ export function ProviderSettingsSection() {
         <p className="settings-modal__hint">{t('providerSettings.exportWarning')}</p>
       )}
     </section>
+    <ModelPricingSection />
     <ProviderUsageSection />
     </>
+  )
+}
+
+function ModelPricingSection() {
+  const { t } = useTranslation()
+  const [prices, setPrices] = useState<ModelPricing[]>([])
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshResult, setRefreshResult] = useState<{ updated: string[]; not_found: string[] } | null>(null)
+
+  async function refresh() {
+    const res = await fetch('/api/settings/model-pricing')
+    if (res.ok) {
+      const json: { prices: ModelPricing[] } = await res.json()
+      setPrices(json.prices)
+    }
+  }
+
+  useEffect(() => {
+    void refresh()
+  }, [])
+
+  async function handleSavePrice(row: ModelPricing, changes: { input_per_million?: number; output_per_million?: number }) {
+    const body = {
+      provider_type: row.provider_type,
+      model_name: row.model_name,
+      input_per_million: row.input_per_million ?? 0,
+      output_per_million: row.output_per_million ?? 0,
+      ...changes,
+    }
+    const res = await fetch('/api/settings/model-pricing', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (res.ok) await refresh()
+  }
+
+  async function handleRefreshOpenRouter() {
+    setRefreshing(true)
+    setRefreshResult(null)
+    try {
+      const res = await fetch('/api/settings/model-pricing/refresh-openrouter', { method: 'POST' })
+      const json = await res.json().catch(() => null)
+      if (res.ok && json) {
+        setRefreshResult(json)
+        await refresh()
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  return (
+    <section className="settings-modal__section">
+      <h3 className="settings-modal__section-title">{t('modelPricing.title')}</h3>
+      <p className="settings-modal__hint">{t('modelPricing.hint')}</p>
+      <div className="settings-modal__actions">
+        <button type="button" className="settings-modal__option" onClick={() => void handleRefreshOpenRouter()} disabled={refreshing}>
+          <RefreshCw size={14} /> {refreshing ? t('modelPricing.refreshing') : t('modelPricing.refreshOpenRouter')}
+        </button>
+      </div>
+      {refreshResult && (
+        <p className="settings-modal__hint">
+          {t('modelPricing.refreshResult', { updated: refreshResult.updated.length, notFound: refreshResult.not_found.length })}
+        </p>
+      )}
+      {prices.length === 0 ? (
+        <p className="settings-modal__hint">{t('modelPricing.empty')}</p>
+      ) : (
+        <div className="provider-usage-table__wrap">
+          <table className="provider-usage-table">
+            <thead>
+              <tr>
+                <th>{t('modelPricing.colModel')}</th>
+                <th>{t('modelPricing.colInput')}</th>
+                <th>{t('modelPricing.colOutput')}</th>
+                <th>{t('modelPricing.colSource')}</th>
+                <th>{t('modelPricing.colUpdatedAt')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prices.map((row) => (
+                <tr key={`${row.provider_type}-${row.model_name}`}>
+                  <td>
+                    {t(`providers.${row.provider_type}`)} / {row.model_name}
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      step="any"
+                      className="settings-modal__input"
+                      defaultValue={row.input_per_million ?? ''}
+                      onBlur={(event) => {
+                        const value = Number.parseFloat(event.target.value)
+                        if (!Number.isNaN(value)) void handleSavePrice(row, { input_per_million: value })
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      step="any"
+                      className="settings-modal__input"
+                      defaultValue={row.output_per_million ?? ''}
+                      onBlur={(event) => {
+                        const value = Number.parseFloat(event.target.value)
+                        if (!Number.isNaN(value)) void handleSavePrice(row, { output_per_million: value })
+                      }}
+                    />
+                  </td>
+                  <td>{t(`modelPricing.source.${row.source}`)}</td>
+                  <td>{new Date(row.updated_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
 

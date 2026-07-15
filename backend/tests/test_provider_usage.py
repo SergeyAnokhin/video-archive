@@ -11,18 +11,19 @@ from app.providers import registry
 from app.providers.base import ProviderError, UsageInfo
 
 
-def test_estimate_cost_usd_known_model():
-    cost = provider_usage.estimate_cost_usd("gemini-2.5-flash", tokens_in=1_000_000, tokens_out=1_000_000)
+def test_estimate_cost_usd_known_model(engine):
+    # Seeded by app/model_pricing.py's seed_default_prices() at migration 28.
+    cost = provider_usage.estimate_cost_usd(engine, "gemini", "gemini-2.5-flash", tokens_in=1_000_000, tokens_out=1_000_000)
     assert cost == 0.30 + 2.50
 
 
-def test_estimate_cost_usd_unknown_model_returns_none():
-    assert provider_usage.estimate_cost_usd("some-custom-model", tokens_in=100, tokens_out=10) is None
+def test_estimate_cost_usd_unknown_model_returns_none(engine):
+    assert provider_usage.estimate_cost_usd(engine, "gemini", "some-custom-model", tokens_in=100, tokens_out=10) is None
 
 
-def test_estimate_cost_usd_missing_tokens_returns_none():
-    assert provider_usage.estimate_cost_usd("gemini-2.5-flash", tokens_in=None, tokens_out=10) is None
-    assert provider_usage.estimate_cost_usd(None, tokens_in=100, tokens_out=10) is None
+def test_estimate_cost_usd_missing_tokens_returns_none(engine):
+    assert provider_usage.estimate_cost_usd(engine, "gemini", "gemini-2.5-flash", tokens_in=None, tokens_out=10) is None
+    assert provider_usage.estimate_cost_usd(engine, "gemini", None, tokens_in=100, tokens_out=10) is None
 
 
 def test_log_usage_and_get_usage_summary_aggregates_across_calls(engine):

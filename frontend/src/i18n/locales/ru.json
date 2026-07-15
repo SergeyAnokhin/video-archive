@@ -314,7 +314,25 @@
     "suggestedTagsTitle": "Предложенные теги",
     "noTagsSuggested": "Модель не нашла подходящих тегов.",
     "apply": "Применить",
-    "applying": "Применение…"
+    "applying": "Применение…",
+    "statsLikeRatioTooltip": "Доля лайкнутых тегов среди всех оценённых (лайк/дизлайк) тегов этой модели (теги без оценки не учитываются).",
+    "statsLikeRatioValue": "{{percent}}%",
+    "statsNoData": "пока нет данных",
+    "statsUnchangedTooltip": "Запуски, применённые ровно так, как предложила модель, без добавления или удаления тегов.",
+    "statsChangedTooltip": "Запуски, применённые с правками — теги были добавлены и/или убраны перед применением.",
+    "statsNotAppliedTooltip": "Запуски, предложение которых так и не было применено.",
+    "like": "Хороший тег",
+    "dislike": "Плохой тег",
+    "pricePerMillion": "${{input}} вход / ${{output}} выход за 1М токенов",
+    "priceUnavailable": "Цена не задана",
+    "priceSource": {
+      "manual": "вручную",
+      "openrouter_api": "из OpenRouter"
+    },
+    "editPrice": "Изменить цену",
+    "priceInputPlaceholder": "$ вход / 1М",
+    "priceOutputPlaceholder": "$ выход / 1М",
+    "priceSave": "Сохранить"
   },
   "previewSettings": {
     "title": "Превью",
@@ -489,6 +507,23 @@
     "colLastUsed": "Последнее использование",
     "callsValue": "{{success}} из {{total}}",
     "notAvailable": "—"
+  },
+  "modelPricing": {
+    "title": "Цены моделей",
+    "hint": "Редактируемая цена $/1М токенов по каждой модели, используется для оценки стоимости в Tag Lab. Цены Gemini/Mistral задаются вручную — цены OpenRouter можно обновить из его актуального прайс-API.",
+    "refreshOpenRouter": "Обновить из OpenRouter",
+    "refreshing": "Обновление…",
+    "refreshResult": "Обновлено моделей: {{updated}}, не найдено в каталоге OpenRouter: {{notFound}}.",
+    "empty": "Данных о ценах пока нет.",
+    "colModel": "Модель",
+    "colInput": "$/1М вход",
+    "colOutput": "$/1М выход",
+    "colSource": "Источник",
+    "colUpdatedAt": "Обновлено",
+    "source": {
+      "manual": "вручную",
+      "openrouter_api": "OpenRouter"
+    }
   },
   "jobs": {
     "title": "Задания",

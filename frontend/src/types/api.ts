@@ -319,6 +319,7 @@ export interface TagLabImage {
 }
 
 export interface TagLabRunResult {
+  run_id: string
   images: TagLabImage[]
   prompt: string
   raw_response: string | null
@@ -328,6 +329,29 @@ export interface TagLabRunResult {
   provider_type: ProviderType
   model_name: string | null
   tags: TagLabRankedTag[]
+}
+
+export type ModelPricingSource = 'manual' | 'openrouter_api'
+
+export interface ModelPricing {
+  provider_type: ProviderType
+  model_name: string
+  input_per_million: number | null
+  output_per_million: number | null
+  source: ModelPricingSource
+  updated_at: string
+}
+
+export interface ModelStats {
+  provider_type: ProviderType
+  model_name: string | null
+  likes: number
+  dislikes: number
+  runs_total: number
+  applied_count: number
+  not_applied_count: number
+  applied_unchanged_count: number
+  applied_changed_count: number
 }
 
 export interface BatchSubmission {

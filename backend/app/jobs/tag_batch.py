@@ -254,7 +254,9 @@ def _poll_and_apply(
     # spent without having to go look in the Settings usage-stats table).
     usage = poll_result.usage
     if usage and (usage.tokens_in is not None or usage.tokens_out is not None):
-        cost = provider_usage.estimate_cost_usd(submission["model_name"], usage.tokens_in, usage.tokens_out)
+        cost = provider_usage.estimate_cost_usd(
+            engine, submission["provider_type"], submission["model_name"], usage.tokens_in, usage.tokens_out
+        )
         cost_part = f", ~${cost:.4f} estimated" if cost is not None else ""
         service.log_event(
             engine, job["id"], None, "info", "batch_usage",

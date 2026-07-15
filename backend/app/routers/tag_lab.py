@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app import tag_lab as service
+from app import tag_lab_feedback
 from app.db import get_engine
 
 router = APIRouter()
@@ -55,6 +56,7 @@ class TagLabApplyTag(BaseModel):
 class TagLabApplyRequest(BaseModel):
     provider_type: str
     model_name: str | None = None
+    run_id: str | None = None
     tags: list[TagLabApplyTag]
 
 
@@ -62,7 +64,8 @@ class TagLabApplyRequest(BaseModel):
 def apply_tag_lab(file_id: str, body: TagLabApplyRequest):
     try:
         service.apply_tag_lab_result(
-            get_engine(), file_id, [tag.model_dump() for tag in body.tags], body.provider_type, body.model_name
+            get_engine(), file_id, [tag.model_dump() for tag in body.tags],
+            body.provider_type, body.model_name, body.run_id,
         )
     except service.TagLabError as err:
         raise _tag_lab_http_error(err)
@@ -94,3 +97,19 @@ def apply_tag_lab(file_id: str, body: TagLabApplyRequest):
             for row in rows
         ]
     }
+
+
+class TagLabFeedbackRequest(BaseModel):
+    tag_id: str
+    display_name: str
+    vote: int | None = None
+
+
+@router.post("/tag-lab/runs/{run_id}/feedback")
+def set_tag_lab_feedback(run_id: str, body: TagLabFeedbackRequest):
+    """Like/dislike on one tag from a Tag Lab run's result list (user
+    request -- rate the model's raw suggestion, independent of what ends
+    up applied). `vote`: 1 (like), -1 (dislike), or omitted/null to clear
+    back to neutral."""
+    tag_lab_feedback.set_tag_vote(get_engine(), run_id, body.tag_id, body.display_name, body.vote)
+    return {"ok": True}

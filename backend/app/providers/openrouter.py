@@ -42,6 +42,40 @@ def list_models(api_key: str) -> list[str]:
     return sorted(names)
 
 
+def fetch_pricing(model_ids: list[str]) -> dict[str, tuple[float, float]]:
+    """Looks up live per-token pricing for `model_ids` from the same
+    `/models` endpoint `list_models()` uses (user request -- an editable but
+    sourced cost estimate; OpenRouter is the only one of this app's
+    provider types that exposes pricing this way). Returns USD per 1M
+    tokens (OpenRouter reports USD per token); models not found in the
+    response are simply absent from the result, not an error, so a caller
+    resolving several ids at once can still use the ones that did resolve.
+    """
+    try:
+        response = httpx.get(MODELS_URL, timeout=TIMEOUT_SECONDS)
+        response.raise_for_status()
+        models = response.json()["data"]
+    except httpx.HTTPError as exc:
+        raise ProviderError(f"OpenRouter model list request failed: {exc}") from exc
+    except (KeyError, TypeError) as exc:
+        raise ProviderError(f"Unexpected OpenRouter model list response shape: {exc}") from exc
+
+    wanted = set(model_ids)
+    prices: dict[str, tuple[float, float]] = {}
+    for model in models:
+        model_id = model.get("id")
+        if model_id not in wanted:
+            continue
+        pricing = model.get("pricing") or {}
+        try:
+            prompt_rate = float(pricing["prompt"])
+            completion_rate = float(pricing["completion"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        prices[model_id] = (round(prompt_rate * 1_000_000, 6), round(completion_rate * 1_000_000, 6))
+    return prices
+
+
 def score_tags(images: list[bytes], tags: list[str], model: str | None, api_key: str) -> tuple[list[int], UsageInfo]:
     prompt = build_prompt(tags)
     content = [{"type": "text", "text": prompt}]

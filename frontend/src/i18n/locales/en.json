@@ -314,7 +314,25 @@
     "suggestedTagsTitle": "Suggested tags",
     "noTagsSuggested": "The model didn't match any tags.",
     "apply": "Apply",
-    "applying": "Applying…"
+    "applying": "Applying…",
+    "statsLikeRatioTooltip": "Share of liked tags among all liked/disliked tags from this model's runs (ignores tags with no vote).",
+    "statsLikeRatioValue": "{{percent}}%",
+    "statsNoData": "no data yet",
+    "statsUnchangedTooltip": "Runs applied exactly as suggested, with no tags added or removed.",
+    "statsChangedTooltip": "Runs applied with edits — tags added and/or removed before applying.",
+    "statsNotAppliedTooltip": "Runs whose suggestion was never applied.",
+    "like": "Good tag",
+    "dislike": "Bad tag",
+    "pricePerMillion": "${{input}} in / ${{output}} out per 1M tokens",
+    "priceUnavailable": "Price not set",
+    "priceSource": {
+      "manual": "manual",
+      "openrouter_api": "from OpenRouter"
+    },
+    "editPrice": "Edit price",
+    "priceInputPlaceholder": "$ in / 1M",
+    "priceOutputPlaceholder": "$ out / 1M",
+    "priceSave": "Save"
   },
   "previewSettings": {
     "title": "Preview",
@@ -489,6 +507,23 @@
     "colLastUsed": "Last used",
     "callsValue": "{{success}} of {{total}}",
     "notAvailable": "—"
+  },
+  "modelPricing": {
+    "title": "Model pricing",
+    "hint": "Editable $/1M-token pricing per model, used for Tag Lab's cost estimate. Gemini/Mistral prices are manual — OpenRouter's are refreshable from its live pricing API.",
+    "refreshOpenRouter": "Refresh from OpenRouter",
+    "refreshing": "Refreshing…",
+    "refreshResult": "Updated {{updated}} model(s), {{notFound}} not found in OpenRouter's catalog.",
+    "empty": "No pricing data yet.",
+    "colModel": "Model",
+    "colInput": "$/1M in",
+    "colOutput": "$/1M out",
+    "colSource": "Source",
+    "colUpdatedAt": "Updated",
+    "source": {
+      "manual": "manual",
+      "openrouter_api": "OpenRouter"
+    }
   },
   "jobs": {
     "title": "Jobs",
