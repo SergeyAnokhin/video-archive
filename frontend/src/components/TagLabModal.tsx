@@ -47,7 +47,7 @@ function statsKey(providerType: string, modelName: string | null): string {
 const DEFAULT_REQUEST_TIMEOUT_SECONDS = 30
 const CLIENT_TIMEOUT_MARGIN_SECONDS = 15
 
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+export async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
