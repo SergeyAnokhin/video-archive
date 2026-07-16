@@ -339,6 +339,20 @@ def test_fal_routes_non_fal_model_ids_through_the_openrouter_gateway(monkeypatch
     assert "image_url" not in captured["json"]
 
 
+def test_fal_parses_pretty_printed_output_string_with_real_newlines(monkeypatch):
+    # Regression: observed live from fal-ai/moondream2/visual-query -- the
+    # "output" string can be pretty-printed with real newlines. The old
+    # implementation regexed a json.dumps() of the whole body, where those
+    # newlines were escaped to literal backslash-n, making the sliced-out
+    # array invalid JSON. `_find_score_text()` reads the parsed string value
+    # directly instead.
+    monkeypatch.setattr(
+        httpx, "post", lambda *a, **k: FakeResponse({"output": "[\n  33,\n  67\n]"})
+    )
+    scores, _usage = fal.score_tags([FAKE_IMAGE], TAGS, None, "fal-test")
+    assert scores == [33, 67]
+
+
 def test_fal_searches_whole_response_body_for_score_array(monkeypatch):
     # FAL has no fixed response schema; parse_scores is handed json.dumps(data)
     # of the *entire* body, so the array can be nested anywhere.

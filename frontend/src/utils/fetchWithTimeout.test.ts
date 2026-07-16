@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchWithTimeout } from './TagLabModal'
+import { fetchWithTimeout } from './fetchWithTimeout'
 
 // `fetchWithTimeout()` is the defensive client-side ceiling on Tag Lab's
 // /prepare and /run calls (user request -- the modal must never wait on

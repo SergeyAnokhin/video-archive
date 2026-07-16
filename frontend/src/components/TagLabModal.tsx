@@ -1,6 +1,7 @@
 import { Pencil, Play, Plus, Tags, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { fetchWithTimeout } from '../utils/fetchWithTimeout'
 import { getRecentTags, recordRecentTag } from '../utils/recentTags'
 import { buildTagSuggestions } from '../utils/tagSuggestions'
 import type {
@@ -49,21 +50,11 @@ function statsKey(providerType: string, modelName: string | null): string {
 const DEFAULT_REQUEST_TIMEOUT_SECONDS = 30
 const CLIENT_TIMEOUT_MARGIN_SECONDS = 15
 
-export async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(url, { ...options, signal: controller.signal })
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 // Shared by the success and error paths -- the model's raw reply must stay
 // inspectable even when interpreting it failed (user request: written first,
 // collapsed, so a parse failure is still self-diagnosable from what actually
 // came back).
-function RawResponseDetails({ rawResponse, rawFullResponse }: { rawResponse?: string; rawFullResponse?: unknown }) {
+function RawResponseDetails({ rawResponse, rawFullResponse }: { rawResponse?: string | null; rawFullResponse?: unknown }) {
   const { t } = useTranslation()
   return (
     <>
