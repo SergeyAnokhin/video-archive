@@ -6,14 +6,17 @@ raises, so failed attempts are counted too, not just successful ones.
 
 Token counts are only as good as what the provider's response exposes:
 Gemini/Mistral/OpenRouter return usage metadata the provider clients parse
-(see `app/providers/{gemini,mistral,openrouter}.py`), FAL does not (no
-fixed response schema -- see `app/providers/fal.py`), so its rows always
-have `tokens_in`/`tokens_out` `NULL`. Cost is then estimated from the
-editable, sourced per-model rate table in `app/model_pricing.py` -- treat
-it as a rough estimate that can drift as vendors reprice, not a
-billing-accurate figure -- and is `NULL` for any (provider_type,
-model_name) pair with no price on file (including FAL's, always, since it
-has no live pricing source and isn't seeded).
+(see `app/providers/{gemini,mistral,openrouter}.py`), FAL does too but only
+when routed through its `openrouter/router/vision` gateway (see
+`app/providers/fal.py`) -- FAL's other, direct app endpoints report no usage
+at all, so those rows still have `tokens_in`/`tokens_out` `NULL`. Cost is
+normally estimated from the editable, sourced per-model rate table in
+`app/model_pricing.py` -- treat it as a rough estimate that can drift as
+vendors reprice, not a billing-accurate figure -- and is `NULL` for any
+(provider_type, model_name) pair with no price on file. FAL is the one
+exception: its router gateway reports an already-computed `cost` itself
+(`UsageInfo.cost_usd`), which `log_usage()`'s `cost_usd_override` records
+directly instead of estimating from the (nonexistent) FAL price table.
 """
 
 from __future__ import annotations
@@ -52,14 +55,23 @@ def log_usage(
     item_count: int = 1,
     tokens_in: int | None = None,
     tokens_out: int | None = None,
+    cost_usd_override: float | None = None,
     error_message: str | None = None,
     job_id: str | None = None,
 ) -> None:
     """Records one provider call. Never raises on its own account -- callers
     (the fallback/batch dispatch in `app/providers/registry.py`) log this
     around a call that may itself be failing, so a logging bug must not mask
-    or replace the real provider error."""
-    cost = estimate_cost_usd(engine, provider_type, model_name, tokens_in, tokens_out)
+    or replace the real provider error.
+
+    `cost_usd_override` is a cost the provider already computed itself
+    (`UsageInfo.cost_usd`, currently only FAL's router gateway) -- when
+    given, it's recorded as-is instead of estimating one from the
+    `model_pricing` rate table."""
+    cost = (
+        cost_usd_override if cost_usd_override is not None
+        else estimate_cost_usd(engine, provider_type, model_name, tokens_in, tokens_out)
+    )
     with engine.begin() as conn:
         conn.execute(
             text(

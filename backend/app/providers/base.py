@@ -43,6 +43,13 @@ class UsageInfo:
 
     tokens_in: int | None = None
     tokens_out: int | None = None
+    cost_usd: float | None = None
+    """The provider's own reported cost for this call, when it exposes one
+    directly (FAL's `openrouter/router/vision` gateway returns a computed
+    `usage.cost` alongside token counts). `None` for providers that only
+    report token counts, which get costed via the editable rate table in
+    `app/model_pricing.py` instead -- see `tag_lab.py`'s
+    `estimated_cost_usd` field, which prefers this value when present."""
     raw_text: str | None = None
     """The provider's raw reply text before parsing (user request -- Tag Lab
     shows the exact model output). For OpenRouter/Gemini/Mistral this is the

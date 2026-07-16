@@ -339,6 +339,27 @@ def test_fal_routes_non_fal_model_ids_through_the_openrouter_gateway(monkeypatch
     assert "image_url" not in captured["json"]
 
 
+def test_fal_router_gateway_parses_usage_and_cost(monkeypatch):
+    # user request: the openrouter/router/vision gateway (used for routed
+    # model ids like Gemini via FAL) reports a top-level `usage` dict with
+    # token counts and an already-computed `cost` -- read it the same way
+    # `app/providers/openrouter.py` does, instead of leaving it unused.
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: FakeResponse({
+            "output": "[33, 67]",
+            "usage": {"prompt_tokens": 469, "completion_tokens": 97, "total_tokens": 566, "cost": 0.0003832},
+        }),
+    )
+
+    scores, usage = fal.score_tags([FAKE_IMAGE], TAGS, "google/gemini-2.5-flash", "fal-test")
+
+    assert scores == [33, 67]
+    assert usage.tokens_in == 469
+    assert usage.tokens_out == 97
+    assert usage.cost_usd == 0.0003832
+
+
 def test_fal_parses_pretty_printed_output_string_with_real_newlines(monkeypatch):
     # Regression: observed live from fal-ai/moondream2/visual-query -- the
     # "output" string can be pretty-printed with real newlines. The old

@@ -108,6 +108,7 @@ def score_tags_with_entry(
         success=True,
         tokens_in=usage.tokens_in,
         tokens_out=usage.tokens_out,
+        cost_usd_override=usage.cost_usd,
         job_id=job_id,
     )
     return scores, usage
@@ -187,6 +188,7 @@ def poll_batch_with_entry(
         item_count=len(ordered_keys),
         tokens_in=usage.tokens_in,
         tokens_out=usage.tokens_out,
+        cost_usd_override=usage.cost_usd,
         job_id=job_id,
     )
     return result

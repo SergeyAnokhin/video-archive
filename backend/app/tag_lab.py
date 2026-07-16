@@ -217,7 +217,7 @@ def run_tag_lab(engine, file_id: str, provider_entry_id: str) -> dict:
         "raw_full_response": usage.raw_full_response,
         "tokens_in": usage.tokens_in,
         "tokens_out": usage.tokens_out,
-        "estimated_cost_usd": provider_usage.estimate_cost_usd(
+        "estimated_cost_usd": usage.cost_usd if usage.cost_usd is not None else provider_usage.estimate_cost_usd(
             engine, entry["provider_type"], entry["vision_model"], usage.tokens_in, usage.tokens_out
         ),
         "provider_type": entry["provider_type"],

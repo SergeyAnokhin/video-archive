@@ -52,8 +52,24 @@ def test_log_usage_and_get_usage_summary_aggregates_across_calls(engine):
 
     fal_row = by_model[("fal", "fal-ai/moondream2/visual-query")]
     assert fal_row["call_count"] == 1
-    assert fal_row["total_tokens_in"] is None  # FAL never reports usage
+    assert fal_row["total_tokens_in"] is None  # this direct FAL app endpoint reports no usage
     assert fal_row["total_estimated_cost_usd"] is None
+
+
+def test_log_usage_cost_usd_override_recorded_as_is(engine):
+    # user request: FAL's openrouter/router/vision gateway reports a cost it
+    # already computed itself (UsageInfo.cost_usd) -- log_usage() should
+    # record that directly rather than trying (and failing) to estimate one
+    # from model_pricing, which has no FAL rows.
+    provider_usage.log_usage(
+        engine, provider_type="fal", model_name="google/gemini-2.5-flash", request_kind="sync",
+        success=True, tokens_in=469, tokens_out=97, cost_usd_override=0.0003832,
+    )
+
+    summary = provider_usage.get_usage_summary(engine)
+    fal_row = next(row for row in summary if row["model_name"] == "google/gemini-2.5-flash")
+    assert fal_row["total_tokens_in"] == 469
+    assert fal_row["total_estimated_cost_usd"] == 0.0003832
 
 
 def test_score_tags_with_entry_logs_success(engine, monkeypatch):

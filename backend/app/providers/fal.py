@@ -98,16 +98,28 @@ def score_tags(
     except httpx.HTTPError as exc:
         raise ProviderError(f"FAL request failed: {exc}") from exc
 
-    # FAL has no fixed response schema (see module docstring), so there's no
-    # reliable field to pull token usage from -- usage stats log the call
-    # itself but never tokens/cost for this provider. The "raw text" (shown
-    # to the user in Tag Lab) is still the whole response body serialized
-    # back to text, but *parsing* the score array searches the actual parsed
-    # structure instead (`_find_score_text()`) rather than regexing that same
-    # dumped text, to avoid the escaped-newline bug documented above.
+    # FAL has no fixed response schema (see module docstring), so most direct
+    # app endpoints (moondream2 and similar) report no usage at all. The
+    # `openrouter/router/vision` gateway is the exception -- like OpenRouter
+    # itself, it returns a top-level `usage` dict (`prompt_tokens`,
+    # `completion_tokens`, and a `cost` it has already computed itself), so
+    # that one is read the same way `app/providers/openrouter.py` does. The
+    # "raw text" (shown to the user in Tag Lab) is still the whole response
+    # body serialized back to text, but *parsing* the score array searches
+    # the actual parsed structure instead (`_find_score_text()`) rather than
+    # regexing that same dumped text, to avoid the escaped-newline bug
+    # documented above.
     raw_text = json.dumps(data)
     score_text = _find_score_text(data) or raw_text
+    usage = data.get("usage") if isinstance(data, dict) else None
+    usage = usage or {}
     return (
         parse_scores(score_text, len(tags), raw_full_response=data),
-        UsageInfo(raw_text=raw_text, raw_full_response=data),
+        UsageInfo(
+            tokens_in=usage.get("prompt_tokens"),
+            tokens_out=usage.get("completion_tokens"),
+            cost_usd=usage.get("cost"),
+            raw_text=raw_text,
+            raw_full_response=data,
+        ),
     )
