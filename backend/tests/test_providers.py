@@ -59,6 +59,7 @@ def test_openrouter_builds_expected_request_and_parses_scores(monkeypatch):
     assert captured["url"] == openrouter.API_URL
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     assert captured["json"]["model"] == "openai/gpt-4o-mini"
+    assert captured["json"]["usage"] == {"include": True}
     content = captured["json"]["messages"][0]["content"]
     assert content[0]["type"] == "text"
     assert content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
@@ -74,6 +75,25 @@ def test_openrouter_parses_usage_when_present(monkeypatch):
     _scores, usage = openrouter.score_tags([FAKE_IMAGE], TAGS, None, "sk-test")
     assert usage.tokens_in == 150
     assert usage.tokens_out == 6
+
+
+def test_openrouter_parses_cost_when_present(monkeypatch):
+    # user request: OpenRouter's `usage.cost` (populated when the request
+    # asks for `usage: {"include": true}`, see the request-building test
+    # above) is the actual amount billed for this call -- read it into
+    # `UsageInfo.cost_usd` the same way `fal.py`'s router-gateway path does,
+    # instead of always falling back to the editable rate-table estimate.
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: FakeResponse(
+            {
+                "choices": [{"message": {"content": "[80, 20]"}}],
+                "usage": {"prompt_tokens": 1248, "completion_tokens": 67, "cost": 0.0001516},
+            }
+        ),
+    )
+    _scores, usage = openrouter.score_tags([FAKE_IMAGE], TAGS, None, "sk-test")
+    assert usage.cost_usd == 0.0001516
 
 
 def test_openrouter_uses_default_model_when_none_given(monkeypatch):

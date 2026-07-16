@@ -36,9 +36,12 @@ export function ProviderSettingsSection() {
   const [entries, setEntries] = useState<ProviderEntry[]>([])
   const [editing, setEditing] = useState<FormValue>(null)
   const [advancedId, setAdvancedId] = useState<string | null>(null)
+  const [advancedModelOptions, setAdvancedModelOptions] = useState<string[]>([])
+  const [loadingAdvancedModels, setLoadingAdvancedModels] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [prices, setPrices] = useState<ModelPricing[]>([])
   const importInputRef = useRef<HTMLInputElement>(null)
 
   async function refresh() {
@@ -49,9 +52,30 @@ export function ProviderSettingsSection() {
     }
   }
 
+  async function refreshPrices() {
+    const res = await fetch('/api/settings/model-pricing')
+    if (res.ok) {
+      const json: { prices: ModelPricing[] } = await res.json()
+      setPrices(json.prices)
+    }
+  }
+
   useEffect(() => {
     void refresh()
+    void refreshPrices()
   }, [])
+
+  async function handleLoadAdvancedModels(entry: ProviderEntry) {
+    if (!MODEL_LISTING_SUPPORTED.includes(entry.provider_type)) return
+    setLoadingAdvancedModels(true)
+    try {
+      const res = await fetch(`/api/settings/provider-entries/${entry.id}/models`, { method: 'POST' })
+      const json = await res.json().catch(() => null)
+      if (res.ok) setAdvancedModelOptions(json?.models ?? [])
+    } finally {
+      setLoadingAdvancedModels(false)
+    }
+  }
 
   async function handleUpdate(entry: ProviderEntry, changes: Partial<ProviderEntry> & { api_key?: string }) {
     setBusyId(entry.id)
@@ -214,7 +238,10 @@ export function ProviderSettingsSection() {
               <button
                 type="button"
                 className="settings-modal__option settings-modal__option--icon"
-                onClick={() => setAdvancedId(advancedId === entry.id ? null : entry.id)}
+                onClick={() => {
+                  setAdvancedModelOptions([])
+                  setAdvancedId(advancedId === entry.id ? null : entry.id)
+                }}
                 aria-pressed={advancedId === entry.id}
                 aria-label={t('providerSettings.settings')}
                 title={t('providerSettings.settings')}
@@ -236,14 +263,33 @@ export function ProviderSettingsSection() {
 
           {advancedId === entry.id && (
             <div className="provider-entry-row__advanced">
-              <label className="settings-modal__label">
-                {t('providerSettings.textModel')}
-                <input
-                  className="settings-modal__input"
-                  defaultValue={entry.text_model ?? ''}
-                  onBlur={(event) => void handleUpdate(entry, { text_model: event.target.value || null })}
-                />
-              </label>
+              <div className="settings-modal__row">
+                <label className="settings-modal__label">
+                  {t('providerSettings.textModel')}
+                  <input
+                    className="settings-modal__input"
+                    list={`provider-entry-text-model-options-${entry.id}`}
+                    defaultValue={entry.text_model ?? ''}
+                    onBlur={(event) => void handleUpdate(entry, { text_model: event.target.value || null })}
+                  />
+                  <datalist id={`provider-entry-text-model-options-${entry.id}`}>
+                    {advancedModelOptions.map((model) => (
+                      <option key={model} value={model} />
+                    ))}
+                  </datalist>
+                </label>
+                {MODEL_LISTING_SUPPORTED.includes(entry.provider_type) && (
+                  <button
+                    type="button"
+                    className="settings-modal__option"
+                    onClick={() => void handleLoadAdvancedModels(entry)}
+                    disabled={loadingAdvancedModels}
+                  >
+                    <RefreshCw size={14} />
+                    {loadingAdvancedModels ? t('providerSettings.loadingModels') : t('providerSettings.loadModels')}
+                  </button>
+                )}
+              </div>
               {BATCH_SUPPORTED.includes(entry.provider_type) && (
                 <label className="settings-modal__field">
                   <span className="settings-modal__field-label">{t('providerSettings.batchEnabled')}</span>
@@ -254,12 +300,24 @@ export function ProviderSettingsSection() {
                   />
                 </label>
               )}
+              <PriceOverrideFields entry={entry} prices={prices} onSaved={refreshPrices} />
             </div>
+          )}
+
+          {editing !== 'new' && editing?.id === entry.id && (
+            <ProviderEntryForm
+              initial={editing}
+              onCancel={() => setEditing(null)}
+              onSaved={async () => {
+                setEditing(null)
+                await refresh()
+              }}
+            />
           )}
         </div>
       ))}
 
-      {editing === null ? (
+      {editing === null && (
         <div className="settings-modal__actions">
           <button type="button" className="settings-modal__option" onClick={() => setEditing('new')}>
             <Plus size={14} /> {t('providerSettings.addProvider')}
@@ -282,9 +340,10 @@ export function ProviderSettingsSection() {
             <Download size={14} /> {t('providerSettings.export')}
           </button>
         </div>
-      ) : (
+      )}
+      {editing === 'new' && (
         <ProviderEntryForm
-          initial={editing === 'new' ? null : editing}
+          initial={null}
           onCancel={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null)
@@ -296,29 +355,16 @@ export function ProviderSettingsSection() {
         <p className="settings-modal__hint">{t('providerSettings.exportWarning')}</p>
       )}
     </section>
-    <ModelPricingSection />
+    <ModelPricingSection prices={prices} onRefresh={refreshPrices} />
     <ProviderUsageSection />
     </>
   )
 }
 
-function ModelPricingSection() {
+function ModelPricingSection({ prices, onRefresh }: { prices: ModelPricing[]; onRefresh: () => Promise<void> }) {
   const { t } = useTranslation()
-  const [prices, setPrices] = useState<ModelPricing[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState<{ updated: string[]; not_found: string[] } | null>(null)
-
-  async function refresh() {
-    const res = await fetch('/api/settings/model-pricing')
-    if (res.ok) {
-      const json: { prices: ModelPricing[] } = await res.json()
-      setPrices(json.prices)
-    }
-  }
-
-  useEffect(() => {
-    void refresh()
-  }, [])
 
   async function handleSavePrice(row: ModelPricing, changes: { input_per_million?: number; output_per_million?: number }) {
     const body = {
@@ -333,7 +379,7 @@ function ModelPricingSection() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (res.ok) await refresh()
+    if (res.ok) await onRefresh()
   }
 
   async function handleRefreshOpenRouter() {
@@ -344,7 +390,7 @@ function ModelPricingSection() {
       const json = await res.json().catch(() => null)
       if (res.ok && json) {
         setRefreshResult(json)
-        await refresh()
+        await onRefresh()
       }
     } finally {
       setRefreshing(false)
@@ -478,6 +524,97 @@ function ProviderUsageSection() {
         </div>
       )}
     </section>
+  )
+}
+
+// Per-entry price override, right where the model itself is configured
+// (user request -- editing a model's $/1M rate shouldn't require scrolling
+// down to the separate pricing table below, especially for a model that has
+// no row there yet, e.g. a newly released Gemini id the static seed table
+// doesn't know about). Reads/writes the same `model_pricing` table as
+// `ModelPricingSection` (keyed by provider_type + model_name, shared across
+// every entry pointing at that model), scoped to the entry's vision model
+// since that's what Tag Lab/tagging actually calls.
+function PriceOverrideFields({
+  entry,
+  prices,
+  onSaved,
+}: {
+  entry: ProviderEntry
+  prices: ModelPricing[]
+  onSaved: () => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const modelName = entry.vision_model
+  const price = modelName
+    ? prices.find((row) => row.provider_type === entry.provider_type && row.model_name === modelName)
+    : undefined
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave(changes: { input_per_million?: number; output_per_million?: number }) {
+    if (!modelName) return
+    setSaving(true)
+    try {
+      const body = {
+        provider_type: entry.provider_type,
+        model_name: modelName,
+        input_per_million: price?.input_per_million ?? 0,
+        output_per_million: price?.output_per_million ?? 0,
+        ...changes,
+      }
+      const res = await fetch('/api/settings/model-pricing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) await onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!modelName) {
+    return <p className="settings-modal__hint">{t('providerSettings.priceNoModel')}</p>
+  }
+
+  return (
+    <div className="provider-entry-row__price">
+      <span className="settings-modal__field-label">{t('providerSettings.priceLabel', { model: modelName })}</span>
+      <div className="settings-modal__row">
+        <label className="settings-modal__label">
+          {t('providerSettings.priceInput')}
+          <input
+            key={`${modelName}-input`}
+            type="number"
+            step="any"
+            className="settings-modal__input"
+            defaultValue={price?.input_per_million ?? ''}
+            placeholder={t('providerSettings.priceNotSet')}
+            disabled={saving}
+            onBlur={(event) => {
+              const value = Number.parseFloat(event.target.value)
+              if (!Number.isNaN(value)) void handleSave({ input_per_million: value })
+            }}
+          />
+        </label>
+        <label className="settings-modal__label">
+          {t('providerSettings.priceOutput')}
+          <input
+            key={`${modelName}-output`}
+            type="number"
+            step="any"
+            className="settings-modal__input"
+            defaultValue={price?.output_per_million ?? ''}
+            placeholder={t('providerSettings.priceNotSet')}
+            disabled={saving}
+            onBlur={(event) => {
+              const value = Number.parseFloat(event.target.value)
+              if (!Number.isNaN(value)) void handleSave({ output_per_million: value })
+            }}
+          />
+        </label>
+      </div>
+    </div>
   )
 }
 

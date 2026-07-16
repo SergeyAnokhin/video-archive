@@ -93,7 +93,16 @@ def score_tags(
         response = httpx.post(
             API_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model or DEFAULT_MODEL, "messages": [{"role": "user", "content": content}]},
+            json={
+                "model": model or DEFAULT_MODEL,
+                "messages": [{"role": "user", "content": content}],
+                # Asks OpenRouter to report what it actually billed for this
+                # call (`usage.cost`) instead of relying purely on our own
+                # editable rate-table estimate (user request -- OpenRouter
+                # already computes this per-request, same as FAL's router
+                # gateway does, see `app/providers/fal.py`).
+                "usage": {"include": True},
+            },
             timeout=timeout or TIMEOUT_SECONDS,
         )
         response.raise_for_status()
@@ -108,6 +117,7 @@ def score_tags(
     usage_info = UsageInfo(
         tokens_in=usage.get("prompt_tokens"),
         tokens_out=usage.get("completion_tokens"),
+        cost_usd=usage.get("cost"),
         raw_text=text_reply,
         raw_full_response=data,
     )

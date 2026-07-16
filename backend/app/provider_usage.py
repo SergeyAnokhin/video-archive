@@ -13,10 +13,10 @@ at all, so those rows still have `tokens_in`/`tokens_out` `NULL`. Cost is
 normally estimated from the editable, sourced per-model rate table in
 `app/model_pricing.py` -- treat it as a rough estimate that can drift as
 vendors reprice, not a billing-accurate figure -- and is `NULL` for any
-(provider_type, model_name) pair with no price on file. FAL is the one
-exception: its router gateway reports an already-computed `cost` itself
-(`UsageInfo.cost_usd`), which `log_usage()`'s `cost_usd_override` records
-directly instead of estimating from the (nonexistent) FAL price table.
+(provider_type, model_name) pair with no price on file. OpenRouter and FAL's
+router gateway are the exceptions: both report an already-computed `cost`
+themselves (`UsageInfo.cost_usd`), which `log_usage()`'s `cost_usd_override`
+records directly instead of estimating from the rate table.
 """
 
 from __future__ import annotations

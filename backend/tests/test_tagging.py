@@ -201,6 +201,21 @@ def test_list_used_tags_covers_every_pool(engine, source):
     assert used == {"640px", "Rewatch", "Beach"}
 
 
+def test_list_used_tags_includes_unused_user_defined_tags(engine, source):
+    """User report: a user-defined tag just created in Settings didn't show
+    up as a suggestion anywhere until it had already been attached to a
+    file once. `list_used_tags()` now includes the whole user-defined pool
+    unconditionally (LEFT JOIN), unlike AI-vocabulary/ad-hoc tags which still
+    require at least one real usage (see
+    `test_list_used_tags_only_includes_assigned_tags`)."""
+    tags_service.create_tag(
+        engine, {"display_name": "Someday", "is_ai_vocabulary": False, "is_user_defined": True}
+    )  # never assigned to any file
+
+    used = {t["display_name"] for t in tags_service.list_used_tags(engine)}
+    assert "Someday" in used
+
+
 def test_get_or_create_tag_bare_call_joins_no_managed_pool(engine, source):
     """Typing a tag directly onto a file (the bare default, no explicit
     pool flag) must not silently join the AI vocabulary or the user-defined

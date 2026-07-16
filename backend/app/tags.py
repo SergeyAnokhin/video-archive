@@ -115,13 +115,19 @@ def list_used_tags(engine, query: str | None = None, limit: int | None = None) -
     (playback screen's quick tag-add, `FileInfoPanel`, Tag Lab's review step
     -- user request: suggestions while typing must cover every tag type, not
     just the AI vocabulary), ordered by how often each tag is used so the
-    most locally-relevant matches surface first."""
-    clauses = []
+    most locally-relevant matches surface first.
+
+    User-defined tags (`is_user_defined = 1`) are the one exception to "used
+    on a file": they're included even with zero usages (LEFT JOIN, not
+    JOIN), so a tag someone just created in Settings' user-defined pool
+    shows up as a suggestion right away instead of only after it's first
+    been attached to a file somewhere (user report)."""
+    clauses = ["(ft.id IS NOT NULL OR tc.is_user_defined = 1)"]
     params: dict = {}
     if query:
         clauses.append("tc.tag_key LIKE :prefix")
         params["prefix"] = f"{normalize_tag_key(query)}%"
-    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    where_sql = f"WHERE {' AND '.join(clauses)}"
     limit_sql = ""
     if limit is not None:
         limit_sql = "LIMIT :limit"
@@ -133,7 +139,7 @@ def list_used_tags(engine, query: str | None = None, limit: int | None = None) -
                 f"""
                 SELECT tc.*, COUNT(ft.id) AS usage_count
                 FROM tag_catalog tc
-                JOIN file_tags ft ON ft.tag_id = tc.id
+                LEFT JOIN file_tags ft ON ft.tag_id = tc.id
                 {where_sql}
                 GROUP BY tc.id
                 ORDER BY usage_count DESC, tc.display_name COLLATE NOCASE
