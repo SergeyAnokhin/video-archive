@@ -7,6 +7,27 @@ const PROVIDER_TYPES: ProviderType[] = ['openrouter', 'gemini', 'mistral', 'fal'
 const MODEL_LISTING_SUPPORTED: ProviderType[] = ['openrouter', 'gemini', 'mistral']
 // Mirrors the backend's batch-capable provider set (`registry.entry_supports_batch`).
 const BATCH_SUPPORTED: ProviderType[] = ['gemini', 'mistral']
+// Hand-picked, hardcoded model ids for FAL (user request), since FAL has no
+// live model-catalog API to call (see `MODEL_LISTING_SUPPORTED` above and
+// `backend/app/providers/fal.py`'s docstring -- each FAL model endpoint has
+// its own bespoke schema, unlike OpenRouter/Gemini/Mistral). Two groups,
+// both verified directly against fal.ai's/openrouter.ai's own docs:
+// - "fal-ai/..." ids call that FAL app endpoint directly (small, dedicated
+//   vision/VQA models, `{image_url, prompt}` request shape).
+// - everything else routes through FAL's `openrouter/router/vision` gateway
+//   instead (`{image_urls, model, prompt}` shape) -- general-purpose vision
+//   LLMs with real reasoning ability, one per major vendor. `fal.py` picks
+//   the request shape by checking for the "fal-ai/" prefix.
+const FAL_VISION_MODELS = [
+  'fal-ai/moondream2/visual-query',
+  'fal-ai/moondream3-preview/query',
+  'anthropic/claude-sonnet-4.5',
+  'openai/gpt-5',
+  'google/gemini-2.5-flash',
+  'meta-llama/llama-3.2-90b-vision-instruct',
+  'qwen/qwen2.5-vl-72b-instruct',
+  'mistralai/pixtral-12b',
+]
 
 type FormValue = ProviderEntry | 'new' | null
 
@@ -578,7 +599,7 @@ function ProviderEntryForm({ initial, onCancel, onSaved }: ProviderEntryFormProp
             onChange={(event) => setVisionModel(event.target.value)}
           />
           <datalist id="provider-entry-model-options">
-            {modelOptions.map((model) => (
+            {(providerType === 'fal' ? FAL_VISION_MODELS : modelOptions).map((model) => (
               <option key={model} value={model} />
             ))}
           </datalist>
@@ -597,8 +618,11 @@ function ProviderEntryForm({ initial, onCancel, onSaved }: ProviderEntryFormProp
           support model listing, so handleLoadModels()'s own modelError branch for
           this case is unreachable -- show the same explanation as a static hint
           instead (user report: the button looked silently broken for FAL, which
-          has no discoverable model catalog to list -- see providers/fal.py). */}
-      {!MODEL_LISTING_SUPPORTED.includes(providerType) && (
+          has no discoverable model catalog to list -- see providers/fal.py).
+          FAL additionally gets a hand-picked starter list in the datalist above
+          (FAL_VISION_MODELS) instead of just an empty dropdown. */}
+      {providerType === 'fal' && <p className="settings-modal__hint">{t('providerSettings.falModelsHint')}</p>}
+      {!MODEL_LISTING_SUPPORTED.includes(providerType) && providerType !== 'fal' && (
         <p className="settings-modal__hint">{t('providerSettings.modelsNotSupported')}</p>
       )}
       {modelError && <p className="settings-modal__hint settings-modal__hint--error">{modelError}</p>}

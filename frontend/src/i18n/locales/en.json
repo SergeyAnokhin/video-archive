@@ -470,6 +470,7 @@
     "loadingModels": "Loading models…",
     "loadModelsError": "Could not load models: {{error}}",
     "modelsNotSupported": "This provider doesn't support model listing — enter a model name manually.",
+    "falModelsHint": "FAL has no live model list to fetch. Pick from the built-in vision-model suggestions above, or type any other FAL model id manually.",
     "save": "Save",
     "cancel": "Cancel",
     "dragHandle": "Drag to reorder",

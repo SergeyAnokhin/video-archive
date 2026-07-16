@@ -116,8 +116,11 @@ export function FileInfoPanel({
         onNext()
       }
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    // Capture phase for consistency with PlaybackModal/ImageViewerModal
+    // (see the comment there); the target-based guards above work
+    // identically in either phase.
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [hasPrev, hasNext, onPrev, onNext])
 
   const refreshTagOptions = useCallback(async () => {

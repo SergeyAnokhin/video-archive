@@ -316,6 +316,29 @@ def test_fal_builds_expected_request_and_parses_scores(monkeypatch):
     assert "prompt" in captured["json"]
 
 
+def test_fal_routes_non_fal_model_ids_through_the_openrouter_gateway(monkeypatch):
+    # user request: a "vendor/model" id (not a literal "fal-ai/..." app
+    # path) picks a real vision LLM through FAL's openrouter/router/vision
+    # gateway instead of trying (and failing) to call it as a FAL app.
+    captured = {}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        return FakeResponse({"output": "[10, 90]"})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    scores, _usage = fal.score_tags([FAKE_IMAGE], TAGS, "anthropic/claude-sonnet-4.5", "fal-test")
+
+    assert scores == [10, 90]
+    assert captured["url"] == fal.ROUTER_URL
+    assert captured["json"]["model"] == "anthropic/claude-sonnet-4.5"
+    assert len(captured["json"]["image_urls"]) == 1
+    assert captured["json"]["image_urls"][0].startswith("data:image/jpeg;base64,")
+    assert "image_url" not in captured["json"]
+
+
 def test_fal_searches_whole_response_body_for_score_array(monkeypatch):
     # FAL has no fixed response schema; parse_scores is handed json.dumps(data)
     # of the *entire* body, so the array can be nested anywhere.

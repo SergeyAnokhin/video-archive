@@ -35,9 +35,19 @@ export function PlaybackModal({
   const [mode, setMode] = useState<PlaybackMode | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // Which of the two tag-add popovers is open, if any (user report: opening
+  // one while the other was already open left both stacked on screen).
+  const [openTagPicker, setOpenTagPicker] = useState<'quick' | 'user' | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    // Reset before fetching the new file's info (user report: prev/next
+    // looked like it did nothing at all -- see the <video key={file.id}>
+    // comment below for why leaving the previous file's `info` on screen
+    // during this fetch is what actually broke it, not just a loading flash).
+    setInfo(null)
+    setMode(null)
+    setError(null)
     void (async () => {
       try {
         const res = await fetch(`/api/files/${file.id}/playback`)
@@ -70,8 +80,14 @@ export function PlaybackModal({
         onNext()
       }
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    // Capture phase (user report: arrow keys did nothing once the focused
+    // native <video controls> element had already consumed ArrowLeft/Right
+    // itself, for its own seek-by-a-few-seconds shortcut, before the event
+    // reached a bubble-phase listener here) -- this way the app's own
+    // prev/next always sees the key first, regardless of what the video
+    // element does with it afterward.
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [onClose, hasPrev, hasNext, onPrev, onNext])
 
   async function handleCopyPath() {
@@ -99,8 +115,18 @@ export function PlaybackModal({
               <Info size={16} />
             </button>
           )}
-          <QuickTagAdd fileId={file.id} onTagAdded={onTagAdded} />
-          <UserDefinedTagButton fileId={file.id} onTagAdded={onTagAdded} />
+          <QuickTagAdd
+            fileId={file.id}
+            onTagAdded={onTagAdded}
+            open={openTagPicker === 'quick'}
+            onOpenChange={(open) => setOpenTagPicker(open ? 'quick' : null)}
+          />
+          <UserDefinedTagButton
+            fileId={file.id}
+            onTagAdded={onTagAdded}
+            open={openTagPicker === 'user'}
+            onOpenChange={(open) => setOpenTagPicker(open ? 'user' : null)}
+          />
         </div>
       </div>
 
@@ -182,6 +208,18 @@ export function PlaybackModal({
 
       {info && mode === 'stream' && (
         <video
+          // Keyed by file id (user report: prev/next updated every bit of
+          // app state -- the dialog's file, the nav buttons -- but the
+          // actual playing video never changed). A <video><source src=.../>
+          // element does NOT reload just because its <source> child's `src`
+          // attribute changes on a re-render -- the browser only reads
+          // <source> children once, when the element is first attached.
+          // Without a `key` tied to the file, switching files left the
+          // *original* video playing forever under the hood while
+          // everything else silently moved on. The `key` forces React to
+          // unmount/remount a fresh <video> per file, which does load its
+          // <source> normally, same as a first-ever mount.
+          key={file.id}
           className="playback-overlay__video"
           controls
           autoPlay

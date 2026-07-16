@@ -13,6 +13,13 @@ interface UserDefinedTagButtonProps {
   // QuickTagAdd's semi-transparent chrome); 'panel' sits inside an opaque
   // surface (FileInfoPanel).
   variant?: 'overlay' | 'panel'
+  // Controlled open state (user report: opening this while QuickTagAdd was
+  // already open left both popovers stacked on screen at once). Optional --
+  // omitted, this falls back to managing its own open/closed state (e.g.
+  // FileInfoPanel's standalone `variant="panel"` usage, which has no sibling
+  // picker to coordinate with).
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 // Dedicated picker for the user-defined tag pool (user request): distinct
@@ -20,13 +27,30 @@ interface UserDefinedTagButtonProps {
 // add-tag form), which create ordinary ad-hoc tags in neither managed pool.
 // Existing user-defined tags (Settings' own curated list) are offered as
 // one-click picks; typing a new name creates (or promotes) one on the fly.
-export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }: UserDefinedTagButtonProps) {
+export function UserDefinedTagButton({
+  fileId,
+  onTagAdded,
+  variant = 'overlay',
+  open: controlledOpen,
+  onOpenChange,
+}: UserDefinedTagButtonProps) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  function setOpen(next: boolean) {
+    if (controlledOpen === undefined) {
+      setUncontrolledOpen(next)
+    }
+    onOpenChange?.(next)
+  }
   const [value, setValue] = useState('')
   const [options, setOptions] = useState<Tag[]>([])
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Brief "just picked this" pulse on the clicked badge before the popover
+  // closes (user report -- picking a tag gave no feedback that the click
+  // had registered at all, see TagBadge.tsx's `confirmed` prop).
+  const [confirmedId, setConfirmedId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -46,7 +70,11 @@ export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }
     }
   }, [open])
 
-  async function assign(body: { tag_id: string } | { display_name: string }) {
+  // `confirmId` is the clicked badge's tag id (omitted for a free-typed
+  // name, which has no badge to animate) -- shows the pop+checkmark on it
+  // for a beat before the popover actually closes, so picking a tag reads
+  // as "yes, that one" rather than the panel just vanishing.
+  async function assign(body: { tag_id: string } | { display_name: string }, confirmId?: string) {
     if (adding) {
       return
     }
@@ -63,10 +91,15 @@ export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }
       }
       setValue('')
       onTagAdded?.()
-      // Close the popover (user request -- picking a tag previously gave no
-      // feedback at all: the popover stayed open with no visible sign the
-      // click had done anything, even though the tag was in fact assigned).
-      setOpen(false)
+      if (confirmId) {
+        setConfirmedId(confirmId)
+        window.setTimeout(() => {
+          setConfirmedId(null)
+          setOpen(false)
+        }, 350)
+      } else {
+        setOpen(false)
+      }
     } catch {
       setError(t('library.tagsAddError'))
     } finally {
@@ -91,14 +124,12 @@ export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }
   }
 
   function toggleOpen() {
-    setOpen((current) => {
-      const next = !current
-      if (next) {
-        setValue('')
-        setError(null)
-      }
-      return next
-    })
+    const next = !open
+    if (next) {
+      setValue('')
+      setError(null)
+    }
+    setOpen(next)
   }
 
   const toggleClass = variant === 'overlay' ? 'quick-tag-add__toggle' : 'user-defined-tag-button__toggle'
@@ -138,7 +169,8 @@ export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }
                   key={tag.id}
                   displayName={tag.display_name}
                   color={tag.color}
-                  onClick={adding ? undefined : () => void assign({ tag_id: tag.id })}
+                  confirmed={confirmedId === tag.id}
+                  onClick={adding ? undefined : () => void assign({ tag_id: tag.id }, tag.id)}
                 />
               ))}
             </div>

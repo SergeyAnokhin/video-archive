@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getContrastTextColor, hashTagColor } from '../utils/tagColor'
 import './TagBadge.css'
@@ -17,6 +17,11 @@ interface TagBadgeProps {
   onColorChange?: (color: string) => void
   onRemove?: () => void
   removeLabel?: string
+  // Brief "just picked this" pulse + checkmark (user report -- clicking a
+  // suggestion in QuickTagAdd/UserDefinedTagButton gave no sign the click
+  // had registered before the popover closed). Caller clears it a few
+  // hundred ms after a successful add.
+  confirmed?: boolean
 }
 
 export function TagBadge({
@@ -30,6 +35,7 @@ export function TagBadge({
   onColorChange,
   onRemove,
   removeLabel,
+  confirmed,
 }: TagBadgeProps) {
   const { t } = useTranslation()
   const resolvedColor = color || hashTagColor(displayName)
@@ -38,7 +44,7 @@ export function TagBadge({
 
   return (
     <span
-      className={`tag-badge${inactive ? ' tag-badge--inactive' : ''}`}
+      className={`tag-badge${inactive ? ' tag-badge--inactive' : ''}${confirmed ? ' tag-badge--confirmed' : ''}`}
       style={{ background: resolvedColor, color: textColor }}
       title={title}
     >
@@ -62,6 +68,7 @@ export function TagBadge({
       ) : (
         <span className="tag-badge__label tag-badge__label--static">{displayName}</span>
       )}
+      {confirmed && <Check size={12} className="tag-badge__confirm-icon" />}
       {scoreLabel && <span className="tag-badge__score">{scoreLabel}</span>}
       {onRemove && (
         <button

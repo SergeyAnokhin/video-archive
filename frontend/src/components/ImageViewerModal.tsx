@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, ChevronRight, Info, X } from 'lucide-react'
 import type { FileEntry } from '../types/api'
@@ -31,6 +31,9 @@ export function ImageViewerModal({
   onNext,
 }: ImageViewerModalProps) {
   const { t } = useTranslation()
+  // Which of the two tag-add popovers is open, if any (user report: opening
+  // one while the other was already open left both stacked on screen).
+  const [openTagPicker, setOpenTagPicker] = useState<'quick' | 'user' | null>(null)
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -42,8 +45,11 @@ export function ImageViewerModal({
         onNext()
       }
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    // Capture phase, see the identical comment in PlaybackModal.tsx --
+    // ImageViewerModal has no <video> to steal the key, but stays consistent
+    // with it since both are wired the same way from LibraryView.
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [onClose, hasPrev, hasNext, onPrev, onNext])
 
   return (
@@ -62,8 +68,18 @@ export function ImageViewerModal({
               <Info size={16} />
             </button>
           )}
-          <QuickTagAdd fileId={file.id} onTagAdded={onTagAdded} />
-          <UserDefinedTagButton fileId={file.id} onTagAdded={onTagAdded} />
+          <QuickTagAdd
+            fileId={file.id}
+            onTagAdded={onTagAdded}
+            open={openTagPicker === 'quick'}
+            onOpenChange={(open) => setOpenTagPicker(open ? 'quick' : null)}
+          />
+          <UserDefinedTagButton
+            fileId={file.id}
+            onTagAdded={onTagAdded}
+            open={openTagPicker === 'user'}
+            onOpenChange={(open) => setOpenTagPicker(open ? 'user' : null)}
+          />
         </div>
       </div>
 
