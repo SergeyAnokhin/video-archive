@@ -6,275 +6,136 @@ This document defines the main screens, modals, and interaction surfaces for Vid
 
 ## Global UX Rules
 
-- Dark theme by default
+- Dark theme by default; eight presets (see [Design System](./design-system.md))
 - Prioritize browsing and quick actions over advanced tuning controls
 - Move rare or advanced controls into settings, modals, or secondary panels
 - Show incomplete indicators, but hide success-only indicators; running/failed activity is surfaced through the jobs UI, not per-file badges
-- Small, icon-only buttons for global/secondary actions (jobs, settings, theme, language, preview visibility) grouped in the top bar, in the spirit of the reference screenshots in [Design System](./design-system.md)
+- Small, icon-only buttons for global/secondary actions grouped in the top bar: menu (directory tree), Jobs, preview-style toggle (eye), theme cycle, Settings
 - A compact activity indicator appears in the top bar whenever a job is queued or running: hover shows what the job is doing, click opens the jobs modal
-- A compact, non-dominant search field sits at the edge of the toolbar (tag autocomplete + file names); it must not become a central element
-- Two theme presets available (Strict default, Playful optional), switchable from the top bar without changing layout or navigation
-- Two UI languages available (English, Russian), switchable from the top bar without a reload
-- Layout must remain usable on mobile-sized viewports (see [Section 13](#13-responsive-behavior) and [Design System](./design-system.md))
+- The scoped search box sits in the top bar center (`tag:` / `file:` / `path:` prefixes with Russian aliases, or all groups at once)
+- Two UI languages (English, Russian), switchable from Settings without a reload
+- Layout must remain usable on mobile-sized viewports (see [Section 14](#14-responsive-behavior))
 
 ## 1. Main Library Screen
 
-Purpose:
-
-- browse folders
-- browse files
-- inspect recursive status
-- launch common actions
+Purpose: browse folders and files, inspect recursive status, launch common actions.
 
 Main regions:
 
-- directory tree
-- current folder contents
-- toolbar (with compact search field)
-- preview visibility is controlled globally from the top-bar toggle (see [Design System §4.1](./design-system.md#41-preview-visibility-toggle)), not a per-screen control
+- collapsible directory-tree pane (closed by default at every width; overlay drawer on mobile) with a name filter, expand/collapse-all, per-folder status dots and top-tag dots
+- current folder contents as a card grid
+- toolbar: breadcrumb, "Recent folders" quick-jump menu (folders where a video was played or a file was moved — not plain browsing — rendered as clickable path crumbs), create-folder, sort-cycle (name / size / tags), rescan, and convert/preview/tag folder actions (overflow menu on narrow widths)
 
-Directory actions:
+Folder cards: animated `folder-preview.gif` thumbnail, status dots, aggregate size/tag counts, dynamic top-tags row (colored badges), favorite star, delete (empty folders only).
 
-- convert recursively (dialog with profile picker, test-mode checkbox, skip-processed toggle)
-- preview recursively
-- tag recursively
-- rescan recursively
+File cards: animated GIF thumbnail (JPEG fallback) for videos — click to play; the image itself for standalone images — click to view; duration badge; status dots (conversion/preview video-only); variant/original markers with swept-parameter captions; up to 4 colored AI-tag badges; an "i" overlay button opening the file info panel — deliberately the only other direct action on a card.
 
-File actions:
+Live behavior: while a job runs, a file's card refreshes as soon as that file's job item completes (not only at job end), with no loading flash.
 
-- open details
-- open playback
-- convert
-- preview
-- tag
-- compare variants (test-mode sweep)
+## 2. Search Results
 
-Indicators:
+- An unscoped query shows up to three capped groups (tags / files / folders), each with a "search only in this group" shortcut.
+- A scoped query shows one flat infinite-scroll grid.
+- Sorting matches the library view; prev/next navigation in playback/viewer/info panel follows the on-screen result order while a search is active.
 
-- conversion indicator
-- preview indicator
+## 3. File Info Panel
 
-Indicators appear only for incomplete states; their meaning is explained on hover.
+Near-fullscreen per-file panel (evolved from the V1 "video details modal"):
 
-## 2. Video Details Modal
+- left: the static JPEG collage (or the image itself); right: details — status pills, tuning-parameter chips, editable AI-tags section (colored badges, per-tag remove, free-text add with a colored suggestion row: recently-added-manually first, then popular), "detected by" model line, a user-defined-tag picker button, and an ffprobe-backed media-info grid
+- the collage/details split is a draggable divider (pointer + arrow keys), persisted; hidden on mobile where the layout stacks
+- one plain button per action: preview / convert / tune (videos only), tag (opens Tag Lab), similar, move, delete
+- optional prev/next navigation (buttons + arrow keys)
+- favorite-folder quick-move buttons and a recent-folders History popover
 
-Purpose:
+## 4. Playback Overlay and Image Viewer
 
-- inspect one video in detail
-- view preview assets if available
-- launch file-specific jobs
+Playback (videos):
 
-Actions:
+- full-viewport HTML5 player against the backend stream, or — in `direct_link` mode — a copyable local/UNC path plus a raw-stream link
+- mode-switch and close float over the video; Escape/backdrop closes
+- prev/next chevrons + arrow keys (capture-phase, so the player's own shortcuts don't swallow them)
+- bottom quick-actions: open-info (jumps into the file info panel), quick tag-add (floating, suggestion badges with a confirmation pulse), user-defined-tag picker — opening one closes the other
 
-- open playback
-- convert file
-- preview file
-- tag file
-- compare variants
+Image viewer (standalone images): same overlay pattern, navigation, and quick-actions, with an `<img>` instead of playback controls.
 
-Possible content:
+## 5. Tag Lab Modal
 
-- metadata summary
-- preview collage
-- assigned tags with relevance percentages
-- recent job history
+The single-file AI-tagging workbench ([Specification §12.4](./specification.md#124-tag-lab)):
 
-## 3. Jobs Modal
+- provider-entry picker showing per-model quality stats (like ratio, apply KPI) and the selected model's $/1M price before running
+- on run: the images being sent and the prompt render immediately; the model's raw reply text and the full raw provider JSON are inspectable in collapsed sections (also on failures); token/cost usage line with an inline-editable price
+- suggested tags seed an editable list (colored badges): remove any, add via free text + suggestions; model-sourced tags carry like/dislike buttons
+- Apply writes the final list; Cancel discards — nothing is written until Apply
+- both calls run under a client-side timeout ceiling so the modal can never wait forever
 
-Purpose:
+## 6. Jobs Modal
 
-- monitor and control jobs
+- status-grouped **cards** in a responsive grid (evolved from the V1 list)
+- running/paused cards: progress bar, current item, elapsed time, rolling-window ETA; failed-item count highlighted on any card
+- per-card actions: cancel (second cancel force-finishes), pause/resume (pausable types only), restart, remove, view-log (opens the log viewer pre-filtered to the job)
+- clear-all-finished button; finished jobs disappear automatically after 24 hours
+- header button opens the **batch submissions** modal: still-polling provider-side batch-tagging submissions with a per-row "forget locally" action
 
-Opened from the top-bar activity indicator or its icon button.
+## 7. Log Viewer
 
-Sections:
+- streaming updates (SSE) plus backfill, capped buffer
+- filters by job, file, and level, with a clear-filters action; clickable per-file `#N` badges toggle the file filter
+- elapsed `MM:SS` timestamps; copy-all button
+- complements backend console/file logs rather than replacing them
 
-- queued jobs
-- running job (only one at a time; see [Job Model](./job-model.md#concurrency-model))
-- completed jobs
-- failed jobs
+## 8. Settings Modal
 
-Actions:
+One tabbed modal (icon sidebar on desktop, icon strip + full-screen sheet on mobile). Tabs:
 
-- cancel job
-- restart job where supported
-- remove a single job from the list
-- clear all finished jobs with one button
+| Tab | Contents |
+| --- | --- |
+| Source | Connection form (local/SMB, test-connection, reconnect, restore offer) + saved-sources list (activate, preview-cache stats/clear, forget) |
+| Conversion profiles | Profile CRUD, duplicate, mark default |
+| Preview | Collage sub-tab (aspect ratio, construction-set grid editor, preset gallery, save/load slots) + Animated sub-tab (frame count, GIF size/colors, frame/clip mode, transition) |
+| Playback | `stream` / `direct_link` selector |
+| Tagging | AI vocabulary chip editor, user-defined tags section, sampling/collage/resolution/top-N/timeout fields, "preview what the model sees" |
+| Providers | Priority-ordered entry list (reorder, inline edit, advanced per-row panel), model pricing table + OpenRouter refresh, usage table, export/import |
+| Backup | Backup list/create/restore/delete, retention, maintenance triggers (rescan, cleanup, optimize) |
+| Performance | `parallel_workers` |
+| Network | LAN address list with copy buttons and setup instructions |
+| Interface | Language, 8-theme picker, two preview-stylization profile editors with live samples, search limits |
 
-Finished jobs disappear automatically after 24 hours.
+The preview layout editor works as a construction set: paint cells with small/enlarged tile brushes, fill/clear all, built-in preset gallery, quick save/load slots, live black-canvas preview at the configured aspect ratio (tile geometry validated by the backend).
 
-## 4. Log Viewer
+## 9. Variant Comparison ("Tuning") Flow
 
-Purpose:
+Initiated from a file, not the folder toolbar. A test-mode conversion producing several outputs for one video:
 
-- inspect near-real-time backend activity from the UI
+- pick a sweep axis: maximum dimension (preset checkboxes), CRF (min/max/step range), or codec
+- outputs appear next to the original as `<name>.variant-<params>.mp4`, each auto-tagged with its swept parameters and borrowing the original's preview in listings
+- per-result "save as profile" promotes a winner into a conversion profile
 
-Features:
+## 10. Move and Folder Dialogs
 
-- streaming updates
-- filtering by job
-- filtering by file
-- filtering by level
+- **Move dialog**: lazily-expanding folder tree from the source root, "Move here".
+- **Quick-move controls** (playback/info panel): one button per favorite folder (drilling into subfolders via a compact popover) plus a recent-folders History popover.
+- **Create folder dialog**: name input with collision/invalid-name feedback.
 
-The log viewer complements backend console logs rather than replacing them.
+## 11. Directory Action Dialogs
 
-## 5. Preview Settings Screen
+- Convert: profile picker, production/test radio, skip-processed toggle.
+- Preview and Tag: skip-processed toggle only.
+- All directory actions apply recursively.
 
-Purpose:
+## 12. Backend Status Panel
 
-- configure preview generation behavior
-- preview layouts before running full jobs
+Shown in the empty state while no source is connected: health and app info (version, DB, ffmpeg availability).
 
-Controls:
+## 13. Top-Bar Summary
 
-- grid dimensions
-- collage aspect ratio selector (standard, phone-portrait, ultra-wide, or custom — see [Specification §9.2](./specification.md#92-collage-grid-layout))
-- construction-set layout editor: paint cells with two tile brushes (small / enlarged 2×2 or 3×3), quick brush switching
-- built-in preset gallery (varied large/small tile arrangements, selectable at a click)
-- Fill all / Clear all actions
-- quick save/load slots (for example 3) for custom layouts
-- timeline flow mode
-- identity diversity toggle
-- folder-preview frame count
-- save preset / load preset (named presets)
+Left to right: menu toggle, title, scoped search box, activity indicator (when a job is active), Jobs, preview-style eye toggle, theme cycle, Settings.
 
-Live preview:
+## 14. Responsive Behavior
 
-- shows layout geometry immediately on the black collage background
-- may show representative frames or placeholders
-- includes the file-name caption placement
-
-## 6. Conversion Profiles Screen
-
-Purpose:
-
-- manage reusable conversion profiles
-
-Actions:
-
-- create profile
-- edit profile
-- duplicate profile
-- delete profile
-- mark default profile
-
-Fields:
-
-- codec
-- container
-- maximum dimension
-- CRF quality value
-- drop audio toggle (default on)
-- advanced encoder args
-
-## 7. Tagging Settings Screen
-
-Purpose:
-
-- manage the tag vocabulary and tagging behavior
-
-Controls:
-
-- tag vocabulary editor (add, rename, deactivate, delete tags)
-- sampled frame count
-- top tag count
-- frame combination preferences
-- provider/model selection shortcuts where useful
-
-## 8. Playback Settings Screen
-
-Purpose:
-
-- choose how videos open from the library
-
-Modes:
-
-- embedded modal playback (backend stream with Range support)
-- external opening by path or link
-
-## 9. Source Settings Screen
-
-Purpose:
-
-- configure the active source (a local directory next to the backend, or an SMB share)
-
-Fields:
-
-- protocol (`local | smb`; `webdav` optional later)
-- host (protocol sources only)
-- port (protocol sources only)
-- root path (remote base directory, or local path for `local`)
-- username (protocol sources only)
-- password (protocol sources only)
-
-Actions:
-
-- test connection (protocol sources only)
-- save source
-- reconnect (protocol sources only)
-
-Flows:
-
-- replacing the source shows a destructive-change warning: all library metadata will be wiped
-- after connecting a source that contains backups in `.video-archive/backups/`, the UI offers to restore one
-
-## 10. Provider Settings Screen
-
-Purpose:
-
-- configure OpenRouter, Gemini, FAL, and Mistral integrations
-
-Per-provider controls:
-
-- enabled flag
-- API key (stored in the local secrets file)
-- vision model
-- optional text model
-- batch preferences if available
-
-## 11. Backup and Maintenance Screen
-
-Purpose:
-
-- protect and maintain local metadata
-
-Backup controls:
-
-- create backup (into the source's `.video-archive/backups/` folder)
-- restore backup
-- list backups
-- retention count
-
-Maintenance controls:
-
-- full rescan
-- subtree rescan entry point or redirect
-- stale record cleanup
-- database optimize
-
-## 12. Variant Comparison Flow
-
-Variant comparison (former "tuning") is initiated from a file, not from the main folder toolbar. It is a test-mode conversion producing several outputs for one video (see [Specification Section 8.3](./specification.md#83-variant-comparison)).
-
-The UI should support:
-
-- picking sweep values over maximum dimension
-- picking sweep values over CRF quality
-- picking codec variants
-- comparing generated outputs (they appear next to the original as `<name>.<variant>.mp4`)
-- promoting a successful variant into a reusable conversion profile
-
-## 13. Responsive Behavior
-
-Purpose:
-
-- keep the same screen and interaction structure usable from desktop down to mobile widths
-
-Rules:
-
-- on narrow viewports, the directory tree collapses into a drawer or menu instead of a persistent side panel
-- the card/file grid reflows to fewer columns, down to a single column on the smallest widths
-- secondary global icon buttons (jobs, settings, theme, language) may collapse into an overflow menu on narrow widths; the compact search field stays reachable
-- modals (jobs, video details, settings) become full-screen sheets on mobile widths instead of centered dialogs
+- on narrow viewports the directory tree becomes an overlay drawer; the card grid reflows down to a single column
+- toolbar folder actions collapse into an overflow menu; the search box stays reachable
+- modals (jobs, settings, info panel) become full-screen sheets on mobile widths
+- touch targets stay at least 40×40 logical pixels
 
 See [Design System](./design-system.md) for breakpoints and detailed visual rules.

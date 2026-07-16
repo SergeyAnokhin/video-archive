@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Video Archive is a web application for working with a video directory source. The system consists of a React + TypeScript frontend and a Python (FastAPI) backend. The application connects to one source directory at a time, shows its folder structure, runs video conversion jobs, generates preview collages, and assigns tags to videos through external AI providers.
+Video Archive is a web application for working with a video directory source. The system consists of a React + TypeScript frontend and a Python (FastAPI) backend. The application keeps any number of *saved* sources (local directories or SMB shares), exactly one of which is active at a time; it shows the active source's folder structure, runs video conversion jobs, generates preview collages and animated previews, and assigns tags to videos and standalone images through external AI providers.
 
 The product is centered on three independent processing workflows:
 
@@ -16,48 +16,51 @@ The concrete technology choices (frameworks, libraries, external tools) are fixe
 
 ## 2. Product Goals
 
-- Connect to a source directory (local directory or SMB share).
+- Connect to a source directory (local directory or SMB share); keep multiple saved sources and switch between them without losing their metadata.
 - Show the directory tree and navigate nested folders.
 - Convert videos in bulk using saved conversion profiles.
 - Replace original files after successful conversion.
 - Support a safe test mode that preserves the original source file.
-- Generate preview collages stored next to the video files themselves.
-- Assign tags to videos from a user-defined tag vocabulary, with relevance scores.
+- Generate preview collages stored next to the video files themselves, plus lightweight animated previews for browsing.
+- Assign tags to videos and standalone images from a user-defined tag vocabulary, with relevance scores; support fast manual tagging as well.
+- Treat standalone images as first-class library items (viewing, tagging, similarity) while keeping conversion and preview generation video-only.
 - Cache processing metadata locally to avoid repeated expensive work.
+- Be reachable from other devices on the local network (phone, tablet) as well as from the development machine.
 
-## 3. Out of Scope for V1
+## 3. Out of Scope
 
-- Multi-user collaboration
-- Full media-library features such as ratings or watch history
+- Multi-user collaboration and authentication
 - Advanced streaming-specific subsystems
 - Free-form AI scene search across all video content
 - Native mobile applications (dedicated iOS/Android app)
 - FTP and SFTP source protocols
 - WebDAV source protocol (optional, may be added after SMB works)
 
-Responsive behavior of the web UI on mobile-sized viewports is in scope for V1; see [Section 11.11](#1111-responsive-and-mobile-support).
+Responsive behavior of the web UI on mobile-sized viewports is in scope; see [Section 11.11](#1111-responsive-and-mobile-support). Lightweight media-library conveniences originally deferred from V1 have since been added where they earn their keep (folder favorites, recently-played history for navigation, per-model quality ratings for tagging).
 
 ## 4. System Scope
 
 ### 4.1 Frontend
 
 - React + TypeScript web application (Vite)
-- Directory tree and file browser
+- Directory tree and file browser (videos and standalone images)
 - Job management screens and a top-bar activity indicator
 - Settings screens
 - Preview settings page with live preview
 - Log viewer
-- Video details modal
-- Compact tag-based search field
+- Per-file info panel, playback overlay, and image viewer
+- Tag Lab — a synchronous single-file AI-tagging workbench
+- Compact scoped search field (`tag:` / `file:` / `path:`)
 
 ### 4.2 Backend
 
 - Python FastAPI service
 - Source access layer (local filesystem and SMB)
 - Scan and metadata layer
-- Job queue (single worker, strictly sequential)
+- Job queue (two-lane worker: one CPU-bound job plus one network-bound tagging job at a time)
 - Local processing workers
 - Local SQLite database
+- Local per-source preview cache (animated GIF assets)
 - External AI provider integration
 
 ### 4.3 Execution Model
@@ -65,7 +68,8 @@ Responsive behavior of the web UI on mobile-sized viewports is in scope for V1; 
 - Local jobs run on the same machine as the backend.
 - External LLM and vision-model requests are sent to configured providers.
 - Conversion, preview, and tagging are separate job types.
-- Exactly one job runs at a time; within a job, files are processed one at a time. ffmpeg's own internal multithreading for a single file is allowed. Higher-level parallelism may be added later only if CPU utilization proves insufficient.
+- The worker has two lanes: a CPU lane (scan, conversion, preview, maintenance, backup/restore — one at a time, since they compete for local ffmpeg/disk) and a network lane (tagging — bounded by the provider, not the CPU). At most one CPU job and one tagging job run concurrently.
+- Within a CPU job, files may be processed in parallel up to the configurable `parallel_workers` performance setting (default 4). ffmpeg's own internal multithreading for a single file is also allowed.
 
 ### 4.4 Local Development and Startup
 
@@ -77,8 +81,9 @@ Responsive behavior of the web UI on mobile-sized viewports is in scope for V1; 
 
 ## 5. Source Model
 
-- The application supports exactly one connected source at a time.
-- Supported source types for V1:
+- The application keeps any number of **saved sources**; exactly one is **active** at a time.
+- All library metadata (directories, files, tags, job history) always describes the active source only.
+- Supported source types:
   - Local (a directory on the backend's own filesystem, for example a `library` folder placed next to the backend; primary mode for development)
   - SMB (primary remote protocol)
   - WebDAV (optional, only after SMB is complete)
@@ -103,9 +108,14 @@ Responsive behavior of the web UI on mobile-sized viewports is in scope for V1; 
 
 ### 5.2 Source Switching
 
-- Changing the active source is a destructive operation: the UI must warn the user that all local metadata (files, directories, tags, job history) will be deleted, because the library starts over.
-- Backups stored on the old source's disk remain there untouched.
-- After connecting to a new source, the backend checks the source's technical folder (see [Section 19](#19-backup-and-restore)) for existing backups. If backups are found, the UI proactively offers to restore one.
+Switching the active source is no longer a destructive wipe (post-V1 improvement). The activation flow, shared by "connect a new source" and "activate a saved source":
+
+1. The outgoing source is backed up onto **its own** disk (`.video-archive/backups/`), so its metadata can come back when it is activated again.
+2. Local source-scoped metadata (directories, files, file tags, job history) is wiped; global settings tables (profiles, tag catalog, provider entries, layout presets) are never touched by a switch.
+3. The incoming source is activated. If its technical folder contains a backup of its own, the newest one is restored automatically (scoped data only).
+4. A synchronous scan reconciles any drift on disk since that backup.
+
+The UI still confirms the switch, and the Settings source form additionally offers restoring a detected backup explicitly when connecting a brand-new source. Saved sources can also be *forgotten* (removing the saved row, credentials, and the local preview cache — never touching the source's disk).
 
 ### 5.3 Technical Folder
 
@@ -125,6 +135,7 @@ Responsive behavior of the web UI on mobile-sized viewports is in scope for V1; 
   - removed files
   - changed file metadata relevant to processing
   - presence of preview assets (see [Section 9.5](#95-preview-storage))
+- Scan classifies each file independently as a supported video and/or a supported standalone image (disjoint extension sets); a JPEG whose base name matches a video in the same folder is that video's preview asset, never an independent library item.
 - A moved or renamed file is treated as a removed file plus a new file. Preserving history across moves is intentionally out of scope for V1.
 
 ### 6.2 Conversion
@@ -151,9 +162,10 @@ Responsive behavior of the web UI on mobile-sized viewports is in scope for V1; 
 
 - Tagging is a separate on-demand workflow.
 - It must not be required for conversion or preview completion.
-- Tags are matched against the user-defined vocabulary (see [Section 12](#12-tagging)).
-- Folder-level tagging always applies to the selected folder and all nested subfolders.
+- Tags are matched against the user-defined AI vocabulary (see [Section 12](#12-tagging)).
+- Folder-level tagging always applies to the selected folder and all nested subfolders, and covers both videos and standalone images.
 - By default, files that already have tags are skipped; the user can disable this per job to re-tag.
+- Single-file AI tagging goes through **Tag Lab** instead of a background job: a synchronous, review-first flow against one user-picked provider entry (see [Section 12.4](#124-tag-lab)).
 
 ### 6.5 Rescan
 
@@ -248,10 +260,11 @@ Variant comparison (formerly "tuning") is a file-level test-mode conversion that
 
 ### 9.1 General Rules
 
-- Preview generation builds a collage from sampled video frames.
-- Preview generation supports video previews and folder previews.
-- Folder previews use representative frames from videos in the folder subtree (default: 4 frames).
-- Preview visibility must be globally toggleable in the main UI via a small, always-visible icon button in the top bar (grouped with the jobs/theme/language/settings buttons). Toggling is instant and purely client-side: it shows or hides already-rendered preview thumbnails and collages without a backend call, without deleting or regenerating anything, and without a page reload.
+- Preview generation produces two assets per video (post-V1 evolution):
+  - a **JPEG collage** from sampled frames, stored next to the video and shown in the per-file info panel (static view);
+  - an **animated GIF** used as the grid/list thumbnail, stored in a local per-source cache — never written to the source.
+- Folder previews are animated GIFs only (`folder-preview.gif`), cycling frames sampled from different videos and subfolders of the subtree for visual variety (default frame budget: 4).
+- A small, always-visible icon button in the top bar (grouped with the jobs/theme/settings buttons) instantly switches between two client-side preview **stylization profiles** (see [Section 9.6](#96-animated-previews-and-stylization)). Switching is purely client-side: no backend call, nothing deleted or regenerated, no page reload.
 
 ### 9.2 Collage Grid Layout
 
@@ -261,7 +274,7 @@ Variant comparison (formerly "tuning") is a file-level test-mode conversion that
 - The number of sampled frames is therefore derived from the layout: total cells minus cells absorbed by enlarged tiles.
 - Grid dimensions, the number of enlarged tiles, their sizes (2× or 3×), and their placement are configurable (see [Section 10](#10-preview-settings-page)).
 - The application ships with a built-in gallery of layout presets mixing large and small tiles in varied arrangements (large tiles at a corner, along an edge, centered, and so on), modeled on the reference screenshot shared for this project; the user picks a preset or edits a custom layout.
-- The overall collage canvas aspect ratio is configurable independently of grid dimensions: presets include standard ratios, a tall phone-portrait ratio (approximately 19.5:9, matching modern phone screens such as the Samsung Galaxy S24), and ultra-wide ratios (21:9 and wider), plus a custom ratio option (see [Section 10](#10-preview-settings-page)).
+- The overall collage canvas aspect ratio is configurable independently of grid dimensions: presets include `standard` (4:3), `phone-portrait` (9:19.5), `phone-landscape` (19.5:9 — the **default**, chosen because it fills a mobile card's width without letterboxing), `ultra-wide` (21:9), and a custom ratio option (see [Section 10](#10-preview-settings-page)).
 
 ### 9.2.1 Collage Appearance
 
@@ -299,28 +312,43 @@ Enlarged tile content priority:
 
 ### 9.5 Preview Storage
 
-Preview collages are stored on the source itself, next to the content they describe:
+Static collages live on the source; animated previews live in a local cache:
 
-- **Video preview:** a JPEG in the same folder as the video, with the same base name: `movie.mp4` → `movie.jpg`.
-- **Folder preview:** a JPEG placed inside the folder itself with the fixed name `folder-preview.jpg`.
-- Scan detects these files and records preview presence per file/folder; a JPEG whose base name matches a video in the same folder is treated as that video's preview asset, not as an independent library item.
-- Collage output defaults: JPEG quality 85, width 2048 px (both configurable later if needed).
-- Because assets live next to the videos, they move together with the archive and need no separate asset database.
+- **JPEG collage:** stored in the same folder as the video, with the same base name: `movie.mp4` → `movie.jpg`. Because it lives next to the video, it moves together with the archive and needs no separate asset database.
+- **Animated GIF (file and folder):** stored in a local per-source cache next to the backend (`backend/preview_cache/<source_id>/`, flattened collision-free names) and **never written to the source** — GIFs are bulkier, lower-fidelity browsing aids, not archive artifacts. The cache can be inspected (size/count per saved source) and cleared from Settings; clearing the active source's cache resets the has-preview facts so the next preview run regenerates.
+- Scan detects on-source collages and records preview presence per file; a JPEG whose base name matches a video in the same folder is treated as that video's preview asset, not as an independent library item.
+- Collage output defaults: JPEG quality 85, width 2048 px.
+
+### 9.6 Animated Previews and Stylization
+
+Animated previews (post-V1, user-requested) have their own settings, separate from collage layout:
+
+- **Source mode:** `frame` (one still per sampled position) or `clip` (a short real-video segment per position, `animated_segment_seconds` long).
+- **Transition:** `cut` or `crossfade` between positions.
+- **Size/quality:** `gif_max_width` (default 640 px) and `gif_colors` (default 64) — deliberately lower-fidelity than the JPEG collage, since GIFs are only ever shown as small grid/list thumbnails and must load fast.
+- **Stylization profiles:** two client-side profiles (A/B) of CSS-filter adjustments (saturation, blur, brightness, contrast, sepia, hue-rotate) applied to all preview thumbnails at render time; the top-bar eye button switches the active profile instantly. Profiles are edited in interface settings with live sample thumbnails and per-field reset.
 
 ## 10. Preview Settings Page
 
 The application must provide a dedicated preview settings page.
 
-The page must support:
+The page has two sub-tabs: **Collage** (grid layout) and **Animated preview** (GIF behavior, see [Section 9.6](#96-animated-previews-and-stylization)).
+
+The Collage tab must support:
 
 - configuring the grid dimensions
-- configuring the overall collage aspect ratio (standard, phone-portrait, ultra-wide, or custom — see [Section 9.2](#92-collage-grid-layout))
+- configuring the overall collage aspect ratio (standard, phone-portrait, phone-landscape, ultra-wide, or custom — see [Section 9.2](#92-collage-grid-layout))
 - configuring how many enlarged tiles are used and their size (2×2 or 3×3)
 - choosing from the built-in gallery of layout presets
 - configuring timeline flow strategy
 - enabling or disabling identity diversity attempts (enabled by default)
-- configuring the folder-preview frame count (default: 4)
 - previewing the resulting layout live before running a full preview job
+
+The Animated preview tab must support:
+
+- configuring the folder-preview frame count (default: 4)
+- configuring GIF width and color count
+- choosing the animated source mode (`frame` / `clip`), segment duration, and transition (`cut` / `crossfade`)
 
 Layout editing works as a "construction set", modeled on the reference screenshot:
 
@@ -370,17 +398,25 @@ For any selected folder, the UI should allow starting:
 
 All folder actions apply to the selected folder and all nested subfolders.
 
-### 11.4 Video-Level Actions
+### 11.4 File-Level Actions
 
 For any selected video, the UI should allow:
 
-- opening video details
+- opening the file info panel (details, media info, tags)
 - viewing preview assets if available
 - opening video playback according to configured playback mode
 - running conversion for that specific video
 - running preview generation for that specific video
-- running tagging for that specific video
-- running variant comparison for that specific video
+- running AI tagging for that specific video (through Tag Lab, [Section 12.4](#124-tag-lab))
+- running variant comparison ("tuning") for that specific video
+- adding/removing tags manually, including during playback (quick tag-add)
+- finding similar files
+- moving the file to another folder (with favorite-folder and recent-folder shortcuts)
+- deleting the file (together with its sibling preview assets)
+
+For a standalone image, the same actions apply except conversion, preview generation, and variant comparison (video-only); playback is replaced by a full-screen image viewer.
+
+To keep cards uncluttered, file cards expose only two direct actions — click the thumbnail to play/view, click the "i" overlay button for everything else (via the info panel).
 
 ### 11.5 Video Playback Mode
 
@@ -398,26 +434,31 @@ For any selected video, the UI should allow:
 - The application should provide a dedicated tasks or jobs modal.
 - The jobs UI should show queued, running, completed, and failed jobs.
 - The jobs UI should allow:
-  - stopping jobs
+  - stopping jobs (a second cancel force-finishes a stuck job)
+  - pausing and resuming jobs with a per-item loop (pausing frees the lane for the next queued job)
   - restarting jobs when appropriate
   - removing individual jobs from the list
   - clearing all finished jobs with a single button
+  - opening the log viewer pre-filtered to one job
+- Running jobs show a progress bar (item counts), the current item, elapsed time, and a rolling-window ETA estimate.
+- Pending provider-side batch-tagging submissions are visible in a dedicated modal reachable from the jobs UI, with a "forget locally" action.
 - Finished jobs are also removed automatically after 24 hours (see [Job Model](./job-model.md)).
 - Some jobs may also be created directly from the jobs UI, but the primary job creation flow should remain attached to folders and videos.
 
 ### 11.7 Log Viewer
 
 - The application should provide a dedicated log viewer.
-- Logs should remain available in backend console output as usual.
-- The UI log viewer should display job-related activity in near real time.
+- Logs should remain available in backend console output as usual (every HTTP request is logged by middleware, except quiet polling routes; a rotating file log is kept as well).
+- The UI log viewer should display job-related activity in near real time (SSE stream plus backfill), with filters by job, file, and level, a clear-filters action, elapsed timestamps, and clickable per-file badges that toggle the file filter.
 - The log viewer should help the user understand what files are being processed and what each task is doing.
 
 ### 11.8 Search
 
-- The UI provides a compact, non-dominant search field (for example at the edge of the toolbar); it must not occupy a central or large area.
-- Search is primarily tag-driven: typing suggests existing tags from the vocabulary by prefix (autocomplete).
-- Search may also match file names.
-- Search is a convenience feature, not a core workflow, and must not complicate the main browsing layout.
+- The UI provides a compact search field in the top bar; it must not complicate the main browsing layout.
+- Search is **scoped** (post-V1 improvement): `tag:` / `file:` / `path:` prefixes (with Russian aliases) restrict a query to tags, file names, or folder names; an unprefixed query searches all three groups at once.
+- Typing suggests matches per group — tags from every tag pool (usage-ordered, with their colors), files and folders via debounced server queries — each group capped by a configurable search limit.
+- An unscoped search renders up to three capped result groups, each with a "search only in this group" shortcut; a scoped search renders one flat infinite-scroll grid.
+- Prev/next navigation in playback, the image viewer, and the info panel follows the on-screen search-result order while a search is active, not the underlying folder order.
 
 ### 11.9 Localization
 
@@ -432,59 +473,92 @@ For any selected video, the UI should allow:
 - The visual language should stay compact and uncluttered: a slim top bar, small icon-only buttons for secondary/global actions (jobs, settings, theme, language), pill-shaped filters, and a card grid for browsing.
 - Every button must carry an icon from the shared icon set, except rare cases where no icon fits; and wherever an icon alone makes the action self-evident (delete, save, run, etc.), the label should be dropped in favor of an icon-only button — this should be the common case, not the exception. See [Design System §4.2](./design-system.md#42-icon-only-buttons-for-self-evident-actions) for the full rule.
 - This direction is inspired by reference screenshots of another application shared for this project; the reference is a density and restraint style guide, not a template to copy pixel-for-pixel. See [Design System](./design-system.md) for the detailed breakdown.
-- The application must support at least two theme presets:
-  - **Strict** (default): the minimal, low-key dark style described above and in Section 11.1.
-  - **Playful**: a more energetic, casino/entertainment-inspired visual variant (brighter accent colors, more expressive iconography) built on the same layout and information structure as Strict.
-- Theme preset is a persisted user preference, switchable from a small, unobtrusive control consistent with the rest of the global toolbar.
-- Switching theme preset must not change navigation structure, screen layout, or available actions — only color, iconography, and decorative treatment.
-- The Playful preset may use small, purely decorative animations (for example, subtle hover or transition effects). Animations must stay lightweight, must not block or slow down interaction, and must not be added to the Strict preset by default.
+- The application ships **eight theme presets** (post-V1 expansion from the original two): **Strict** (default, the minimal low-key dark style described above), **Playful**, **Casino**, **Neon Night**, **Toxic Arcade**, **Cyber Violet**, **Vivid Glam**, and **Mono Ice** — all built on the same layout and information structure, differing only in CSS variable sets.
+- Theme preset is a persisted user preference: a top-bar icon button cycles presets; the interface settings tab offers a full picker with accent swatches.
+- Switching theme preset must not change navigation structure, screen layout, or available actions — only color, iconography, and decorative treatment (scrollbars follow the theme too).
+- Expressive presets may use small, purely decorative animations (hover lift, soft glow/pulse). Animations must stay lightweight, must not block or slow down interaction, must respect `prefers-reduced-motion`, and must not be added to Strict by default.
 
 ### 11.11 Responsive and Mobile Support
 
 - The web UI must be usable on mobile-sized viewports, not only desktop.
 - Primary workflows (browsing the library, opening a video, inspecting details, launching folder/file actions) must remain reachable and usable on a small screen through responsive layout, not a separate mobile codebase.
 - The same screen and interaction structure should apply across desktop and mobile widths, so the interface can later be reused as the basis for a dedicated mobile application without a redesign.
-- Native mobile applications remain out of scope for V1 (see [Section 3](#3-out-of-scope-for-v1)); this requirement covers responsiveness of the existing web UI only.
+- Native mobile applications remain out of scope (see [Section 3](#3-out-of-scope)); this requirement covers responsiveness of the existing web UI only.
 - The frontend must be built mobile-first from the start of implementation ([Roadmap Stage 1](./roadmap.md#stage-1--skeleton)), not retrofitted in a later polish stage; portrait orientation is the primary small-screen case to design against, since most phone usage is vertical.
+- The app is reachable from other devices on the local network (frontend and backend bind to `0.0.0.0`); Settings → Network lists the detected `http://<lan-ip>:<port>` addresses with copy buttons and connection instructions.
 - See [Design System](./design-system.md) for breakpoints and detailed responsive rules.
+
+### 11.12 Library Conveniences
+
+Post-V1 quality-of-life behaviors that shape the main screen:
+
+- **Sorting:** a toolbar button cycles the card sort order (name / size / tag count); the same order drives prev/next navigation.
+- **Live updates:** while a job runs, the library refreshes a file's card as soon as that file's job item completes — not only when the whole job finishes — without a loading-state flash.
+- **Folder management:** folders can be created, deleted (empty ones only, deliberately non-recursive), and marked as favorites. Favorites appear as one-click "move here" targets in playback and the info panel.
+- **Recent-folder history:** the app records folders where a video was played or a file was moved (never plain browsing) and offers them as quick-jump targets — a "Recent folders" toolbar menu with clickable path crumbs, and a History popover in the quick-move controls.
+- **Directory tree:** collapsible pane (closed by default), name filter that prunes to matching branches, expand/collapse-all, per-folder status dots and top-tag dots (the five most-used tags in the subtree, with tooltips).
+- **Recently-played memory:** the last played videos feed defaults elsewhere (for example, the tagging settings preview picks the most recently viewed video as its sample).
 
 ## 12. Tagging
 
 ### 12.1 Tag Model
 
-- The tag vocabulary is fully user-defined: the user adds and removes tags in settings. Tags may be arbitrary words or phrases.
-- The AI's job is to evaluate **how well each vocabulary tag matches a given video**, not to invent new tags. The model must not generate free-form tags as the primary tagging result.
-- The result for a video should include:
-  - matched tags with a relevance score per tag (0–100, presented as a percentage)
-  - only the top-N best-matching tags are stored (default N = 10, configurable)
+Tags live in **three pools** (post-V1, user request), tracked by two independent flags on the tag catalog:
+
+- **AI vocabulary** (`is_ai_vocabulary`): the closed set the AI scores against — the *only* pool ever sent to a vision provider. Managed in the tagging settings' vocabulary editor.
+- **User-defined** (`is_user_defined`): purely subjective tags, never AI-scored. Managed in their own settings section and assigned through a dedicated per-file picker.
+- **Ad-hoc** (neither flag): tags typed directly onto a file via a free-text add field, or variant-sweep parameter tags. Manually typing a tag onto a file must **not** silently add it to either managed pool.
+
+Rules:
+
+- Tags may be arbitrary words or phrases; keys are normalized (lowercased) for deduplication.
+- The AI's job is to evaluate **how well each vocabulary tag matches a given file**, not to invent new tags.
+- The AI result for a file includes matched tags with a relevance score per tag (0–100, presented as a percentage); only the top-N best-matching tags are stored (default N = 10, configurable). Manually assigned tags carry score 100 and a `manual` provenance.
+- Every tag has a **color**: an explicitly picked one, or a deterministic hash-based fallback computed identically on the backend and frontend — so a tag renders with one stable color everywhere it appears (settings, cards, info panel, Tag Lab), always with contrast-checked text.
 
 ### 12.2 Tagging Input
 
-- Tagging uses sampled frames from a video (same interior sampling strategy as previews).
-- The number of sampled frames is configurable in settings; default: `9`.
-- For cost control, the sampled frames are combined into a single collage image (for example 3×3) before classification; this is the default behavior.
+- For a video, tagging uses sampled frames (same interior sampling strategy as previews). The number of sampled frames is configurable in settings; default: `9`.
+- For cost control, the sampled frames are combined into a single collage image (for example 3×3) before classification; this is the default behavior. Per-frame submission is the alternative.
+- A configurable `image_resolution` caps the pixel size of each frame (collage cell side or per-frame longest side), so the collage's total size scales with the grid.
+- A standalone image is sent as a single JPEG at `image_resolution` — no frame sampling involved.
+- The tagging settings page offers a "preview what the model sees" action that renders the current (possibly unsaved) settings against a recently viewed video into the real output images.
 
 ### 12.3 Tagging Execution
 
-- Tagging is a separate job type.
-- The classification request sends the collage image plus the full active vocabulary to a vision-capable model and asks it to score each tag's relevance to the frames.
+- Directory/source-scope tagging is a background job on the network lane ([Section 4.3](#43-execution-model)).
+- Provider configuration is a user-managed, **priority-ordered list of provider entries** (any number per provider type, see [Section 18](#18-ai-provider-settings-and-secrets)). The job tries enabled entries in priority order and falls back to the next on failure, so one bad key or outage doesn't stop tagging; entries that fail are skipped for the rest of the job.
+- The classification request sends the image(s) plus the full active AI vocabulary to a vision-capable model and asks it to score each tag's relevance.
 - Tagging should optimize for low cost rather than dense scene understanding.
-- The system should support provider-side batch submission when available.
-- Batch tagging should combine many videos into one provider batch request when that materially reduces cost.
-- Gemini-style and Mistral-style batch flows should be supported when available.
+- **Batch tagging** (Gemini/Mistral): when a batch-capable entry is enabled, the job submits all pending files in one provider-side batch request, **persists the submission before polling**, and polls until resolution. Pause/cancel/restart-safe: a restart resumes the pending submission from its own snapshot; anything unresolved falls back to the per-file chain. Pending submissions are visible (and locally forgettable) in the UI.
+- Every provider call is recorded in a usage log (tokens, estimated or provider-reported cost) summarized in Settings.
 
-## 13. Similar Video Detection
+### 12.4 Tag Lab
 
-- Similarity detection is optional and secondary.
-- It must not block conversion or preview completion.
-- The goal is approximate near-duplicate detection, not perfect identity.
-- Exact binary hashing is not sufficient because videos may be re-encoded.
-- A practical first approach is to compute a signature from a fixed number of representative frames.
-- That signature may be based on:
-  - perceptual hashes
-  - embeddings
-- Similarity data should be stored locally for reuse.
-- The preferred first integration point is preview generation, because that workflow already samples representative frames.
+Single-file AI tagging is a synchronous, review-first workbench (post-V1, user request) instead of a background job:
+
+- The user picks **one** provider entry (no fallback chain, no batch); the model picker shows per-model quality stats and the selected model's price per 1M tokens before running.
+- The images to be sent and the prompt render immediately (a separate prepare step), before the model responds; sampled images are cached in-process so re-running against the same file with unchanged settings is cheap.
+- The run returns the raw model reply text and the full raw provider JSON (collapsed, inspectable — including on failures where the provider returned *something*), token/cost usage, and every vocabulary tag ranked by score.
+- Nothing is written until the user applies the (optionally edited) tag list. Suggested tags can be removed, and more can be added via the shared suggestion flow.
+- Feedback loop: per-tag like/dislike votes plus an automatic apply-behavior KPI (applied unchanged / applied with edits / never applied) aggregate into per-model quality stats, keyed by `(provider_type, model_name)`.
+- Direct provider calls have a configurable request timeout (default 30 s), with a matching client-side ceiling so the UI can never wait forever.
+
+### 12.5 Model Pricing
+
+Per-model price data (post-V1, user request) is keyed by `(provider_type, model_name)` — never by provider entry — so two entries pointing at the same model share one price:
+
+- Prices ($/1M input and output tokens) are editable in Settings, both in a dedicated table and inline where a model is configured or run.
+- OpenRouter prices can be refreshed from its public catalog API; other providers are manual-only (seeded defaults where known).
+- When a provider reports its own billed cost per call (OpenRouter, and FAL's gateway route), that value is logged as-is instead of the rate-table estimate.
+
+## 13. Similar File Detection
+
+- Similarity detection is optional and secondary; it must not block conversion or preview completion.
+- The goal is approximate near-duplicate detection, not perfect identity (exact binary hashing is not sufficient because videos may be re-encoded).
+- Implemented approach: 64-bit perceptual hash (aHash) signatures — over 8 interior frames for a video, over the whole image for a standalone image — compared by Hamming distance. Matches are same-kind only (a video signature never matches an image one).
+- Video signatures are generated best-effort as a side effect of the preview job; image signatures as a side effect of the tag job (plus a lazy on-demand fallback when "similar" is requested for an unsigned image).
+- Similarity data is stored locally for reuse; the UI exposes a "similar files" list from the info panel, where an empty result is a normal outcome.
 
 ## 14. File and Directory State Model
 
@@ -492,12 +566,14 @@ For any selected video, the UI should allow:
 
 Files do **not** carry workflow status enums (no `in_progress`, no `failed` per file). Transient execution state and errors live in jobs, job items, and logs only.
 
-Each supported video file tracks simple facts:
+Each supported file tracks simple facts:
 
 - discovered by scan (always true for existing rows)
-- converted at least once (`converted_at` timestamp, null if never)
-- has a preview asset (`has_preview_asset`, detected by scan or set by the preview job)
+- supported as a video and/or as a standalone image (`is_video_supported` / `is_image_supported` — independent flags, not one enum)
+- converted at least once (`converted_at` timestamp, null if never; video-only)
+- has a preview asset (`has_preview_asset`, detected by scan or set by the preview job; video-only)
 - has tags (`tagged_at` timestamp, null if never tagged)
+- playback duration (`duration_seconds`, shown as a card badge; video-only)
 
 ### 14.2 Directory-Level State
 
@@ -575,41 +651,51 @@ The application must provide a dedicated settings area.
 
 Settings areas include:
 
-- source connection settings
+- source settings (connection form plus the saved-sources list)
 - conversion profile settings
-- preview settings
+- preview settings (collage layout and animated preview)
 - playback settings
-- tagging settings (including vocabulary management)
-- AI provider settings
+- tagging settings (AI vocabulary, user-defined tags, sampling, resolution, timeout)
+- AI provider settings (provider entries, model pricing, usage, ratings)
 - backup and restore settings
+- performance settings (parallel workers)
+- network access (read-only LAN address list)
 - maintenance settings
-- interface settings (language, theme)
+- interface settings (language, theme, preview stylization profiles, search limits)
+
+See [Settings Specification](./settings-spec.md) for details.
 
 ## 18. AI Provider Settings and Secrets
 
-Supported provider targets for V1 configuration:
+Supported provider types:
 
 - OpenRouter
 - Google Gemini
 - FAL
 - Mistral
 
+Provider configuration is a user-managed, **priority-ordered list of entries** (post-V1 evolution from one fixed choice per provider): any number of entries per type, each with its own API key, vision model, optional text model, enabled flag, and — for batch-capable types (Gemini, Mistral) — a batch preference. The list order is the fallback priority for background tagging jobs ([Section 12.3](#123-tagging-execution)).
+
 Provider settings must support:
 
-- API key entry
-- model selection for vision workloads
+- adding, editing, reordering, enabling/disabling, and deleting entries
+- API key entry (never echoed back — only presence and a masked suffix)
+- model selection for vision workloads, with live model-catalog lookup where the provider offers one (OpenRouter, Gemini, Mistral; FAL has no catalog API and uses a curated list instead)
 - optional model selection for text workloads
-- export and import of provider configuration, including API keys, by explicit user action
+- per-model price overrides and the pricing table ([Section 12.5](#125-model-pricing))
+- a per-(provider, model) usage summary table
+- export and import of provider configuration, **including plaintext API keys**, by explicit user action behind a confirmation
 
 Secret storage rule:
 
 - API keys and source credentials must not be stored in the main application database.
-- Secrets live in a local `.env`-style file next to the backend (see [Tech Stack](./tech-stack.md)); the file is git-ignored, human-readable, and easy to copy or back up by hand.
+- Secrets live in a local `.env`-style file next to the backend (see [Tech Stack](./tech-stack.md)); the file is git-ignored, human-readable, and easy to copy or back up by hand. SMB credentials are stored per saved source.
 
 ## 19. Backup and Restore
 
 - Backups are stored on the source disk itself, in the technical folder `.video-archive/backups/` at the source root.
 - The local database must support manual backup creation and restore from backup.
+- Source switching creates and restores backups automatically (see [Section 5.2](#52-source-switching)), so metadata follows each source across switches.
 - Backup retention count must be configurable; default: `5`.
 - Settings must include a dedicated backup section.
 - When a new source is connected and existing backups are detected in its technical folder, the UI offers to restore one (see [Section 5.2](#52-source-switching)).
@@ -620,12 +706,15 @@ Secret storage rule:
 ```text
 React + TypeScript UI (Vite)
   -> FastAPI backend
-    -> source access layer (local FS, SMB)
+    -> source access layer (local FS, SMB) -- all file access goes through it
     -> scan and metadata layer
-    -> job queue (single sequential worker)
-    -> video conversion worker (ffmpeg)
+    -> job queue (two-lane worker: CPU lane + network/tagging lane)
+    -> video conversion worker (ffmpeg, parallel items)
     -> preview generation worker (ffmpeg + local detection models)
-    -> tagging job worker (external AI providers)
+       -> JPEG collage written next to the video on the source
+       -> animated GIFs written to the local per-source preview cache
+    -> tagging job worker (priority-ordered provider entries, batch orchestration)
+    -> Tag Lab (synchronous single-file tagging, no job queue)
     -> local SQLite metadata database
     -> secrets file (.env)
 ```

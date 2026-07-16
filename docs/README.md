@@ -14,4 +14,4 @@ Project overview and startup instructions live in the root [`README.md`](../READ
 
 ## Archived
 
-- [`spec/`](spec/README.md) — frozen V1 specification set. Reference only; do not read unless explicitly asked.
+- [`spec/`](spec/README.md) — reference specification set (originally the V1 spec; refreshed 2026-07-16 to include post-V1 improvements). Reference only; do not read unless explicitly asked.

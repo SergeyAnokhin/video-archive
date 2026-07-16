@@ -34,6 +34,7 @@ Allowed states:
 
 - `queued`
 - `running`
+- `paused` (post-V1; job types with a per-item loop only)
 - `completed`
 - `failed`
 - `cancelled`
@@ -45,17 +46,18 @@ Optional item states:
 State rules:
 
 - Jobs start in `queued`.
-- Running jobs may transition to `completed`, `failed`, or `cancelled`.
+- Running jobs may transition to `paused`, `completed`, `failed`, or `cancelled`; paused jobs resume to `running` or are cancelled.
 - Restarting creates a new job rather than mutating an old completed job into queued.
+- Jobs track `total_items` so the UI can show a progress bar and a rolling-window ETA.
 
 ## Concurrency Model
 
-Deliberately simple for V1:
+Post-V1 evolution from the original single sequential worker (user request):
 
-- **Exactly one job runs at a time.** The queue is strictly FIFO and sequential.
-- **Within a job, files are processed one at a time.** No parallel job items.
-- ffmpeg's internal multithreading for a single file is allowed (its defaults are fine).
-- If CPU utilization proves insufficient in practice, configurable parallelism may be introduced later — not in V1.
+- The worker runs **two lanes**: a **CPU lane** (`rescan`, `convert`, `preview`, `cleanup`, `optimize_db`, `backup`, `restore` — one at a time, since they all compete for local ffmpeg/disk) and a **network lane** (`tag` — bounded by the external provider, not the CPU). At most one CPU job and one tag job run concurrently; each lane is FIFO over its own job types.
+- **Within a `convert`/`preview` job, files are processed in parallel**, bounded by the global `parallel_workers` performance setting (default 4, range 1–16), read once at job launch.
+- ffmpeg's internal multithreading for a single file is also allowed (its defaults are fine).
+- **Pause/resume:** pausable job types (those with a per-item loop) can be paused; the handler notices the request between items, and the freed lane picks up the next queued job of that lane. Resuming re-enters the loop where it left off.
 
 The UI reflects activity through the top-bar indicator: visible whenever a job is queued or running, tooltip shows the current job and item, click opens the jobs modal.
 
@@ -110,20 +112,25 @@ Examples:
 - may generate file previews and folder previews
 - use local face and body analysis
 - use preview settings snapshot at launch time
-- write collages next to the videos (see [Specification Section 9.5](./specification.md#95-preview-storage))
+- write the JPEG collage next to the video on the source and the animated GIF into the local per-source preview cache; folder GIFs are generated for the target directory and every descendant (see [Specification Section 9.5](./specification.md#95-preview-storage))
+- directory scope is self-healing: skip-processed re-checks that the on-source collage actually exists
+- best-effort side effect: store the file's similarity signature
 
 ## Tagging Jobs
 
-- on-demand only
-- send a frame collage plus the user vocabulary to a vision model, expect per-tag relevance scores
-- store the top-N tags with scores (default 10)
-- may batch provider submissions when available
+- on-demand only; cover videos and standalone images
+- send a frame collage (or per-frame images, or the standalone image itself) plus the user's AI vocabulary to a vision model, expect per-tag relevance scores
+- resolve the provider **entry** live at execution: enabled entries are tried in priority order, with automatic fallback to the next on failure (a per-job dead-entry set avoids retrying a failed entry)
+- store the top-N tags with scores (default 10), replacing the file's previous tag set
+- **batch mode** (Gemini/Mistral): submit all pending files as one provider-side batch, persist the submission (`batch_submissions`) *before* polling, poll with interruptible sleeps; pause/cancel just leaves the submission pending, and a backend restart re-queues the owning job, which resumes polling from the submission's own snapshot; unresolved files fall back to the per-file chain
+- single-file AI tagging is *not* a job: it runs synchronously through Tag Lab ([Specification §12.4](./specification.md#124-tag-lab))
 
 ## Cancellation Rules
 
-- Cancellation is best-effort.
+- Cancellation is best-effort and cooperative: handlers check a shared stop checkpoint between items.
 - Jobs should stop accepting new items after cancellation request.
 - In-flight file operations should exit safely.
+- A **second** cancel on a running job force-finishes it (for handlers stuck in an unbounded blocking call); the worker lane logs the abandonment and moves on rather than staying wedged behind an unresponsive handler.
 - Production conversion must never replace a source file after cancellation unless validation and swap already completed.
 
 ## Retry and Restart

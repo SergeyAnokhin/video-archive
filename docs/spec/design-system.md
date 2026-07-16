@@ -24,18 +24,22 @@ Colors, copy, and iconography are not copied — only the density, spacing, and 
 - No decorative motion beyond standard, functional transitions (opening/closing modals, loading states).
 - This is the theme described in Specification Section 11.1 and is what all screens are designed against first.
 
-### 2.2 Playful
+### 2.2 Expressive Presets
+
+Seven expressive presets (post-V1 expansion from the original single "Playful"): **Playful**, **Casino**, **Neon Night**, **Toxic Arcade**, **Cyber Violet**, **Vivid Glam**, **Mono Ice**.
 
 - Same layout, navigation, and information structure as Strict — nothing moves, nothing new appears.
-- Warmer, more saturated accent palette; more expressive iconography; optional gradient or glow treatment on primary buttons.
-- May add small, purely decorative animations (hover lift, soft pulse on primary actions, subtle transitions), per Specification Section 11.10.
+- Each preset is a CSS variable set (including a second accent color) on the root `data-theme` attribute; some add decorative glow/pulse treatments.
+- Decorative animations stay small, purely cosmetic (hover lift, soft pulse), per Specification Section 11.10.
 - Must respect `prefers-reduced-motion` and must never delay or block the completion of an action.
 
 ### 2.3 Shared Rules
 
-- Theme preset is a persisted setting (see [Settings Specification Section 9](./settings-spec.md#9-interface-settings)).
+- Theme preset is a persisted setting (see [Settings Specification Section 10](./settings-spec.md#10-interface-settings)).
 - Switching theme is instantaneous and does not reload the page.
-- The theme toggle is one of the small icon-only buttons in the top bar, matching the other global controls.
+- A top-bar icon button cycles presets; the interface settings tab has the full picker with two-dot accent swatches.
+- Scrollbars follow the theme (styled from the theme's surface/border/text variables).
+- Adding or removing a preset touches a fixed checklist of places on both sides of the stack (frontend preset list, CSS block, icon map, EN/RU labels, backend preset tuple, router literal) — keep them in sync.
 
 ## 3. Animation Guidelines (Playful preset)
 
@@ -50,13 +54,13 @@ Colors, copy, and iconography are not copied — only the density, spacing, and 
 - The language control lives in **Settings**, not the top bar: the top bar only exposes the Settings icon button that opens it. Language is a one-time-per-session-ish preference, not something switched constantly, so it doesn't need to occupy prime top-bar real estate the way the preview visibility toggle does ([§4.1](#41-preview-visibility-toggle)).
 - Inside Settings, under an "Interface" section, language is a small labelled option group (e.g. "English" / "Русский" buttons, current selection highlighted) rather than an icon — Settings has room for a text label, so clarity wins over the icon-only compactness rule that applies to the top bar ([§4.2](#42-icon-only-buttons-for-self-evident-actions)).
 - Switching language does not reload the page and does not change layout — only text content and locale-specific formatting (dates, numbers) — and the Settings surface itself re-renders in the new language immediately.
-- See [Specification Section 11.9](./specification.md#119-localization) and [Settings Specification Section 9](./settings-spec.md#9-interface-settings).
+- See [Specification Section 11.9](./specification.md#119-localization) and [Settings Specification Section 10](./settings-spec.md#10-interface-settings).
 
-### 4.1 Preview Visibility Toggle
+### 4.1 Preview Style Toggle
 
-- A small, always-visible icon button sits in the top bar next to the Settings button: it shows or hides all preview thumbnails and collages across the current view.
+- A small, always-visible eye icon button sits in the top bar next to the Settings button. Post-V1 it switches between the two preview **stylization profiles** (A/B) — CSS-filter adjustment sets applied to every preview thumbnail — rather than hiding previews.
 - Toggling is instant and purely client-side/front-end state: no backend call, no regeneration of assets, no page reload, and no change to layout or navigation.
-- This is a display preference for the current session, not a data-changing action — preview files on disk are untouched.
+- This is a display preference for the current session, not a data-changing action — preview files on disk are untouched. The profiles themselves are edited in interface settings.
 
 ### 4.2 Icon-Only Buttons for Self-Evident Actions
 
@@ -65,6 +69,13 @@ Colors, copy, and iconography are not copied — only the density, spacing, and 
 - Beyond just having an icon, prefer dropping the text label entirely when the icon alone is self-evident (delete, save, play/run, theme, jobs, settings, preview visibility): a compact icon-only button, no visible text, just the icon plus an accessible name (`aria-label`/`title`) for assistive tech and tooltips. Aim for icon-only to be the common case — roughly half or more of the buttons in a given screen — not the exception; only keep a visible label where the icon alone would be ambiguous or the action is unusual/high-consequence enough that a label adds real clarity (see [§4](#4-localization-presentation) for why Settings' language control keeps a label instead of an icon).
 - Destructive actions (for example, delete) use a small icon in the danger/red accent color instead of a labelled button — the icon and color communicate the action, so no confirmation text is needed in the button itself (a confirmation step may still gate the action).
 - This keeps the top bar and card actions dense, consistent with the overall density/restraint direction in [Section 1](#1-reference-inspiration).
+
+### 4.3 Status Dots and Tag Badges
+
+Two shared visual conventions added post-V1:
+
+- **Status "lamp" dots**: incomplete-state indicators are 8px circles, colored per category when incomplete (warning color for conversion, accent for preview, danger for tags) and success-colored once done. The same convention is reused in the directory tree, library cards, and the file info panel.
+- **Tag badges**: every tag renders through one shared badge component with the tag's color as background and contrast-checked (black or white) text. A tag has exactly one color everywhere it appears — settings editors, cards, the info panel, suggestion rows, Tag Lab. Badges optionally carry a color-picker swatch, a remove `×`, a score label, and a brief confirmation pulse after a successful click-to-add (user feedback that the click registered).
 
 ## 5. Responsive Breakpoints
 

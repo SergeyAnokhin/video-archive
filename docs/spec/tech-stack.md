@@ -7,22 +7,27 @@ This document fixes the concrete technology choices for Video Archive so that im
 | Area | Choice | Notes |
 | --- | --- | --- |
 | Framework | React 18+ with TypeScript | Functional components and hooks |
-| Build tool | Vite | Dev server on `127.0.0.1:5173`, `/api` proxied to the backend |
-| Localization | i18next (`react-i18next`) | English and Russian resource files, parity required |
-| Styling | Plain CSS with CSS variables | Theme presets (Strict/Playful) switch variable sets; no heavy UI framework |
+| Build tool | Vite | Dev server on port `5173`, host `0.0.0.0` (LAN access), `/api` proxied to the backend |
+| Localization | i18next (`react-i18next`) | English and Russian resource files, parity enforced by an automated key-set test |
+| Styling | Plain CSS with CSS variables | Theme presets (eight) switch variable sets on `data-theme`; no heavy UI framework |
 | Iconography | Lucide (`lucide-react`) | Thin-stroke outline icon set, imported as React components; avoids emoji (inconsistent/low-fidelity rendering across OSes, e.g. flag emoji on Windows) and reads more consistent with the app's muted Strict theme than filled/Material-style icon sets |
-| Server state | Lightweight fetch hooks or TanStack Query | Keep simple; add TanStack Query only when polling/caching demands it |
+| Server state | Lightweight fetch hooks + React contexts | No API-client module; components call `fetch('/api/...')` directly, shared state lives in contexts |
+| Testing | Vitest (+ `@testing-library/react` with per-file jsdom for component tests) | Pure-logic utility tests plus component tests; locale-parity test |
 
 ## Backend
 
 | Area | Choice | Notes |
 | --- | --- | --- |
 | Language | Python 3.11+ | |
-| Framework | FastAPI + Uvicorn | Bound to `127.0.0.1:8000` only; no external exposure |
-| Database | SQLite (single file next to the backend) | Accessed via SQLAlchemy 2.x; schema version tracked in a small `schema_meta` table |
+| Framework | FastAPI + Uvicorn | Port `8000`, host `0.0.0.0` (post-V1 — LAN access from phones/tablets); no authentication, trusted-network use only |
+| Database | SQLite (single file next to the backend) | Accessed via SQLAlchemy Core; ordered migrations + schema version in a small `schema_meta` table; WAL + busy timeout since worker and request threads share the pool |
 | Log streaming | Server-Sent Events (`sse-starlette`) | For the UI log viewer |
-| Secrets | `.env`-style file `backend/secrets.env`, loaded with `python-dotenv` | Git-ignored; holds provider API keys and source credentials; human-readable and easy to copy |
-| SMB access | `smbprotocol` | Local sources use the plain filesystem |
+| Logging | Request-logging middleware + rotating file log | One line per request (quiet polling routes excepted); console + `logs/backend.log` |
+| HTTP client | `httpx` | Provider calls and test client |
+| Imaging | `opencv-python-headless`, `onnxruntime`, `Pillow`, `numpy` | Previews and detection |
+| Secrets | `.env`-style file `backend/secrets.env`, loaded with `python-dotenv` | Git-ignored; holds provider API keys (per entry) and SMB credentials (per saved source); human-readable and easy to copy |
+| SMB access | `smbprotocol` (its bundled `smbclient` module) | Local sources use the plain filesystem; retry-on-reconnect; heavy processing downloads a local temp copy |
+| Testing | pytest | HTTP-layer tests via FastAPI's `TestClient`; SMB tested against an in-memory fake |
 
 ## Media Processing
 
@@ -59,24 +64,32 @@ m2v, ts, m2ts, mts, vob, 3gp, 3g2, ogv, asf, divx, rmvb
 
 Anything else is listed in the browser as a plain file and excluded from video workflows. A JPEG whose base name matches a video in the same folder is treated as that video's preview asset (see [Specification Section 9.5](./specification.md#95-preview-storage)).
 
+## Supported Image Extensions
+
+Standalone images are first-class library items (post-V1): viewable, taggable (including AI tagging), and similarity-matched, but never converted and never given preview collages. Supported extensions (case-insensitive, disjoint from the video set):
+
+```text
+jpg, jpeg, png, gif, webp, bmp, tiff, tif
+```
+
 ## AI Providers (Tagging)
 
 | Provider | Use |
 | --- | --- |
-| OpenRouter | Gateway to many vision models |
-| Google Gemini | Vision scoring; batch API support |
-| FAL | Vision workloads |
-| Mistral | Vision scoring; batch API support |
+| OpenRouter | Gateway to many vision models; model catalog + live pricing API; reports actual billed cost per call |
+| Google Gemini | Vision scoring; model catalog; batch API support |
+| FAL | Vision workloads, best-effort (no fixed response schema, no catalog API); dual routing — direct `fal-ai/...` app endpoints or FAL's OpenRouter-gateway route to general-purpose vision LLMs (the gateway also reports billed cost) |
+| Mistral | Vision scoring; model catalog; batch API support |
 
-Tagging sends one collage image plus the user's tag vocabulary and expects per-tag relevance scores (0–100) in a structured JSON response.
+Provider configuration is a priority-ordered list of entries (any number per type) with automatic fallback for background jobs; see [Specification Section 18](./specification.md#18-ai-provider-settings-and-secrets). Tagging sends collage or per-frame images plus the user's AI tag vocabulary and expects index-ordered per-tag relevance scores (0–100) in a structured JSON response.
 
 ## Repository Layout (target)
 
 ```text
 /               root package.json — starts frontend + backend together
 /frontend       Vite + React + TypeScript app
-/backend        FastAPI app (app/), secrets.env, SQLite db file, model files
-/docs           specifications (this folder)
+/backend        FastAPI app (app/), secrets.env, SQLite db file, model files, preview_cache/
+/docs           living docs (code maps, architecture, development) + spec/ (this folder)
 ```
 
 The root `package.json` uses `concurrently` to run `npm run dev --prefix frontend` and `npm run dev --prefix backend`; the backend-local `package.json` wraps the Python startup so both halves start from one command on Windows.

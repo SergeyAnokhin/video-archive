@@ -7,9 +7,10 @@ This document defines the expected contents and behavior of manual backups for V
 ## Backup Location
 
 - Backups are stored **on the source disk itself**, in the technical folder at the source root: `.video-archive/backups/`.
-- Each backup is one self-contained package (a folder or a zip archive) named by its creation timestamp and id.
+- Each backup is one self-contained package (a zip archive) named by its creation timestamp and id.
 - The technical folder is excluded from scanning and all processing workflows.
 - Because backups live with the archive, they survive a local metadata wipe (for example a source switch) and travel with the archive if it is moved.
+- Backups are created two ways: manually from Settings, and **automatically on every source switch** — the outgoing source is backed up onto its own disk, and the incoming source's newest backup is auto-restored (scoped data only), so each source's metadata follows it across switches (see [Specification Section 5.2](./specification.md#52-source-switching)).
 
 ## Backup Scope
 
@@ -19,14 +20,13 @@ Backups primarily protect local metadata and local application configuration. Th
 
 A backup should include:
 
-- local metadata database content
+- source-scoped metadata: directories, files, and assigned file tags
 - conversion profiles
-- preview layout presets
-- tag catalog (vocabulary)
-- provider configuration
-- provider secrets when the user explicitly requested full settings export/import behavior
-- application settings snapshot
-- job history if retention policy includes it
+- preview layout presets (non-built-in)
+- the full tag catalog (all pools)
+- provider entries
+- settings singletons (preview, tagging, playback, backup)
+- the secrets file, only when the user explicitly opted in at backup time (`include_secrets`)
 
 ## Excluded Data
 
@@ -34,8 +34,9 @@ A backup should not attempt to duplicate:
 
 - the video library itself
 - preview collages (they already live next to the videos on the source)
-- arbitrary temporary conversion files
-- transient cache files that can be regenerated safely
+- the local GIF preview cache (regenerable)
+- job history (`jobs`/`job_items`/`app_events` are short-lived, 24 h retention)
+- arbitrary temporary conversion files or other regenerable transient caches
 
 ## Backup Metadata
 
@@ -80,11 +81,12 @@ Suggested manifest example:
 }
 ```
 
-## Implementation Notes (Stage 8)
+## Implementation Notes
 
 The implementation (`backend/app/backup.py`) resolves the choices left open above as follows:
 
 - **Package shape**: a single zip containing `manifest.json`, `data.json` (JSON dump of the included tables' rows), and an optional raw `secrets.env` copy when `include_secrets` was requested at backup time.
-- **Job history is not included**: `jobs`/`job_items`/`app_events` are short-lived (24h retention, [Job Model](./job-model.md#retention)) and not restored; only `directories`, `files`, `file_tags`, `conversion_profiles`, non-built-in `preview_layout_presets`, `tag_catalog`, and the `preview_settings`/`tagging_settings`/`provider_configs`/`playback_settings`/`backup_settings` singletons are captured.
-- **Restore mode**: source-scoped tables (`directories`, `files`, `file_tags`) are fully replaced and remapped to the *currently* active source id (a restore normally follows a source switch, which assigns a new source row for the same physical disk); global settings tables are upserted by id rather than wiped, so a restore never deletes a global entity (e.g. a conversion profile) the backup simply didn't know about.
+- **Captured tables**: source-scoped `directories`/`files` (plus their `file_tags`), global multi-row `conversion_profiles`/`tag_catalog`/`provider_entries`/`preview_layout_presets` (non-built-in), and the `preview_settings`/`tagging_settings`/`playback_settings`/`backup_settings` singletons. Job history is not included (24 h retention, [Job Model](./job-model.md#retention)).
+- **Restore mode**: source-scoped tables are fully replaced and remapped to the *currently* active source id (a restore normally follows a source switch, which assigns a new source row for the same physical disk); global settings tables are upserted by id rather than wiped, so a restore never deletes a global entity (e.g. a conversion profile) the backup simply didn't know about.
+- **`include_global=False`**: the flag source switching uses — restores only the source's own scoped data and leaves every global settings table (and the secrets file) untouched, so switching sources never changes app-wide settings. A failed auto-restore falls back to a fresh scan.
 - **Backup id**: the id used by `GET /api/backups`, `POST /api/backups/restore`, and `DELETE /api/backups/{backup_id}` is the package filename without its `.zip` extension (`<timestamp>_<short-uuid>`), not the full `manifest.backup_id` UUID.

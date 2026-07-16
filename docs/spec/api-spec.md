@@ -2,474 +2,171 @@
 
 ## Overview
 
-This document defines the backend API surface for Video Archive. The API is intended for a React frontend and a local FastAPI backend. All endpoints below are conceptual v1 endpoints and use JSON unless noted otherwise.
+This document defines the backend API surface for Video Archive: a React frontend against a local FastAPI backend. All endpoints use JSON unless noted otherwise. Exact request/response shapes live in the code (routers are thin; see [`code-map-routers.md`](../code-map-routers.md)); this document fixes the surface and the semantics.
 
 ## Conventions
 
 - Base path: `/api`
-- The backend binds to `127.0.0.1` only; authentication is out of scope for this version
+- The backend binds to `0.0.0.0` (post-V1 — LAN access from phones/tablets is supported); authentication is out of scope
 - Timestamps use ISO 8601 UTC
 - Long-running operations return a job record
 - Folder actions are recursive by default
 - Directory paths are passed as query or body parameters (`path`), never as URL path segments, to avoid slash-encoding issues
+- Settings groups are singletons with `GET`/`PUT` endpoint pairs; a `PUT` is a full replace and applies immediately
+- A literal-path route (e.g. `GET /jobs/batch-submissions`) must be declared before a same-method `/{id}`-style route in the same router, or the `{id}` route swallows the literal path
 
 ## 1. Health and App Info
 
-### `GET /api/health`
-
-Returns backend liveness information.
-
-Response:
-
-```json
-{
-  "status": "ok"
-}
-```
-
-### `GET /api/app/info`
-
-Returns runtime information needed by the frontend.
-
-Response fields:
-
-- app version
-- active source summary
-- database status
-- queue status (current job, if any)
-- ffmpeg availability
+- `GET /api/health` — liveness (`{"status": "ok"}`).
+- `GET /api/app/info` — app version, active source summary, DB status, queue status, ffmpeg availability.
+- `GET /api/app/network-info` — `{lan_addresses, frontend_port, backend_port}` for the Settings → Network page.
 
 ## 2. Source Management
 
-### `GET /api/source`
+### Active source
 
-Returns the currently configured source.
+- `GET /api/source` — the currently active source.
+- `PUT /api/source` — connect (upserts a saved source matching `(protocol, host, port, root_path)`, then runs the switch flow: back up outgoing, wipe scoped data, activate, auto-restore incoming's backup, scan). Response includes `detected_backups` and `auto_restored`. The connect scan is synchronous.
+- `POST /api/source/test-connection` — test a configuration without saving it.
+- `POST /api/source/reconnect` — reconnect the active source (no-op for `local`).
 
-### `PUT /api/source`
+Request body (SMB): `name`, `protocol: "smb"`, `host`, `port`, `root_path` (`share[/subpath]`), `username`, `password`. Credentials go to the secrets file per source id. Request body (local): `name`, `protocol: "local"`, `root_path` (absolute or backend-relative). `webdav` → `400 unsupported_protocol`.
 
-Creates or replaces the active source configuration. Replacing an existing source is destructive: the frontend must show a confirmation warning first, and the backend wipes all library metadata (see [Specification Section 5.2](./specification.md#52-source-switching)).
+### Saved sources (post-V1)
 
-Request body (remote protocol source):
-
-```json
-{
-  "name": "Archive NAS",
-  "protocol": "smb",
-  "host": "nas.local",
-  "port": 445,
-  "root_path": "/videos",
-  "username": "user",
-  "password": "secret"
-}
-```
-
-Request body (local source, a directory next to the backend):
-
-```json
-{
-  "name": "Local Library",
-  "protocol": "local",
-  "root_path": "./library"
-}
-```
-
-Response includes `detected_backups`: backups found in the new source's `.video-archive/backups/` folder, so the UI can immediately offer a restore.
-
-Notes:
-
-- Credentials are written to the secrets file; only key references are stored in the database.
-- Only one active source is supported.
-- For `protocol: "local"`, `root_path` may be absolute or relative to the backend working directory; `host`, `port`, `username`, and `password` are not used.
-
-### `POST /api/source/test-connection`
-
-Tests a source configuration without permanently saving it.
-
-### `POST /api/source/reconnect`
-
-Reconnects to the active source (remote protocols only).
+- `GET /api/sources` — every saved source, each with local preview-cache stats.
+- `POST /api/sources/{id}/activate` — switch to a saved source (no-op if already active).
+- `DELETE /api/sources/{id}` — forget a saved source (`400 active_source` for the active one); removes the row, credentials, and preview cache — never touches the source's disk.
+- `DELETE /api/sources/{id}/preview-cache` — clear the cached GIFs; for the active source also resets has-preview facts so the next preview run regenerates.
 
 ## 3. Directory and File Browsing
 
-### `GET /api/tree`
+- `GET /api/tree` — recursive tree (`path`, `depth`, `include_status`, `include_top_tags`). Expensive per-node fields are opt-in booleans, off by default.
+- `GET /api/directories/children` — one directory's subfolders and files (`path`, `include_status`, `include_top_tags`). Files carry `duration_seconds`, `variant_tags`, `ai_tags`, `is_variant`/`is_original`; a variant borrows its original sibling's `has_preview_asset`. `include_top_tags` adds each subfolder's dynamic top-5 most-used tags.
+- `GET /api/directories/search?q=` — folder-name substring search, paginated (backs the `path:` search scope).
+- `GET /api/files` — file list (`directory`, `recursive`, `video_only`, `search`, `tags`, `tag_search`, `limit`, `offset`).
+- `GET /api/files/{file_id}` — full file metadata.
+- `GET /api/files/{file_id}/media-info` — on-demand ffprobe details (`null` fields when unprobeable); works for standalone images too.
+- `GET /api/files/{file_id}/similar` — approximate near-duplicate matches (perceptual-hash distance, same-kind only). Empty when no signature exists yet or nothing is close.
 
-Returns the directory tree for the active source.
+## 4. Directory Operations (post-V1)
 
-Query parameters:
+- `POST /api/directories` — create a folder (`{parent_path, name}`; `invalid_name` / `destination_collision` errors).
+- `DELETE /api/directories?path=` — delete an **empty** folder only (`400 directory_not_empty`; deliberately non-recursive).
+- `PUT /api/directories/favorite` — toggle a folder's favorite flag.
+- `GET /api/directories/favorites` — list favorite folders.
 
-- `path` optional relative path root
-- `depth` optional integer
-- `include_status` optional boolean
+## 5. File Operations (post-V1)
 
-### `GET /api/directories/children`
+- `POST /api/files/{file_id}/move` — move a file (with its sibling preview assets and DB rows) to another folder.
+- `DELETE /api/files/{file_id}` — delete a file together with its sibling preview assets.
 
-Returns immediate child folders and files for one directory.
+Both map domain error codes to HTTP statuses via one exception type per module.
 
-Query parameters:
+## 6. Conversion Profiles
 
-- `path` relative directory path (empty = source root)
-- `include_status` optional boolean (derived recursive conversion/preview indicators)
+- `GET/POST /api/conversion-profiles`, `PUT/DELETE /api/conversion-profiles/{profile_id}`.
 
-### `GET /api/files`
+## 7. Preview Layouts and Settings
 
-Returns file list.
+- `GET/POST /api/preview-layouts`, `PUT/DELETE /api/preview-layouts/{preset_id}` (`409 preset_protected` for built-ins).
+- `POST /api/preview-layouts/preview` — stateless live-preview: validates enlarged-tile placements against the grid and returns the full tile list and derived `frame_count` (`400 invalid_layout` on out-of-bounds/overlap/bad span). The backend stays the single source of truth for grid geometry.
+- `GET/PUT /api/preview-settings` — singleton: aspect ratio (`standard | phone-portrait | phone-landscape | ultra-wide | custom` + custom W/H), folder-preview frame count, `gif_max_width`, `gif_colors`, `animated_source_mode` (`frame | clip`), `animated_segment_seconds`, `animated_transition` (`cut | crossfade`).
 
-Query parameters:
+## 8. Jobs
 
-- `directory` relative directory path
-- `recursive`
-- `video_only`
-- `search` optional text; matches file names
-- `tags` optional comma-separated tag keys; matches assigned tags
-- `limit`
-- `offset`
+- `GET /api/jobs` (`status`, `job_type`, `limit`, `offset`), `GET /api/jobs/{job_id}`, `GET /api/jobs/{job_id}/items`.
+- `POST /api/jobs/{job_id}/cancel` — best-effort; a second cancel on a running job force-finishes it.
+- `POST /api/jobs/{job_id}/pause` / `POST /api/jobs/{job_id}/resume` — per-item-loop job types only (`409 job_not_pausable` / `job_not_resumable`).
+- `POST /api/jobs/{job_id}/restart` — creates a new job with copied parameters.
+- `DELETE /api/jobs/{job_id}`; `DELETE /api/jobs` — clear all finished (also auto-removed after 24 h).
 
-### `GET /api/files/{file_id}`
+### Job triggers
 
-Returns full file metadata and cached processing details.
+- `POST /api/jobs/rescan-directory` — recursive rescan (`{path}`; the source root covers the whole source).
+- `POST /api/jobs/convert-directory` — `{path, profile_id, mode: "production"|"test", skip_processed}`.
+- `POST /api/jobs/convert-file` — `{file_id, profile_id, mode, skip_processed, variants?}`; `variants` (list of parameter overrides) requires `mode: "test"` and produces `<basename>.variant-<params>.mp4` outputs — the variant-comparison ("tuning") flow.
+- `POST /api/jobs/preview-directory` / `POST /api/jobs/preview-file`.
+- `POST /api/jobs/tag-directory` / `POST /api/jobs/tag-file` — `400 no_provider_configured` / `empty_tag_vocabulary`; the actual provider entry is resolved live by the worker in priority order.
+- `POST /api/jobs/cleanup-stale-records`, `POST /api/jobs/optimize-database`.
 
-### `GET /api/files/{file_id}/similar`
+### Batch submissions (post-V1)
 
-Returns approximate near-duplicate matches for one file (Specification §13, optional/secondary feature), ranked by perceptual-hash distance. Empty when the file has no stored signature yet (signatures are generated best-effort as a side effect of the `preview` job) or nothing else in the source is close enough.
+- `GET /api/jobs/batch-submissions` — still-pending provider-side batch-tagging submissions.
+- `DELETE /api/jobs/batch-submissions/{id}` — forget locally (no provider-side cancel; the owning job falls back per-file).
 
-## 4. Conversion Profiles
+## 9. Preview Assets
 
-### `GET /api/conversion-profiles`
+- `GET /api/files/{file_id}/preview` — preview metadata (existence, generation time).
+- `GET /api/files/{file_id}/preview.jpg` — the JPEG collage, read from the source itself.
+- `GET /api/files/{file_id}/preview.gif` — the animated preview, served from the local per-source cache.
+- `GET /api/directories/preview.gif?path=` — the folder GIF, from the local cache.
 
-Returns saved conversion profiles.
+A variant file's preview endpoints redirect onto its original sibling's assets.
 
-### `POST /api/conversion-profiles`
+## 10. Tags
 
-Creates a conversion profile.
+- `GET /api/tags` — one managed pool at a time (`category: "ai" | "user"`, default `"ai"`; `query` prefix filter, `active_only`, `limit`).
+- `GET /api/tags/used` — tags actually assigned to files, from **every** pool, usage-ordered (`query`, `limit`); feeds every per-file add-tag suggestion list.
+- `POST /api/tags` (`409` on duplicate key; `is_ai_vocabulary` / `is_user_defined` select the pool; optional `color` hex), `PUT/DELETE /api/tags/{tag_id}`.
+- Every tag response includes `color` — the stored value or a deterministic hash-based fallback, never null.
 
-### `PUT /api/conversion-profiles/{profile_id}`
+### Per-file tags
 
-Updates a conversion profile.
+- `GET /api/files/{file_id}/tags` — assigned tags with relevance scores (0–100).
+- `POST /api/files/{file_id}/tags` / `DELETE /api/files/{file_id}/tags/{tag_id}` — manual assign/remove (by `tag_id` or `display_name`; score 100, provenance `manual`, ad-hoc pool — never silently joins a managed pool).
+- `POST /api/files/{file_id}/tags/user-defined` — assign from (or create into) the user-defined pool.
 
-### `DELETE /api/conversion-profiles/{profile_id}`
+## 11. Tagging Settings and Tag Lab
 
-Deletes a conversion profile if not protected.
+- `GET/PUT /api/tagging-settings` — singleton: `sample_frame_count`, `combine_into_collage`, `top_tag_count`, `image_resolution`, `request_timeout_seconds`.
+- `POST /api/tagging-settings/preview` — stateless "what the model sees": builds real tagging images for a file id with arbitrary (possibly unsaved) parameters, returned as base64 data URLs.
 
-## 5. Preview Layout Presets
+### Tag Lab (post-V1)
 
-### `GET /api/preview-layouts`
+- `POST /api/files/{file_id}/tag-lab/prepare` — images + prompt only, no provider call (renders before the model responds).
+- `POST /api/files/{file_id}/tag-lab/run` — `{provider_entry_id}` → `run_id`, images/prompt (cached between runs for an unchanged file), raw reply text, full raw provider JSON, token/cost usage, and every vocabulary tag ranked by score. Writes nothing. Synchronous provider failures map to `400`, with the raw response attached whenever the provider returned something.
+- `POST /api/files/{file_id}/tag-lab/apply` — `{provider_type, model_name, run_id?, tags}` → writes the file's tags, records the apply-behavior KPI.
+- `POST /api/tag-lab/runs/{run_id}/feedback` — `{tag_id, display_name, vote: 1 | -1 | null}` per suggested tag.
 
-Returns saved preview layout presets.
+## 12. Provider Settings (post-V1 shape)
 
-### `POST /api/preview-layouts`
+- `GET/POST /api/settings/provider-entries`, `PUT/DELETE /api/settings/provider-entries/{id}` — API keys are never echoed (only `has_api_key` / `key_suffix`).
+- `POST /api/settings/provider-entries/reorder` — set fallback priority.
+- `POST /api/settings/provider-entries/models` (draft key) / `POST /api/settings/provider-entries/{id}/models` (stored key) — model-catalog lookup.
+- `GET /api/settings/provider-entries/export` — JSON download **including plaintext keys** (deliberate; UI confirms first). `POST /api/settings/provider-entries/import` — reads the export back (unknown provider types skipped and counted).
+- `GET /api/settings/provider-usage` — per-(provider, model) usage summary.
+- `GET/PUT /api/settings/model-pricing`; `POST /api/settings/model-pricing/refresh-openrouter` (`400 pricing_refresh_failed` on network error).
+- `GET /api/settings/model-ratings` — per-model like/dislike + apply-KPI stats.
 
-Creates a preview layout preset.
+## 13. Playback
 
-### `PUT /api/preview-layouts/{preset_id}`
+- `GET /api/files/{file_id}/playback` — preferred playback target per settings (mode, stream URL, direct path).
+- `GET /api/files/{file_id}/stream` — Range-aware streaming for embedded playback; also serves a standalone image's own bytes for the image viewer and thumbnails.
 
-Updates a preview layout preset.
+## 14. Logs and Events
 
-### `DELETE /api/preview-layouts/{preset_id}`
+- `GET /api/logs` (`job_id`, `file_id`, `level`, `limit`).
+- `GET /api/logs/stream` — SSE, near real time.
 
-Deletes a preview layout preset.
+## 15. Settings Singletons
 
-### `POST /api/preview-layouts/preview`
+- `GET/PUT /api/playback-settings` — `mode: "stream" | "direct_link"`.
+- `GET/PUT /api/backup-settings` — `retention_count`.
+- `GET/PUT /api/performance-settings` — `parallel_workers` (1–16).
+- `GET/PUT /api/interface-settings` — `language`, `theme_preset` (8 presets), two preview stylization profiles (six filter fields each), and per-group search limits.
 
-Generates a lightweight live preview payload for the preview settings page: validates the enlarged-tile placements against the grid and returns the full tile list (small tiles auto-filled), so the frontend construction-set editor and the backend collage renderer share one source of truth for grid geometry.
+## 16. Backups
 
-Request body includes:
+Backup and restore run as jobs (`backup` / `restore` job types). Packages live in `.video-archive/backups/` at the source root (see [Backup Format](./backup-format.md)).
 
-- grid size (`grid_rows`, `grid_cols`)
-- enlarged tile placements (`{row, col, span}` list, `layout_definition`)
-- timeline flow
-- identity diversity setting
+- `GET /api/backups`, `POST /api/backups` (optional `include_secrets`), `POST /api/backups/restore`, `DELETE /api/backups/{backup_id}` (synchronous).
 
-Response:
-
-- `grid_rows`, `grid_cols`
-- `tiles`: full tile list (`{row, col, span, type}`, `type` is `small` or `enlarged`)
-- `frame_count`: number of frames the layout requires (Specification §9.2)
-
-Returns `400 invalid_layout` if an enlarged tile is out of bounds, has an invalid span (must be 2 or 3), or overlaps another.
-
-### `GET /api/preview-settings`
-
-Returns the global preview settings singleton: `aspect_ratio` (`standard | phone-portrait | ultra-wide | custom`), `aspect_ratio_custom_width`/`aspect_ratio_custom_height` (used only when `aspect_ratio` is `custom`), and `folder_preview_frame_count` (default 4). These two settings are deliberately not part of a layout preset (Data Model §5).
-
-### `PUT /api/preview-settings`
-
-Updates the global preview settings singleton. Applies immediately, like other settings groups.
-
-## 6. Jobs
-
-### `GET /api/jobs`
-
-Returns jobs.
-
-Query parameters:
-
-- `status`
-- `job_type`
-- `limit`
-- `offset`
-
-### `GET /api/jobs/{job_id}`
-
-Returns a job summary.
-
-### `GET /api/jobs/{job_id}/items`
-
-Returns item-level progress for a job.
-
-### `POST /api/jobs/{job_id}/cancel`
-
-Requests cancellation.
-
-### `POST /api/jobs/{job_id}/restart`
-
-Creates a restart or rerun job when supported.
-
-### `DELETE /api/jobs/{job_id}`
-
-Removes one job from the list.
-
-### `DELETE /api/jobs`
-
-Removes all finished (completed, failed, cancelled) jobs at once. Finished jobs are also auto-removed after 24 hours (see [Job Model](./job-model.md#retention)).
-
-## 7. Scan and Maintenance Jobs
-
-### `POST /api/jobs/scan-source`
-
-Starts a full source scan.
-
-### `POST /api/jobs/rescan-directory`
-
-Starts a recursive rescan for one directory subtree.
-
-Request body:
-
-```json
-{
-  "path": "family/2024"
-}
-```
-
-### `POST /api/jobs/cleanup-stale-records`
-
-Starts stale-record cleanup.
-
-### `POST /api/jobs/optimize-database`
-
-Starts database optimization.
-
-## 8. Conversion Jobs
-
-### `POST /api/jobs/convert-directory`
-
-Starts recursive conversion for a directory subtree.
-
-Request body:
-
-```json
-{
-  "path": "family/2024",
-  "profile_id": "uuid",
-  "mode": "production",
-  "skip_processed": true
-}
-```
-
-- `mode`: `production` | `test` (test preserves originals, see [Specification Section 8.2](./specification.md#82-test-mode))
-- `skip_processed`: default `true`; skip files already converted
-
-### `POST /api/jobs/convert-file`
-
-Starts conversion for one file.
-
-Request body:
-
-```json
-{
-  "file_id": "uuid",
-  "profile_id": "uuid",
-  "mode": "test",
-  "skip_processed": false,
-  "variants": [
-    { "max_dimension": 1000, "crf": 26 },
-    { "max_dimension": 1000, "crf": 28 },
-    { "max_dimension": 800, "crf": 28 }
-  ]
-}
-```
-
-- `variants` is optional and allowed only with `mode: "test"`; each variant produces a separate output named `<basename>.variant-<params>.mp4`. This is the variant-comparison (former "tuning") flow.
-
-## 9. Preview Jobs
-
-### `POST /api/jobs/preview-directory`
-
-Starts recursive preview generation for a directory subtree (file collages plus folder previews).
-
-Request body:
-
-```json
-{
-  "path": "family/2024",
-  "skip_processed": true
-}
-```
-
-### `POST /api/jobs/preview-file`
-
-Starts preview generation for one file.
-
-### `GET /api/files/{file_id}/preview`
-
-Returns preview asset metadata for a file (existence, path, generation time).
-
-### `GET /api/files/{file_id}/preview.jpg`
-
-Serves the preview collage image itself (read through the source access layer).
-
-### `GET /api/directories/preview.jpg`
-
-Serves a folder preview image. Query parameter: `path`.
-
-## 10. Tagging and Tags
-
-### `GET /api/tags`
-
-Returns the tag vocabulary.
-
-Query parameters:
-
-- `query` optional prefix filter for autocomplete (matches from the first letters)
-- `active_only` optional boolean
-- `limit`
-
-### `POST /api/tags`
-
-Adds a tag to the vocabulary.
-
-### `PUT /api/tags/{tag_id}`
-
-Updates a tag (rename, activate/deactivate).
-
-### `DELETE /api/tags/{tag_id}`
-
-Removes a tag from the vocabulary; assigned `file_tags` referencing it are removed as well.
-
-### `POST /api/jobs/tag-directory`
-
-Starts recursive tagging for a directory subtree.
-
-Request body:
-
-```json
-{
-  "path": "family/2024",
-  "skip_processed": true
-}
-```
-
-### `POST /api/jobs/tag-file`
-
-Starts tagging for one file.
-
-### `GET /api/files/{file_id}/tags`
-
-Returns assigned tags with relevance scores (0–100) for a file.
-
-## 11. Playback
-
-### `GET /api/files/{file_id}/playback`
-
-Returns the preferred playback target according to current playback settings.
-
-Response may include:
-
-- embedded stream URL (backend streaming endpoint)
-- external path or protocol link (for example a UNC path)
-- playback mode
-
-### `GET /api/files/{file_id}/stream`
-
-Streams the video file with HTTP Range support for embedded browser playback (used when playback mode is `stream`).
-
-## 12. Logs and Events
-
-### `GET /api/logs`
-
-Returns recent event log entries.
-
-Query parameters:
-
-- `job_id`
-- `file_id`
-- `level`
-- `limit`
-
-### `GET /api/logs/stream`
-
-Streams log events in near real time.
-
-Recommended transport:
-
-- Server-Sent Events for v1
-
-## 13. Settings
-
-### `GET /api/settings`
-
-Returns non-secret settings payload for the frontend.
-
-### `PUT /api/settings`
-
-Updates non-secret settings payload.
-
-### `GET /api/settings/providers`
-
-Returns provider configuration summary (keys masked).
-
-### `PUT /api/settings/providers`
-
-Updates provider settings; API keys are written to the secrets file.
-
-### `GET /api/settings/export`
-
-Exports settings package including provider configuration and API keys when explicitly requested.
-
-### `POST /api/settings/import`
-
-Imports a settings package.
-
-### `GET /api/interface-settings`
-
-Returns the interface settings singleton: `language` (`en | ru`) and `theme_preset` (`strict | playful`).
-
-### `PUT /api/interface-settings`
-
-Updates the interface settings singleton. Applied immediately on the frontend, without a page reload (Settings Specification §9).
-
-## 14. Backups
-
-Backup and restore run as jobs (`backup` / `restore` job types) and return a job record. Packages live in `.video-archive/backups/` at the source root (see [Backup Format](./backup-format.md)).
-
-### `GET /api/backups`
-
-Returns available backups found in the active source's technical folder.
-
-### `POST /api/backups`
-
-Creates a manual backup. Returns the created `backup` job.
-
-### `POST /api/backups/restore`
-
-Restores a selected backup. Returns the created `restore` job.
-
-### `DELETE /api/backups/{backup_id}`
-
-Deletes a backup package.
+Source switching invokes backup/restore internally, not through these endpoints.
 
 ## Error Model
 
-Recommended response structure:
+Errors carry a structured code + message:
 
 ```json
 {
@@ -480,8 +177,10 @@ Recommended response structure:
 }
 ```
 
+Known gap: FastAPI's default handler nests this under `{"detail": {...}}`. Domain modules raise one exception class carrying `code`/`message`; the router maps codes to HTTP statuses. Synchronous provider-call failures always map to `400`.
+
 ## Notes
 
-- Endpoints returning directory status should compute recursive progress from files.
-- Job creation endpoints should snapshot relevant profile or settings data into job parameters.
-- The frontend should assume long-running work is asynchronous and job-backed.
+- Endpoints returning directory status compute recursive progress from files; expensive per-node fields are opt-in query booleans.
+- Job creation endpoints snapshot relevant profile or settings data into job parameters.
+- The frontend assumes long-running work is asynchronous and job-backed; Tag Lab is the deliberate synchronous exception.
