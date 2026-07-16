@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileVideo, Folder, Tag as TagIcon } from 'lucide-react'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
@@ -33,6 +33,12 @@ interface SearchResultsProps {
   onDeleteFile: (fileId: string) => void
   onToggleFavoriteDirectory: (path: string, favorite: boolean) => void
   onDeleteDirectory: (path: string) => void
+  // Reports the flat, currently-visible file list in on-screen order (user
+  // request: prev/next navigation must work against search results too, not
+  // just a folder's own listing) -- LibraryView uses this for
+  // PlaybackModal/ImageViewerModal/FileInfoPanel's hasPrev/hasNext instead of
+  // its own folder-browsing `data` while a search is active.
+  onFilesChanged?: (files: FileEntry[]) => void
 }
 
 function fileSearchParams(scope: 'tag' | 'file', term: string): URLSearchParams {
@@ -72,6 +78,7 @@ export function SearchResults({
   onDeleteFile,
   onToggleFavoriteDirectory,
   onDeleteDirectory,
+  onFilesChanged,
 }: SearchResultsProps) {
   const { t } = useTranslation()
   const { searchLimits } = useInterfaceSettings()
@@ -165,6 +172,24 @@ export function SearchResults({
     observer.observe(sentinel)
     return () => observer.disconnect()
   }, [hasMore, loadMore])
+
+  // Flat, on-screen file order for prev/next (see `onFilesChanged` above):
+  // the 'all' scope concatenates the two file groups in the order they're
+  // rendered (tags then names); 'path' has no files; a narrowed scope is
+  // already one flat, paginated list.
+  const flatFiles = useMemo(() => {
+    if (scope === 'all') {
+      return groups ? [...sortFiles(groups.tagFiles, sortBy), ...sortFiles(groups.nameFiles, sortBy)] : []
+    }
+    if (scope === 'path') {
+      return []
+    }
+    return sortFiles(files ?? [], sortBy)
+  }, [scope, groups, files, sortBy])
+
+  useEffect(() => {
+    onFilesChanged?.(flatFiles)
+  }, [flatFiles, onFilesChanged])
 
   function renderFileGrid(entries: FileEntry[]) {
     return (

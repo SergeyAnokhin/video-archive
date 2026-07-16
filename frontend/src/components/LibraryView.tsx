@@ -82,6 +82,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const [historyOpen, setHistoryOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>('name')
   const [reloadTick, setReloadTick] = useState(0)
+  const [searchFiles, setSearchFiles] = useState<FileEntry[]>([])
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const overflowRef = useRef<HTMLDivElement | null>(null)
   const historyRef = useRef<HTMLDivElement | null>(null)
@@ -209,11 +210,11 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const segments = path ? path.split('/') : []
   const recentVisits = getRecentFolderVisits().filter((visitPath) => visitPath !== path)
 
-  // Next/prev navigation in PlaybackModal/FileInfoPanel only makes sense
-  // against this directory's own sorted listing (user request) -- search
-  // results keep their separate inline sortFiles() call below and don't
-  // participate in next/prev.
-  const sortedFiles = data ? sortFiles(data.files, sortBy) : []
+  // Next/prev navigation in PlaybackModal/ImageViewerModal/FileInfoPanel
+  // walks this directory's own sorted listing while browsing, or the search
+  // results' own on-screen order (`searchFiles`, kept in sync by
+  // SearchResults' `onFilesChanged`) while a search is active (user request).
+  const sortedFiles = activeSearch ? searchFiles : data ? sortFiles(data.files, sortBy) : []
   const playingIndex = playingFile ? sortedFiles.findIndex((f) => f.id === playingFile.id) : -1
   const infoIndex = infoFile ? sortedFiles.findIndex((f) => f.id === infoFile.id) : -1
 
@@ -500,6 +501,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           onDeleteFile={(fileId) => void handleDeleteFile(fileId)}
           onToggleFavoriteDirectory={(dirPath, favorite) => void handleToggleFavoriteFolder(dirPath, favorite)}
           onDeleteDirectory={(dirPath) => void handleDeleteFolder(dirPath)}
+          onFilesChanged={setSearchFiles}
         />
       ) : (
         <>

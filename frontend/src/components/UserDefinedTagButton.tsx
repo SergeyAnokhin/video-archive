@@ -63,7 +63,10 @@ export function UserDefinedTagButton({ fileId, onTagAdded, variant = 'overlay' }
       }
       setValue('')
       onTagAdded?.()
-      inputRef.current?.focus()
+      // Close the popover (user request -- picking a tag previously gave no
+      // feedback at all: the popover stayed open with no visible sign the
+      // click had done anything, even though the tag was in fact assigned).
+      setOpen(false)
     } catch {
       setError(t('library.tagsAddError'))
     } finally {

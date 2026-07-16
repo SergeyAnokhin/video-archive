@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { useTranslation } from 'react-i18next'
 import { Tag as TagIcon, X } from 'lucide-react'
 import { getRecentTags, recordRecentTag } from '../utils/recentTags'
+import { buildTagSuggestions } from '../utils/tagSuggestions'
 import type { Tag } from '../types/api'
+import { TagBadge } from './TagBadge'
 import './QuickTagAdd.css'
 
 interface QuickTagAddProps {
@@ -12,15 +14,19 @@ interface QuickTagAddProps {
 
 // Compact inline tag-add control meant to sit directly over the playback
 // screen's video (user request): no modal, a transparent input that toggles
-// open/closed, suggesting the 5 most recently used tags when empty and, once
-// typing starts, the 5 best-matching tags actually assigned somewhere in
-// this archive (not the full Settings vocabulary -- see
-// `GET /api/tags/used`).
+// open/closed. Suggestions (user request) put the 10 tags most recently
+// added manually through a "+"-style control first (`recentTags.ts`, shared
+// across QuickTagAdd/FileInfoPanel/TagLabModal), then up to 10 more of the
+// best-matching tags actually assigned somewhere in this archive (not the
+// full Settings vocabulary -- see `GET /api/tags/used`), each rendered as
+// its own colored `TagBadge` (user request -- every tag has one color shown
+// identically everywhere, and this suggestion list was a plain-text
+// exception to that).
 export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
-  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [suggestions, setSuggestions] = useState<Tag[]>([])
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -29,22 +35,18 @@ export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
     if (!open) {
       return
     }
-    const query = value.trim()
-    if (!query) {
-      setSuggestions(getRecentTags())
-      return
-    }
     let cancelled = false
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const res = await fetch(`/api/tags/used?query=${encodeURIComponent(query)}&limit=5`)
+          const query = value.trim()
+          const res = await fetch(`/api/tags/used?${new URLSearchParams({ query, limit: '100' })}`)
           if (!res.ok) {
             throw new Error(`HTTP ${res.status}`)
           }
           const data: { tags: Tag[] } = await res.json()
           if (!cancelled) {
-            setSuggestions(data.tags.map((tag) => tag.display_name))
+            setSuggestions(buildTagSuggestions(getRecentTags(), data.tags))
           }
         } catch {
           if (!cancelled) {
@@ -52,7 +54,7 @@ export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
           }
         }
       })()
-    }, 250)
+    }, value.trim() ? 250 : 0)
     return () => {
       cancelled = true
       clearTimeout(timer)
@@ -77,7 +79,6 @@ export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
       }
       recordRecentTag(trimmed)
       setValue('')
-      setSuggestions(getRecentTags())
       onTagAdded?.()
       inputRef.current?.focus()
     } catch {
@@ -105,7 +106,6 @@ export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
       const next = !current
       if (next) {
         setValue('')
-        setSuggestions(getRecentTags())
         setError(null)
       }
       return next
@@ -138,16 +138,13 @@ export function QuickTagAdd({ fileId, onTagAdded }: QuickTagAddProps) {
           />
           {suggestions.length > 0 && (
             <div className="quick-tag-add__suggestions">
-              {suggestions.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  className="quick-tag-add__suggestion"
-                  disabled={adding}
-                  onClick={() => void handleAdd(name)}
-                >
-                  {name}
-                </button>
+              {suggestions.map((tag) => (
+                <TagBadge
+                  key={tag.id}
+                  displayName={tag.display_name}
+                  color={tag.color}
+                  onClick={adding ? undefined : () => void handleAdd(tag.display_name)}
+                />
               ))}
             </div>
           )}

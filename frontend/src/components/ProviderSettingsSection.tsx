@@ -588,10 +588,19 @@ function ProviderEntryForm({ initial, onCancel, onSaved }: ProviderEntryFormProp
           className="settings-modal__option"
           onClick={() => void handleLoadModels()}
           disabled={loadingModels || !MODEL_LISTING_SUPPORTED.includes(providerType) || (!editingExisting && !apiKey)}
+          title={!MODEL_LISTING_SUPPORTED.includes(providerType) ? t('providerSettings.modelsNotSupported') : undefined}
         >
           {loadingModels ? t('providerSettings.loadingModels') : t('providerSettings.loadModels')}
         </button>
       </div>
+      {/* The button above is disabled (not clickable) for a provider that doesn't
+          support model listing, so handleLoadModels()'s own modelError branch for
+          this case is unreachable -- show the same explanation as a static hint
+          instead (user report: the button looked silently broken for FAL, which
+          has no discoverable model catalog to list -- see providers/fal.py). */}
+      {!MODEL_LISTING_SUPPORTED.includes(providerType) && (
+        <p className="settings-modal__hint">{t('providerSettings.modelsNotSupported')}</p>
+      )}
       {modelError && <p className="settings-modal__hint settings-modal__hint--error">{modelError}</p>}
 
       <label className="settings-modal__label">

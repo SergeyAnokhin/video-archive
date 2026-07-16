@@ -1,9 +1,12 @@
 const STORAGE_KEY = 'video-archive:recent-tags'
-const MAX_ENTRIES = 5
+const MAX_ENTRIES = 10
 
 // De-duped most-recent-first list (like recentlyViewed.ts) of tag display
-// names entered through the playback screen's quick tag-add control (user
-// request) -- feeds its empty-input suggestion list.
+// names manually entered through any "+"-style tag-add control -- the
+// playback screen's quick tag-add, FileInfoPanel's tag-add, and Tag Lab's
+// add-more field (user request: these tags should surface first, ahead of
+// merely-popular ones, in every such control's suggestion list -- see
+// `buildTagSuggestions()` in tagSuggestions.ts).
 export function recordRecentTag(displayName: string) {
   const trimmed = displayName.trim()
   if (!trimmed) {

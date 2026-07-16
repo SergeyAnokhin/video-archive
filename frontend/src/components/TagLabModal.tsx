@@ -1,6 +1,8 @@
 import { Pencil, Play, Plus, Tags, ThumbsDown, ThumbsUp, X } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { getRecentTags, recordRecentTag } from '../utils/recentTags'
+import { buildTagSuggestions } from '../utils/tagSuggestions'
 import type {
   FileEntry,
   ModelPricing,
@@ -242,20 +244,44 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     setSelectedTags((current) => current.filter((tag) => normalizeName(tag.display_name) !== normalizeName(displayName)))
   }
 
-  function handleAddTag(event: FormEvent) {
-    event.preventDefault()
-    const displayName = tagInput.trim()
-    if (!displayName) {
+  // `tag` is the matching pool entry when adding from a suggestion chip
+  // (carries its real id/color, user request -- previously a suggestion
+  // pick still went through the free-text path and lost both), omitted for
+  // a genuinely free-typed name (falls back to TagBadge's hash color, same
+  // as before).
+  function addTag(displayName: string, tag?: Tag) {
+    const trimmed = displayName.trim()
+    if (!trimmed) {
       return
     }
     setSelectedTags((current) => {
-      if (current.some((tag) => normalizeName(tag.display_name) === normalizeName(displayName))) {
+      if (current.some((existing) => normalizeName(existing.display_name) === normalizeName(trimmed))) {
         return current
       }
-      return [...current, { tag_id: null, display_name: displayName, score: 100, source: 'manual' }]
+      return [...current, { tag_id: tag?.id ?? null, display_name: trimmed, color: tag?.color, score: 100, source: 'manual' }]
     })
+    recordRecentTag(trimmed)
     setTagInput('')
   }
+
+  function handleAddTag(event: FormEvent) {
+    event.preventDefault()
+    addTag(tagInput)
+  }
+
+  // Suggestion ordering (user request, shared with QuickTagAdd/
+  // FileInfoPanel): recently manually-added tags first, then the rest of
+  // `tagOptions` (already usage-ordered, fetched once at up to 500 entries)
+  // filtered to what's typed so far.
+  const tagSuggestions = useMemo(() => {
+    const query = tagInput.trim().toLowerCase()
+    const filtered = query
+      ? tagOptions.filter(
+          (tag) => tag.tag_key.includes(query) || tag.display_name.toLowerCase().includes(query),
+        )
+      : tagOptions
+    return buildTagSuggestions(getRecentTags(), filtered)
+  }, [tagInput, tagOptions])
 
   async function handleVote(tag: SelectedTag, vote: 1 | -1) {
     if (!result || !tag.tag_id) {
@@ -578,30 +604,38 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
                 ))}
               </ul>
             )}
-            <form className="file-info-panel__tags-add" onSubmit={handleAddTag}>
-              <input
-                type="text"
-                list="tag-lab-tag-options"
-                className="file-info-panel__tags-input"
-                placeholder={t('library.tagsAddPlaceholder')}
-                value={tagInput}
-                onChange={(event) => setTagInput(event.target.value)}
-              />
-              <datalist id="tag-lab-tag-options">
-                {tagOptions.map((option) => (
-                  <option key={option.id} value={option.display_name} />
-                ))}
-              </datalist>
-              <button
-                type="submit"
-                className="file-info-panel__tags-add-btn"
-                disabled={!tagInput.trim()}
-                aria-label={t('library.tagsAddButton')}
-                title={t('library.tagsAddButton')}
-              >
-                <Plus size={14} />
-              </button>
-            </form>
+            <div className="file-info-panel__tags-add-wrap">
+              <form className="file-info-panel__tags-add" onSubmit={handleAddTag}>
+                <input
+                  type="text"
+                  className="file-info-panel__tags-input"
+                  placeholder={t('library.tagsAddPlaceholder')}
+                  value={tagInput}
+                  onChange={(event) => setTagInput(event.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="file-info-panel__tags-add-btn"
+                  disabled={!tagInput.trim()}
+                  aria-label={t('library.tagsAddButton')}
+                  title={t('library.tagsAddButton')}
+                >
+                  <Plus size={14} />
+                </button>
+              </form>
+              {tagSuggestions.length > 0 && (
+                <div className="file-info-panel__tags-suggestions">
+                  {tagSuggestions.map((option) => (
+                    <TagBadge
+                      key={option.id}
+                      displayName={option.display_name}
+                      color={option.color}
+                      onClick={() => addTag(option.display_name, option)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
 
             {applyError && <p className="convert-dialog__hint convert-dialog__hint--error">{applyError}</p>}
           </div>

@@ -243,11 +243,28 @@
   color: var(--color-text-muted);
 }
 
+.file-info-panel__tags-add-wrap {
+  margin-top: 2px;
+}
+
 .file-info-panel__tags-add {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  margin-top: 2px;
+}
+
+/* Suggestion chips only take up space while the add-tag control has focus
+   (user request: recently manually-added tags first, then popular ones,
+   each colored like every other tag badge -- see tagSuggestions.ts). */
+.file-info-panel__tags-suggestions {
+  display: none;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.file-info-panel__tags-add-wrap:focus-within .file-info-panel__tags-suggestions {
+  display: flex;
 }
 
 .file-info-panel__tags-input {

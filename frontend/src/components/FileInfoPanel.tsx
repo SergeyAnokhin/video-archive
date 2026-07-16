@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -24,6 +25,8 @@ import {
   X,
 } from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
+import { getRecentTags, recordRecentTag } from '../utils/recentTags'
+import { buildTagSuggestions } from '../utils/tagSuggestions'
 import type { FileEntry, FileMediaInfo, FileTagAssignment, Tag } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
@@ -97,6 +100,26 @@ export function FileInfoPanel({
   const [tagError, setTagError] = useState<string | null>(null)
   const [tagOptions, setTagOptions] = useState<Tag[]>([])
 
+  // Arrow-key prev/next (user request, matches PlaybackModal/
+  // ImageViewerModal): ignored while focus is on the split-divider (its own
+  // ArrowLeft/ArrowRight resize the panels, see handleDividerKeyDown) or a
+  // text field (cursor movement).
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null
+      if (target && (target.closest('.file-info-panel__divider') || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return
+      }
+      if (event.key === 'ArrowLeft' && hasPrev && onPrev) {
+        onPrev()
+      } else if (event.key === 'ArrowRight' && hasNext && onNext) {
+        onNext()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [hasPrev, hasNext, onPrev, onNext])
+
   const refreshTagOptions = useCallback(async () => {
     const res = await fetch('/api/tags/used?limit=500')
     if (res.ok) {
@@ -162,10 +185,9 @@ export function FileInfoPanel({
     }
   }, [file.id])
 
-  async function handleAddTag(event: FormEvent) {
-    event.preventDefault()
-    const displayName = tagInput.trim()
-    if (!displayName) {
+  async function addTag(displayName: string) {
+    const trimmed = displayName.trim()
+    if (!trimmed) {
       return
     }
     setAddingTag(true)
@@ -174,11 +196,12 @@ export function FileInfoPanel({
       const res = await fetch(`/api/files/${file.id}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: displayName }),
+        body: JSON.stringify({ display_name: trimmed }),
       })
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`)
       }
+      recordRecentTag(trimmed)
       setTagInput('')
       await refetchTags()
       void refreshTagOptions()
@@ -189,6 +212,27 @@ export function FileInfoPanel({
       setAddingTag(false)
     }
   }
+
+  function handleAddTag(event: FormEvent) {
+    event.preventDefault()
+    void addTag(tagInput)
+  }
+
+  // Suggestion ordering (user request, shared with QuickTagAdd/TagLabModal):
+  // tags recently added manually through a "+"-style control first, then the
+  // rest of `tagOptions` (already usage-ordered) filtered to what's typed so
+  // far -- `tagOptions` covers every pool and is fetched once at up to 500
+  // entries, plenty to filter client-side rather than re-querying per
+  // keystroke.
+  const tagSuggestions = useMemo(() => {
+    const query = tagInput.trim().toLowerCase()
+    const filtered = query
+      ? tagOptions.filter(
+          (tag) => tag.tag_key.includes(query) || tag.display_name.toLowerCase().includes(query),
+        )
+      : tagOptions
+    return buildTagSuggestions(getRecentTags(), filtered)
+  }, [tagInput, tagOptions])
 
   async function handleRemoveTag(tagId: string) {
     setTagError(null)
@@ -450,30 +494,38 @@ export function FileInfoPanel({
                   )}
                 </>
               )}
-              <form className="file-info-panel__tags-add" onSubmit={handleAddTag}>
-                <input
-                  type="text"
-                  list="file-info-panel-tag-options"
-                  className="file-info-panel__tags-input"
-                  placeholder={t('library.tagsAddPlaceholder')}
-                  value={tagInput}
-                  onChange={(event) => setTagInput(event.target.value)}
-                />
-                <datalist id="file-info-panel-tag-options">
-                  {tagOptions.map((option) => (
-                    <option key={option.id} value={option.display_name} />
-                  ))}
-                </datalist>
-                <button
-                  type="submit"
-                  className="file-info-panel__tags-add-btn"
-                  disabled={!tagInput.trim() || addingTag}
-                  aria-label={t('library.tagsAddButton')}
-                  title={t('library.tagsAddButton')}
-                >
-                  <Plus size={14} />
-                </button>
-              </form>
+              <div className="file-info-panel__tags-add-wrap">
+                <form className="file-info-panel__tags-add" onSubmit={handleAddTag}>
+                  <input
+                    type="text"
+                    className="file-info-panel__tags-input"
+                    placeholder={t('library.tagsAddPlaceholder')}
+                    value={tagInput}
+                    onChange={(event) => setTagInput(event.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="file-info-panel__tags-add-btn"
+                    disabled={!tagInput.trim() || addingTag}
+                    aria-label={t('library.tagsAddButton')}
+                    title={t('library.tagsAddButton')}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </form>
+                {tagSuggestions.length > 0 && (
+                  <div className="file-info-panel__tags-suggestions">
+                    {tagSuggestions.map((option) => (
+                      <TagBadge
+                        key={option.id}
+                        displayName={option.display_name}
+                        color={option.color}
+                        onClick={addingTag ? undefined : () => void addTag(option.display_name)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
               {tagError && <p className="file-info-panel__tags-error">{tagError}</p>}
               <UserDefinedTagButton
                 fileId={file.id}

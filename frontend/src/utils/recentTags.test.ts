@@ -45,12 +45,12 @@ describe('recordRecentTag / getRecentTags', () => {
     expect(getRecentTags()).toEqual([])
   })
 
-  it('caps the list at 5 entries', () => {
-    for (let i = 0; i < 8; i++) {
+  it('caps the list at 10 entries', () => {
+    for (let i = 0; i < 13; i++) {
       recordRecentTag(`tag-${i}`)
     }
     const result = getRecentTags()
-    expect(result).toHaveLength(5)
-    expect(result[0]).toBe('tag-7')
+    expect(result).toHaveLength(10)
+    expect(result[0]).toBe('tag-12')
   })
 })
