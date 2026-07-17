@@ -1,6 +1,7 @@
 import { Check, Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { tryApi } from '../api/client'
 import type { LogEvent } from '../types/api'
 import './LogViewerModal.css'
 
@@ -70,15 +71,10 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
     if (levelFilter) params.set('level', levelFilter)
 
     async function loadInitial() {
-      try {
-        const res = await fetch(`/api/logs?${params.toString()}&limit=200`)
-        if (!res.ok) return
-        const data: { events: LogEvent[] } = await res.json()
-        if (!cancelled) {
-          setEvents(data.events)
-        }
-      } catch {
-        // The stream below will still deliver new events even if this backfill fails.
+      // The stream below will still deliver new events even if this backfill fails.
+      const data = await tryApi<{ events: LogEvent[] }>(`/api/logs?${params.toString()}&limit=200`)
+      if (data && !cancelled) {
+        setEvents(data.events)
       }
     }
     void loadInitial()

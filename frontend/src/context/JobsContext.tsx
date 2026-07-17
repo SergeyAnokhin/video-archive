@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { tryApi } from '../api/client'
 import type { JobItem, JobSummary } from '../types/api'
 
 interface JobsContextValue {
@@ -31,14 +32,9 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const [jobItemsById, setJobItemsById] = useState<Record<string, JobItem[]>>({})
 
   async function refresh() {
-    try {
-      const res = await fetch('/api/jobs?limit=200')
-      if (!res.ok) return
-      const data: { jobs: JobSummary[] } = await res.json()
-      setJobs(data.jobs)
-    } catch {
-      // Polling failure is transient; keep the last known jobs list.
-    }
+    // Polling failure is transient (tryApi resolves null); keep the last known jobs list.
+    const data = await tryApi<{ jobs: JobSummary[] }>('/api/jobs?limit=200')
+    if (data) setJobs(data.jobs)
   }
 
   useEffect(() => {
@@ -61,15 +57,10 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     let cancelled = false
 
     async function loadItems() {
-      try {
-        const res = await fetch(`/api/jobs/${activeJob!.id}/items`)
-        if (!res.ok) return
-        const data: { items: JobItem[] } = await res.json()
-        if (!cancelled) {
-          setActiveJobItems(data.items)
-        }
-      } catch {
-        // Polling failure is transient; keep the last known items.
+      // Polling failure is transient (tryApi resolves null); keep the last known items.
+      const data = await tryApi<{ items: JobItem[] }>(`/api/jobs/${activeJob!.id}/items`)
+      if (data && !cancelled) {
+        setActiveJobItems(data.items)
       }
     }
 
@@ -97,14 +88,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
     async function loadAllItems() {
       const entries = await Promise.all(
         trackedJobIds.map(async (id) => {
-          try {
-            const res = await fetch(`/api/jobs/${id}/items`)
-            if (!res.ok) return null
-            const data: { items: JobItem[] } = await res.json()
-            return [id, data.items] as const
-          } catch {
-            return null
-          }
+          const data = await tryApi<{ items: JobItem[] }>(`/api/jobs/${id}/items`)
+          return data ? ([id, data.items] as const) : null
         }),
       )
       if (cancelled) return

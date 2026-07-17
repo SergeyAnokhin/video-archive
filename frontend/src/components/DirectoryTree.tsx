@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder, Search, X } from 'lucide-react'
+import { api } from '../api/client'
 import { useSource } from '../context/SourceContext'
 import type { TreeNode } from '../types/api'
 import './DirectoryTree.css'
@@ -54,11 +55,7 @@ export function DirectoryTree({ selectedPath, onSelect }: DirectoryTreeProps) {
 
     async function load() {
       try {
-        const res = await fetch('/api/tree?include_status=true&include_top_tags=true')
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-        const data: TreeNode = await res.json()
+        const data = await api<TreeNode>('/api/tree?include_status=true&include_top_tags=true')
         if (!cancelled) {
           setRoot(data)
         }

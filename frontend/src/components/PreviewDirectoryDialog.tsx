@@ -1,6 +1,7 @@
 import { Play, X } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api } from '../api/client'
 import './ConvertDialog.css'
 
 interface PreviewDirectoryDialogProps {
@@ -19,15 +20,10 @@ export function PreviewDirectoryDialog({ path, onClose, onStarted }: PreviewDire
     setStarting(true)
     setError(null)
     try {
-      const res = await fetch('/api/jobs/preview-directory', {
+      await api('/api/jobs/preview-directory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, skip_processed: skipProcessed }),
+        body: { path, skip_processed: skipProcessed },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       onStarted()
       onClose()
     } catch (err) {

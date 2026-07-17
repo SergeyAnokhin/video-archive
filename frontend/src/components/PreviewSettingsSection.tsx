@@ -1,6 +1,7 @@
 import { Copy, Eraser, FolderOpen, Grid2x2, Grid3x3, LayoutGrid, Save, Square, Star, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api, ApiError, tryApi } from '../api/client'
 import type {
   AnimatedSourceMode,
   AnimatedTransition,
@@ -58,9 +59,8 @@ export function PreviewSettingsSection() {
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const refreshPresets = useCallback(async () => {
-    const res = await fetch('/api/preview-layouts')
-    if (res.ok) {
-      const data: { presets: PreviewLayoutPreset[] } = await res.json()
+    const data = await tryApi<{ presets: PreviewLayoutPreset[] }>('/api/preview-layouts')
+    if (data) {
       setPresets(data.presets)
     }
   }, [])
@@ -68,9 +68,9 @@ export function PreviewSettingsSection() {
   useEffect(() => {
     void refreshPresets()
     void (async () => {
-      const res = await fetch('/api/preview-settings')
-      if (res.ok) {
-        setSettings(await res.json())
+      const loaded = await tryApi<PreviewSettings>('/api/preview-settings')
+      if (loaded) {
+        setSettings(loaded)
       }
     })()
   }, [refreshPresets])
@@ -98,25 +98,28 @@ export function PreviewSettingsSection() {
     let cancelled = false
     async function run() {
       try {
-        const res = await fetch('/api/preview-layouts/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            grid_rows: gridRows,
-            grid_cols: gridCols,
-            layout_definition: enlarged,
-            timeline_flow: timelineFlow,
-            identity_diversity_enabled: identityDiversity,
-          }),
-        })
-        if (!res.ok) {
-          const json = await res.json().catch(() => null)
+        let data: { tiles: LayoutTile[]; frame_count: number }
+        try {
+          data = await api<{ tiles: LayoutTile[]; frame_count: number }>('/api/preview-layouts/preview', {
+            method: 'POST',
+            body: {
+              grid_rows: gridRows,
+              grid_cols: gridCols,
+              layout_definition: enlarged,
+              timeline_flow: timelineFlow,
+              identity_diversity_enabled: identityDiversity,
+            },
+          })
+        } catch (err) {
           if (!cancelled) {
-            setLayoutError(json?.detail?.error?.message ?? t('previewSettings.layoutInvalid'))
+            const detailMessage =
+              err instanceof ApiError
+                ? (err.detail as { error?: { message?: string } } | null)?.error?.message
+                : undefined
+            setLayoutError(detailMessage ?? t('previewSettings.layoutInvalid'))
           }
           return
         }
-        const data: { tiles: LayoutTile[]; frame_count: number } = await res.json()
         if (!cancelled) {
           setTiles(data.tiles)
           setFrameCount(data.frame_count)
@@ -170,16 +173,10 @@ export function PreviewSettingsSection() {
       layout_definition: enlarged,
     }
     const url = presetId ? `/api/preview-layouts/${presetId}` : '/api/preview-layouts'
-    const res = await fetch(url, {
+    return await api<PreviewLayoutPreset>(url, {
       method: presetId ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     })
-    if (!res.ok) {
-      const json = await res.json().catch(() => null)
-      throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-    }
-    return (await res.json()) as PreviewLayoutPreset
   }
 
   async function handleSavePreset(asNew: boolean) {
@@ -206,7 +203,7 @@ export function PreviewSettingsSection() {
   }
 
   async function handleDeletePreset(preset: PreviewLayoutPreset) {
-    await fetch(`/api/preview-layouts/${preset.id}`, { method: 'DELETE' })
+    await tryApi(`/api/preview-layouts/${preset.id}`, { method: 'DELETE' })
     await refreshPresets()
     if (selectedPresetId === preset.id) {
       setSelectedPresetId(null)
@@ -214,10 +211,9 @@ export function PreviewSettingsSection() {
   }
 
   async function handleSetDefault(preset: PreviewLayoutPreset) {
-    await fetch(`/api/preview-layouts/${preset.id}`, {
+    await tryApi(`/api/preview-layouts/${preset.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...preset, is_default: true }),
+      body: { ...preset, is_default: true },
     })
     await refreshPresets()
   }
@@ -228,13 +224,12 @@ export function PreviewSettingsSection() {
     }
     const merged = { ...settings, ...patch }
     setSettings(merged)
-    const res = await fetch('/api/preview-settings', {
+    const saved = await tryApi<PreviewSettings>('/api/preview-settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(merged),
+      body: merged,
     })
-    if (res.ok) {
-      setSettings(await res.json())
+    if (saved) {
+      setSettings(saved)
     }
   }
 

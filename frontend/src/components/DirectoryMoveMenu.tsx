@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Check, ChevronRight, Folder } from 'lucide-react'
+import { tryApi } from '../api/client'
 import type { DirectoryEntry } from '../types/api'
 import './DirectoryMoveMenu.css'
 
@@ -28,11 +29,10 @@ export function DirectoryMoveMenu({ rootPath, rootName, onPick }: DirectoryMoveM
     let cancelled = false
     setChildren(null)
     setLoading(true)
-    fetch(`/api/directories/children?path=${encodeURIComponent(current.path)}`)
-      .then((res) => (res.ok ? res.json() : { directories: [] }))
-      .then((json: { directories: DirectoryEntry[] }) => {
+    tryApi<{ directories: DirectoryEntry[] }>(`/api/directories/children?path=${encodeURIComponent(current.path)}`)
+      .then((json) => {
         if (!cancelled) {
-          setChildren(json.directories)
+          setChildren(json?.directories ?? [])
         }
       })
       .finally(() => {

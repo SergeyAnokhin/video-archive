@@ -2,6 +2,7 @@ import { Play, Save, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConversionProfiles } from '../context/ConversionProfilesContext'
+import { api, tryApi } from '../api/client'
 import type { FileEntry, JobItem, VariantOverride } from '../types/api'
 import './ConvertDialog.css'
 
@@ -92,9 +93,8 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
       return
     }
     async function poll() {
-      const res = await fetch(`/api/jobs/${sweepJobId}/items`)
-      if (res.ok) {
-        const data: { items: JobItem[] } = await res.json()
+      const data = await tryApi<{ items: JobItem[] }>(`/api/jobs/${sweepJobId}/items`)
+      if (data) {
         setItems(data.items)
       }
     }
@@ -112,21 +112,15 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
     setError(null)
     try {
       const overrides = rows.map(rowToOverride)
-      const res = await fetch('/api/jobs/convert-file', {
+      const job = await api<{ id: string }>('/api/jobs/convert-file', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           file_id: file.id,
           profile_id: profileId,
           mode: 'test',
           variants: overrides,
-        }),
+        },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
-      const job = await res.json()
       onStarted()
       setSubmittedOverrides(overrides)
       setSweepJobId(job.id)
@@ -387,17 +381,16 @@ function VariantResultRow({ item, override, baseProfile, onPromoted }: VariantRe
   async function handleSave() {
     setSaving(true)
     try {
-      await fetch('/api/conversion-profiles', {
+      await tryApi('/api/conversion-profiles', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           name,
           video_codec: override.video_codec ?? baseProfile.video_codec,
           container: baseProfile.container,
           max_dimension: override.max_dimension ?? baseProfile.max_dimension,
           crf: override.crf ?? baseProfile.crf,
           drop_audio: baseProfile.drop_audio,
-        }),
+        },
       })
       await onPromoted()
       setPromoting(false)

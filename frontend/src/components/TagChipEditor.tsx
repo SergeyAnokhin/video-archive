@@ -2,6 +2,7 @@ import { Check, Copy, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { TagBadge } from './TagBadge'
+import { api, tryApi } from '../api/client'
 import type { Tag } from '../types/api'
 
 interface TagChipEditorProps {
@@ -39,15 +40,10 @@ export function TagChipEditor({
     }
     setTagError(null)
     try {
-      const res = await fetch('/api/tags', {
+      await api('/api/tags', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: newTagName.trim(), ...createDefaults }),
+        body: { display_name: newTagName.trim(), ...createDefaults },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       setNewTagName('')
       await onChanged()
     } catch (err) {
@@ -56,10 +52,9 @@ export function TagChipEditor({
   }
 
   async function handleToggleActive(tag: Tag) {
-    await fetch(`/api/tags/${tag.id}`, {
+    await tryApi(`/api/tags/${tag.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...tag, is_active: !tag.is_active }),
+      body: { ...tag, is_active: !tag.is_active },
     })
     await onChanged()
   }
@@ -68,25 +63,23 @@ export function TagChipEditor({
     if (!displayName.trim() || displayName === tag.display_name) {
       return
     }
-    await fetch(`/api/tags/${tag.id}`, {
+    await tryApi(`/api/tags/${tag.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...tag, display_name: displayName.trim() }),
+      body: { ...tag, display_name: displayName.trim() },
     })
     await onChanged()
   }
 
   async function handleSetColor(tag: Tag, color: string) {
-    await fetch(`/api/tags/${tag.id}`, {
+    await tryApi(`/api/tags/${tag.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...tag, color }),
+      body: { ...tag, color },
     })
     await onChanged()
   }
 
   async function handleDeleteTag(tag: Tag) {
-    await fetch(`/api/tags/${tag.id}`, { method: 'DELETE' })
+    await tryApi(`/api/tags/${tag.id}`, { method: 'DELETE' })
     await onChanged()
   }
 

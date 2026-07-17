@@ -2,6 +2,7 @@ import { Eye, Maximize2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTags } from '../context/TagsContext'
+import { api, tryApi } from '../api/client'
 import type { TaggingSettings } from '../types/api'
 import { loadPreviewSampleFileIds } from '../utils/recentlyViewed'
 import { TagChipEditor } from './TagChipEditor'
@@ -25,9 +26,9 @@ export function TaggingSettingsSection() {
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch('/api/tagging-settings')
-      if (res.ok) {
-        setSettings(await res.json())
+      const loaded = await tryApi<TaggingSettings>('/api/tagging-settings')
+      if (loaded) {
+        setSettings(loaded)
       }
     })()
   }, [])
@@ -50,13 +51,12 @@ export function TaggingSettingsSection() {
   }, [previewFullscreen])
 
   async function handleSaveSettings(next: TaggingSettings) {
-    const res = await fetch('/api/tagging-settings', {
+    const saved = await tryApi<TaggingSettings>('/api/tagging-settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(next),
+      body: next,
     })
-    if (res.ok) {
-      setSettings(await res.json())
+    if (saved) {
+      setSettings(saved)
     }
   }
 
@@ -71,21 +71,18 @@ export function TaggingSettingsSection() {
       if (!fileId) {
         throw new Error(t('tagging.previewNoVideo'))
       }
-      const res = await fetch('/api/tagging-settings/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          file_id: fileId,
-          sample_frame_count: settings.sample_frame_count,
-          combine_into_collage: settings.combine_into_collage,
-          image_resolution: settings.image_resolution,
-        }),
-      })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
-      const json = (await res.json()) as { images: TaggingPreviewImage[]; combine_into_collage: boolean }
+      const json = await api<{ images: TaggingPreviewImage[]; combine_into_collage: boolean }>(
+        '/api/tagging-settings/preview',
+        {
+          method: 'POST',
+          body: {
+            file_id: fileId,
+            sample_frame_count: settings.sample_frame_count,
+            combine_into_collage: settings.combine_into_collage,
+            image_resolution: settings.image_resolution,
+          },
+        },
+      )
       setPreviewImages(json.images)
       setPreviewCombined(json.combine_into_collage)
     } catch (err) {

@@ -1,6 +1,7 @@
 import { ChevronRight, Folder, FolderInput, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api, ApiError, tryApi } from '../api/client'
 import type { DirectoryEntry, FileEntry } from '../types/api'
 import { recordFolderVisit } from '../utils/recentFolders'
 import './ConvertDialog.css'
@@ -23,25 +24,20 @@ export function MoveFileDialog({ file, currentPath, onClose, onMoved }: MoveFile
     setMoving(true)
     setError(null)
     try {
-      const res = await fetch(`/api/files/${file.id}/move`, {
+      await api(`/api/files/${file.id}/move`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_directory: selected }),
+        body: { target_directory: selected },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        const code = json?.detail?.error?.code
-        if (code === 'same_location') {
-          throw new Error(t('library.moveFileSameLocation'))
-        }
-        if (code === 'destination_collision') {
-          throw new Error(t('library.moveFileCollision'))
-        }
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       recordFolderVisit(selected)
       onMoved()
-    } catch (err) {
+    } catch (rawErr) {
+      const code = rawErr instanceof ApiError ? rawErr.code : undefined
+      const err =
+        code === 'same_location'
+          ? new Error(t('library.moveFileSameLocation'))
+          : code === 'destination_collision'
+            ? new Error(t('library.moveFileCollision'))
+            : rawErr
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setMoving(false)
@@ -108,11 +104,10 @@ function DirectoryTreeNode({ path, name, depth, selected, onSelect }: DirectoryT
     }
     let cancelled = false
     setLoading(true)
-    fetch(`/api/directories/children?path=${encodeURIComponent(path)}`)
-      .then((res) => (res.ok ? res.json() : { directories: [] }))
-      .then((json: { directories: DirectoryEntry[] }) => {
+    tryApi<{ directories: DirectoryEntry[] }>(`/api/directories/children?path=${encodeURIComponent(path)}`)
+      .then((json) => {
         if (!cancelled) {
-          setChildren(json.directories)
+          setChildren(json?.directories ?? [])
         }
       })
       .finally(() => {

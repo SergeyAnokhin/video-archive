@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, X } from 'lucide-react'
+import { api, tryApi } from '../api/client'
 import type { Tag } from '../types/api'
 import { TagBadge } from './TagBadge'
 import './QuickTagAdd.css'
@@ -58,9 +59,8 @@ export function UserDefinedTagButton({
       return
     }
     let cancelled = false
-    fetch('/api/tags?category=user')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { tags: Tag[] } | null) => {
+    tryApi<{ tags: Tag[] }>('/api/tags?category=user')
+      .then((data) => {
         if (!cancelled) {
           setOptions(data?.tags.filter((tag) => tag.is_active) ?? [])
         }
@@ -81,14 +81,10 @@ export function UserDefinedTagButton({
     setAdding(true)
     setError(null)
     try {
-      const res = await fetch(`/api/files/${fileId}/tags/user-defined`, {
+      await api(`/api/files/${fileId}/tags/user-defined`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body,
       })
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
       setValue('')
       onTagAdded?.()
       if (confirmId) {

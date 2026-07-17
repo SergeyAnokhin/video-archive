@@ -27,6 +27,7 @@ import {
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
 import { getRecentTags, recordRecentTag } from '../utils/recentTags'
 import { buildTagSuggestions } from '../utils/tagSuggestions'
+import { api, tryApi } from '../api/client'
 import type { FileEntry, FileMediaInfo, FileTagAssignment, Tag } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
@@ -124,9 +125,8 @@ export function FileInfoPanel({
   }, [hasPrev, hasNext, onPrev, onNext])
 
   const refreshTagOptions = useCallback(async () => {
-    const res = await fetch('/api/tags/used?limit=500')
-    if (res.ok) {
-      const data: { tags: Tag[] } = await res.json()
+    const data = await tryApi<{ tags: Tag[] }>('/api/tags/used?limit=500')
+    if (data) {
       setTagOptions(data.tags)
     }
   }, [])
@@ -139,9 +139,8 @@ export function FileInfoPanel({
     let cancelled = false
     setMediaInfo(null)
     setMediaInfoLoading(true)
-    fetch(`/api/files/${file.id}/media-info`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: FileMediaInfo | null) => {
+    tryApi<FileMediaInfo>(`/api/files/${file.id}/media-info`)
+      .then((data) => {
         if (!cancelled) {
           setMediaInfo(data)
         }
@@ -160,9 +159,8 @@ export function FileInfoPanel({
     let cancelled = false
     setTags([])
     setTagsLoading(true)
-    fetch(`/api/files/${file.id}/tags`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { tags: FileTagAssignment[] } | null) => {
+    tryApi<{ tags: FileTagAssignment[] }>(`/api/files/${file.id}/tags`)
+      .then((data) => {
         if (!cancelled) {
           setTags(data?.tags ?? [])
         }
@@ -180,8 +178,7 @@ export function FileInfoPanel({
   const refetchTags = useCallback(async () => {
     setTagsLoading(true)
     try {
-      const res = await fetch(`/api/files/${file.id}/tags`)
-      const data: { tags: FileTagAssignment[] } | null = res.ok ? await res.json() : null
+      const data = await tryApi<{ tags: FileTagAssignment[] }>(`/api/files/${file.id}/tags`)
       setTags(data?.tags ?? [])
     } finally {
       setTagsLoading(false)
@@ -196,14 +193,10 @@ export function FileInfoPanel({
     setAddingTag(true)
     setTagError(null)
     try {
-      const res = await fetch(`/api/files/${file.id}/tags`, {
+      await api(`/api/files/${file.id}/tags`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: trimmed }),
+        body: { display_name: trimmed },
       })
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
       recordRecentTag(trimmed)
       setTagInput('')
       await refetchTags()
@@ -240,10 +233,7 @@ export function FileInfoPanel({
   async function handleRemoveTag(tagId: string) {
     setTagError(null)
     try {
-      const res = await fetch(`/api/files/${file.id}/tags/${tagId}`, { method: 'DELETE' })
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
+      await api(`/api/files/${file.id}/tags/${tagId}`, { method: 'DELETE' })
       setTags((current) => current.filter((tag) => tag.tag_id !== tagId))
       onTagsChanged?.()
     } catch {

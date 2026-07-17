@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { api } from '../api/client'
 import type { SourceConfig } from '../types/api'
 
 interface SourceContextValue {
@@ -28,11 +29,7 @@ export function SourceProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/source')
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
-      const data: SourceConfig | null = await res.json()
+      const data = await api<SourceConfig | null>('/api/source')
       setSourceState(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

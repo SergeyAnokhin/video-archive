@@ -1,7 +1,7 @@
 import { Pencil, Play, Plus, Tags, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { fetchWithTimeout } from '../utils/fetchWithTimeout'
+import { api, ApiError, tryApi } from '../api/client'
 import { getRecentTags, recordRecentTag } from '../utils/recentTags'
 import { buildTagSuggestions } from '../utils/tagSuggestions'
 import type {
@@ -97,9 +97,8 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/settings/provider-entries')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { entries: ProviderEntry[] } | null) => {
+    tryApi<{ entries: ProviderEntry[] }>('/api/settings/provider-entries')
+      .then((data) => {
         if (cancelled) {
           return
         }
@@ -118,15 +117,12 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   }, [])
 
   useEffect(() => {
-    fetch('/api/tags/used?limit=500')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { tags: Tag[] } | null) => setTagOptions(data?.tags ?? []))
+    tryApi<{ tags: Tag[] }>('/api/tags/used?limit=500').then((data) => setTagOptions(data?.tags ?? []))
   }, [])
 
   useEffect(() => {
-    fetch('/api/tagging-settings')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: TaggingSettings | null) => {
+    tryApi<TaggingSettings>('/api/tagging-settings')
+      .then((data) => {
         if (data) {
           setRequestTimeoutSeconds(data.request_timeout_seconds)
         }
@@ -134,18 +130,15 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   }, [])
 
   async function refreshPrices() {
-    const res = await fetch('/api/settings/model-pricing')
-    if (res.ok) {
-      const json: { prices: ModelPricing[] } = await res.json()
+    const json = await tryApi<{ prices: ModelPricing[] }>('/api/settings/model-pricing')
+    if (json) {
       setPrices(json.prices)
     }
   }
 
   useEffect(() => {
     void refreshPrices()
-    fetch('/api/settings/model-ratings')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((json: { ratings: ModelStats[] } | null) => setRatings(json?.ratings ?? []))
+    tryApi<{ ratings: ModelStats[] }>('/api/settings/model-ratings').then((json) => setRatings(json?.ratings ?? []))
   }, [])
 
   const selectedEntry = entries.find((entry) => entry.id === entryId) ?? null
@@ -176,26 +169,21 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
       // Show the images/prompt as soon as they're ready, without waiting for
       // the (potentially slow) model call below (user request).
       try {
-        const prepRes = await fetchWithTimeout(`/api/files/${file.id}/tag-lab/prepare`, { method: 'POST' }, timeoutMs)
-        if (prepRes.ok) {
-          setPreparing(await prepRes.json())
-        }
+        setPreparing(
+          await api<TagLabPreparedResult>(`/api/files/${file.id}/tag-lab/prepare`, { method: 'POST', timeoutMs }),
+        )
       } catch {
         // Best-effort (including a timeout) -- if this fails, the run
         // request below still shows the same error handling it always has.
       }
 
-      let res: Response
+      let data: TagLabRunResult
       try {
-        res = await fetchWithTimeout(
-          `/api/files/${file.id}/tag-lab/run`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider_entry_id: entryId }),
-          },
+        data = await api<TagLabRunResult>(`/api/files/${file.id}/tag-lab/run`, {
+          method: 'POST',
+          body: { provider_entry_id: entryId },
           timeoutMs,
-        )
+        })
       } catch (err) {
         // A defensive ceiling on top of the backend's own timeout (user
         // request -- this modal must never wait on "Ожидание ответа
@@ -206,17 +194,16 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
         if (err instanceof DOMException && err.name === 'AbortError') {
           throw new Error(t('tagLab.runTimedOut'))
         }
+        if (err instanceof ApiError) {
+          const error = (
+            err.detail as { error?: { message?: string; raw_response?: string; raw_full_response?: string } } | null
+          )?.error
+          if (error?.raw_response || error?.raw_full_response) {
+            setRunErrorRaw({ raw_response: error.raw_response, raw_full_response: error.raw_full_response })
+          }
+        }
         throw err
       }
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        const error = json?.detail?.error
-        if (error?.raw_response || error?.raw_full_response) {
-          setRunErrorRaw({ raw_response: error.raw_response, raw_full_response: error.raw_full_response })
-        }
-        throw new Error(error?.message ?? `HTTP ${res.status}`)
-      }
-      const data: TagLabRunResult = await res.json()
       setResult(data)
       setSelectedTags(
         data.tags
@@ -286,12 +273,11 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     }
     const nextVote: 1 | -1 | null = tagVotes[tag.tag_id] === vote ? null : vote
     try {
-      const res = await fetch(`/api/tag-lab/runs/${result.run_id}/feedback`, {
+      const saved = await tryApi(`/api/tag-lab/runs/${result.run_id}/feedback`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_id: tag.tag_id, display_name: tag.display_name, vote: nextVote }),
+        body: { tag_id: tag.tag_id, display_name: tag.display_name, vote: nextVote },
       })
-      if (!res.ok) {
+      if (saved === null) {
         return
       }
       setTagVotes((current) => {
@@ -327,17 +313,16 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     }
     setSavingPrice(true)
     try {
-      const res = await fetch('/api/settings/model-pricing', {
+      const saved = await tryApi('/api/settings/model-pricing', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           provider_type: result.provider_type,
           model_name: result.model_name,
           input_per_million: input,
           output_per_million: output,
-        }),
+        },
       })
-      if (res.ok) {
+      if (saved !== null) {
         await refreshPrices()
         setEditingPrice(false)
       }
@@ -353,22 +338,17 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     setApplying(true)
     setApplyError(null)
     try {
-      const res = await fetch(`/api/files/${file.id}/tag-lab/apply`, {
+      await api(`/api/files/${file.id}/tag-lab/apply`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           provider_type: result.provider_type,
           model_name: result.model_name,
           run_id: result.run_id,
           tags: selectedTags.map((tag) =>
             tag.source === 'model' ? { tag_id: tag.tag_id, score: tag.score } : { display_name: tag.display_name },
           ),
-        }),
+        },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       onApplied()
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : String(err))

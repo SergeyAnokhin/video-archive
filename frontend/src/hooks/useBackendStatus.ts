@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api } from '../api/client'
 import type { AppInfoResponse, HealthResponse } from '../types/api'
 
 export type BackendStatusState =
@@ -14,17 +15,10 @@ export function useBackendStatus(): BackendStatusState {
 
     async function load() {
       try {
-        const [healthRes, appInfoRes] = await Promise.all([
-          fetch('/api/health'),
-          fetch('/api/app/info'),
+        const [health, appInfo] = await Promise.all([
+          api<HealthResponse>('/api/health'),
+          api<AppInfoResponse>('/api/app/info'),
         ])
-
-        if (!healthRes.ok || !appInfoRes.ok) {
-          throw new Error(`HTTP ${healthRes.status}/${appInfoRes.status}`)
-        }
-
-        const health: HealthResponse = await healthRes.json()
-        const appInfo: AppInfoResponse = await appInfoRes.json()
 
         if (!cancelled) {
           setState({ phase: 'ready', health, appInfo })

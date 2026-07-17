@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { tryApi } from '../api/client'
 import type { PlaybackMode, PlaybackSettings } from '../types/api'
 
 export function PlaybackSettingsSection() {
@@ -8,22 +9,21 @@ export function PlaybackSettingsSection() {
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch('/api/playback-settings')
-      if (res.ok) {
-        setSettings(await res.json())
+      const loaded = await tryApi<PlaybackSettings>('/api/playback-settings')
+      if (loaded) {
+        setSettings(loaded)
       }
     })()
   }, [])
 
   async function handleModeChange(mode: PlaybackMode) {
     setSettings((prev) => (prev ? { ...prev, mode } : prev))
-    const res = await fetch('/api/playback-settings', {
+    const saved = await tryApi<PlaybackSettings>('/api/playback-settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode }),
+      body: { mode },
     })
-    if (res.ok) {
-      setSettings(await res.json())
+    if (saved) {
+      setSettings(saved)
     }
   }
 

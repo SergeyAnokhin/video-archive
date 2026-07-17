@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { api } from '../api/client'
 import type { ConversionProfile } from '../types/api'
 
 interface ConversionProfilesContextValue {
@@ -36,11 +37,7 @@ export function ConversionProfilesProvider({ children }: { children: ReactNode }
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/conversion-profiles')
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
-      const data: { profiles: ConversionProfile[] } = await res.json()
+      const data = await api<{ profiles: ConversionProfile[] }>('/api/conversion-profiles')
       setProfiles(data.profiles)
     } finally {
       setLoading(false)
@@ -53,18 +50,15 @@ export function ConversionProfilesProvider({ children }: { children: ReactNode }
 
   const ensureDefaultProfile = useCallback(
     async (name: string): Promise<ConversionProfile> => {
-      const res = await fetch('/api/conversion-profiles')
-      const data: { profiles: ConversionProfile[] } = await res.json()
+      const data = await api<{ profiles: ConversionProfile[] }>('/api/conversion-profiles')
       const existing = data.profiles.find((p) => p.is_default) ?? data.profiles[0]
       if (existing) {
         return existing
       }
-      const createRes = await fetch('/api/conversion-profiles', {
+      const created = await api<ConversionProfile>('/api/conversion-profiles', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, is_default: true, ...FALLBACK_PROFILE_DEFAULTS }),
+        body: { name, is_default: true, ...FALLBACK_PROFILE_DEFAULTS },
       })
-      const created: ConversionProfile = await createRes.json()
       await refresh()
       return created
     },

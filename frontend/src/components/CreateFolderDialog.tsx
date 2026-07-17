@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderPlus, X } from 'lucide-react'
+import { api, ApiError } from '../api/client'
 import './ConvertDialog.css'
 
 interface CreateFolderDialogProps {
@@ -19,25 +20,20 @@ export function CreateFolderDialog({ parentPath, onClose, onCreated }: CreateFol
     setCreating(true)
     setError(null)
     try {
-      const res = await fetch('/api/directories', {
+      await api('/api/directories', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent_path: parentPath, name }),
+        body: { parent_path: parentPath, name },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        const code = json?.detail?.error?.code
-        if (code === 'invalid_name') {
-          throw new Error(t('library.createFolderInvalidName'))
-        }
-        if (code === 'destination_collision') {
-          throw new Error(t('library.createFolderCollision'))
-        }
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       onCreated()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const code = err instanceof ApiError ? err.code : undefined
+      if (code === 'invalid_name') {
+        setError(t('library.createFolderInvalidName'))
+      } else if (code === 'destination_collision') {
+        setError(t('library.createFolderCollision'))
+      } else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
     } finally {
       setCreating(false)
     }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Info, Link, PlayCircle, X } from 'lucide-react'
+import { api } from '../api/client'
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { QuickTagAdd } from './QuickTagAdd'
@@ -50,11 +51,7 @@ export function PlaybackModal({
     setError(null)
     void (async () => {
       try {
-        const res = await fetch(`/api/files/${file.id}/playback`)
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-        const json: PlaybackInfo = await res.json()
+        const json = await api<PlaybackInfo>(`/api/files/${file.id}/playback`)
         if (!cancelled) {
           setInfo(json)
           setMode(json.mode)

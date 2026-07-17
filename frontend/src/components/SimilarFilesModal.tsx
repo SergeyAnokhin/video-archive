@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api } from '../api/client'
 import type { FileEntry, SimilarFile } from '../types/api'
 import './ConvertDialog.css'
 import './SimilarFilesModal.css'
@@ -19,11 +20,7 @@ export function SimilarFilesModal({ file, onClose }: SimilarFilesModalProps) {
     let cancelled = false
     void (async () => {
       try {
-        const res = await fetch(`/api/files/${file.id}/similar`)
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-        const json: { similar: SimilarFile[] } = await res.json()
+        const json = await api<{ similar: SimilarFile[] }>(`/api/files/${file.id}/similar`)
         if (!cancelled) {
           setResults(json.similar)
         }

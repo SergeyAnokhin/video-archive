@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { api } from '../api/client'
 import type { Tag } from '../types/api'
 
 interface TagsContextValue {
@@ -24,11 +25,7 @@ export function TagsProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/tags')
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
-      const data: { tags: Tag[] } = await res.json()
+      const data = await api<{ tags: Tag[] }>('/api/tags')
       setTags(data.tags)
     } finally {
       setLoading(false)

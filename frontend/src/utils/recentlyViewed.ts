@@ -1,3 +1,4 @@
+import { api } from '../api/client'
 import type { FileEntry } from '../types/api'
 
 const STORAGE_KEY = 'video-archive:recently-viewed'
@@ -26,9 +27,7 @@ export async function loadPreviewSampleFileIds(): Promise<string[]> {
   if (recent.length > 0) return recent.slice(0, MAX_ENTRIES)
 
   try {
-    const res = await fetch('/api/files?video_only=true&limit=20')
-    if (!res.ok) return []
-    const data = (await res.json()) as { files: FileEntry[] }
+    const data = await api<{ files: FileEntry[] }>('/api/files?video_only=true&limit=20')
     return data.files
       .filter((file) => file.has_preview_asset)
       .slice(0, MAX_ENTRIES)

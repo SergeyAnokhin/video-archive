@@ -2,19 +2,11 @@ import { Database, Eraser, RefreshCw, RotateCcw, Save, ScanLine, Trash2 } from '
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
+import { api, tryApi } from '../api/client'
 import type { BackupSettings, BackupSummary } from '../types/api'
 
-async function postJob(url: string, body?: unknown): Promise<{ id: string }> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-  if (!res.ok) {
-    const json = await res.json().catch(() => null)
-    throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-  }
-  return res.json()
+function postJob(url: string, body?: unknown): Promise<{ id: string }> {
+  return api<{ id: string }>(url, { method: 'POST', body })
 }
 
 export function BackupMaintenanceSection() {
@@ -34,9 +26,8 @@ export function BackupMaintenanceSection() {
   async function loadBackups() {
     setLoadingBackups(true)
     try {
-      const res = await fetch('/api/backups')
-      if (res.ok) {
-        const json: { backups: BackupSummary[] } = await res.json()
+      const json = await tryApi<{ backups: BackupSummary[] }>('/api/backups')
+      if (json) {
         setBackups(json.backups)
       }
     } finally {
@@ -47,8 +38,8 @@ export function BackupMaintenanceSection() {
   useEffect(() => {
     void loadBackups()
     void (async () => {
-      const res = await fetch('/api/backup-settings')
-      if (res.ok) setSettings(await res.json())
+      const loaded = await tryApi<BackupSettings>('/api/backup-settings')
+      if (loaded) setSettings(loaded)
     })()
   }, [])
 
@@ -95,7 +86,7 @@ export function BackupMaintenanceSection() {
   async function handleDelete(backupId: string) {
     setBusyId(backupId)
     try {
-      await fetch(`/api/backups/${backupId}`, { method: 'DELETE' })
+      await tryApi(`/api/backups/${backupId}`, { method: 'DELETE' })
       await loadBackups()
     } finally {
       setBusyId(null)
@@ -104,12 +95,11 @@ export function BackupMaintenanceSection() {
 
   async function handleRetentionChange(value: number) {
     setSettings((prev) => (prev ? { ...prev, retention_count: value } : prev))
-    const res = await fetch('/api/backup-settings', {
+    const saved = await tryApi<BackupSettings>('/api/backup-settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ retention_count: value }),
+      body: { retention_count: value },
     })
-    if (res.ok) setSettings(await res.json())
+    if (saved) setSettings(saved)
   }
 
   async function runMaintenance(key: string, url: string, body?: unknown) {

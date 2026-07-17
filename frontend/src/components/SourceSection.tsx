@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
 import { useSource } from '../context/SourceContext'
+import { api, rawApi } from '../api/client'
 import type { BackupSummary, SourceConfig, SourceProtocol, TestConnectionResult } from '../types/api'
 
 export function SourceSection() {
@@ -57,11 +58,7 @@ export function SourceSection() {
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await fetch('/api/source/test-connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload()),
-      })
+      const res = await rawApi('/api/source/test-connection', { method: 'POST', body: buildPayload() })
       const json: TestConnectionResult = await res.json()
       setTestResult(json)
     } catch (err) {
@@ -80,16 +77,10 @@ export function SourceSection() {
     setSaving(true)
     setSaveError(null)
     try {
-      const res = await fetch('/api/source', {
+      const json = await api<SourceConfig & { detected_backups: BackupSummary[] }>('/api/source', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPayload()),
+        body: buildPayload(),
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.error?.message ?? `HTTP ${res.status}`)
-      }
-      const json: SourceConfig & { detected_backups: BackupSummary[] } = await res.json()
       setSource(json)
       setConfirmingReplace(false)
       setTestResult(null)
@@ -108,15 +99,10 @@ export function SourceSection() {
     setRestoringId(backupId)
     setRestoreMessage(null)
     try {
-      const res = await fetch('/api/backups/restore', {
+      await api('/api/backups/restore', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ backup_id: backupId }),
+        body: { backup_id: backupId },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       await refreshJobs()
       setRestoreMessage(t('settings.restoreStarted'))
     } catch (err) {
@@ -130,7 +116,7 @@ export function SourceSection() {
     setReconnecting(true)
     setReconnectResult(null)
     try {
-      const res = await fetch('/api/source/reconnect', { method: 'POST' })
+      const res = await rawApi('/api/source/reconnect', { method: 'POST' })
       const json: TestConnectionResult = await res.json()
       setReconnectResult(json)
     } catch (err) {

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { FileVideo, Folder, Tag as TagIcon } from 'lucide-react'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import { FileCard, FolderCard } from './LibraryCards'
+import { api } from '../api/client'
 import type { DirectoryEntry, DirectorySearchResponse, FileEntry } from '../types/api'
 import { formatSearchQuery, type ActiveSearch, type SearchScope } from '../utils/searchQuery'
 import { sortFiles, type SortBy } from '../utils/sortFiles'
@@ -49,21 +50,13 @@ async function fetchFilePage(params: URLSearchParams, limit: number, offset: num
   const page = new URLSearchParams(params)
   page.set('limit', String(limit))
   page.set('offset', String(offset))
-  const res = await fetch(`/api/files?${page.toString()}`)
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`)
-  }
-  const json: { files: FileEntry[] } = await res.json()
+  const json = await api<{ files: FileEntry[] }>(`/api/files?${page.toString()}`)
   return json.files
 }
 
 async function fetchDirPage(term: string, limit: number, offset: number): Promise<DirectoryEntry[]> {
   const params = new URLSearchParams({ q: term, limit: String(limit), offset: String(offset) })
-  const res = await fetch(`/api/directories/search?${params.toString()}`)
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`)
-  }
-  const json: DirectorySearchResponse = await res.json()
+  const json = await api<DirectorySearchResponse>(`/api/directories/search?${params.toString()}`)
   return json.directories
 }
 

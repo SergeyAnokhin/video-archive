@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Tag as TagIcon, X } from 'lucide-react'
 import { getRecentTags, recordRecentTag } from '../utils/recentTags'
 import { buildTagSuggestions } from '../utils/tagSuggestions'
+import { api } from '../api/client'
 import type { Tag } from '../types/api'
 import { TagBadge } from './TagBadge'
 import './QuickTagAdd.css'
@@ -59,11 +60,7 @@ export function QuickTagAdd({ fileId, onTagAdded, open: controlledOpen, onOpenCh
       void (async () => {
         try {
           const query = value.trim()
-          const res = await fetch(`/api/tags/used?${new URLSearchParams({ query, limit: '100' })}`)
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`)
-          }
-          const data: { tags: Tag[] } = await res.json()
+          const data = await api<{ tags: Tag[] }>(`/api/tags/used?${new URLSearchParams({ query, limit: '100' })}`)
           if (!cancelled) {
             setSuggestions(buildTagSuggestions(getRecentTags(), data.tags))
           }
@@ -90,14 +87,10 @@ export function QuickTagAdd({ fileId, onTagAdded, open: controlledOpen, onOpenCh
     setAdding(true)
     setError(null)
     try {
-      const res = await fetch(`/api/files/${fileId}/tags`, {
+      await api(`/api/files/${fileId}/tags`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: trimmed }),
+        body: { display_name: trimmed },
       })
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`)
-      }
       recordRecentTag(trimmed)
       setValue('')
       onTagAdded?.()

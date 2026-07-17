@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { tryApi } from '../api/client'
 import { useJobs } from '../context/JobsContext'
 import type { JobItem, JobStatus, JobSummary } from '../types/api'
 import { estimateEtaSeconds, type ProgressSample } from '../utils/eta'
@@ -61,7 +62,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
   async function handleCancel(jobId: string) {
     setBusyJobId(jobId)
     try {
-      await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
+      await tryApi(`/api/jobs/${jobId}/cancel`, { method: 'POST' })
       await refresh()
     } finally {
       setBusyJobId(null)
@@ -71,7 +72,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
   async function handlePause(jobId: string) {
     setBusyJobId(jobId)
     try {
-      await fetch(`/api/jobs/${jobId}/pause`, { method: 'POST' })
+      await tryApi(`/api/jobs/${jobId}/pause`, { method: 'POST' })
       await refresh()
     } finally {
       setBusyJobId(null)
@@ -81,7 +82,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
   async function handleResume(jobId: string) {
     setBusyJobId(jobId)
     try {
-      await fetch(`/api/jobs/${jobId}/resume`, { method: 'POST' })
+      await tryApi(`/api/jobs/${jobId}/resume`, { method: 'POST' })
       await refresh()
     } finally {
       setBusyJobId(null)
@@ -91,7 +92,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
   async function handleRestart(jobId: string) {
     setBusyJobId(jobId)
     try {
-      await fetch(`/api/jobs/${jobId}/restart`, { method: 'POST' })
+      await tryApi(`/api/jobs/${jobId}/restart`, { method: 'POST' })
       await refresh()
     } finally {
       setBusyJobId(null)
@@ -101,7 +102,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
   async function handleRemove(jobId: string) {
     setBusyJobId(jobId)
     try {
-      await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' })
+      await tryApi(`/api/jobs/${jobId}`, { method: 'DELETE' })
       await refresh()
     } finally {
       setBusyJobId(null)
@@ -109,7 +110,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
   }
 
   async function handleClearFinished() {
-    await fetch('/api/jobs', { method: 'DELETE' })
+    await tryApi('/api/jobs', { method: 'DELETE' })
     await refresh()
   }
 

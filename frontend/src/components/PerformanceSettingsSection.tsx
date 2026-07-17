@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { tryApi } from '../api/client'
 import type { PerformanceSettings } from '../types/api'
 
 export function PerformanceSettingsSection() {
@@ -8,21 +9,20 @@ export function PerformanceSettingsSection() {
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch('/api/performance-settings')
-      if (res.ok) {
-        setSettings(await res.json())
+      const loaded = await tryApi<PerformanceSettings>('/api/performance-settings')
+      if (loaded) {
+        setSettings(loaded)
       }
     })()
   }, [])
 
   async function handleWorkersChange(value: number) {
     setSettings((prev) => (prev ? { ...prev, parallel_workers: value } : prev))
-    const res = await fetch('/api/performance-settings', {
+    const saved = await tryApi<PerformanceSettings>('/api/performance-settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parallel_workers: value }),
+      body: { parallel_workers: value },
     })
-    if (res.ok) setSettings(await res.json())
+    if (saved) setSettings(saved)
   }
 
   return (

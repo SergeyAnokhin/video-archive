@@ -30,6 +30,7 @@ import { SearchResults } from './SearchResults'
 import { SimilarFilesModal } from './SimilarFilesModal'
 import { TagDirectoryDialog } from './TagDirectoryDialog'
 import { TagLabModal } from './TagLabModal'
+import { api, ApiError, tryApi } from '../api/client'
 import type { DirectoryChildrenResponse, FileEntry, JobSummary } from '../types/api'
 import { getRecentFolderVisits, recordFolderVisit, recordRecentFolder } from '../utils/recentFolders'
 import { recordRecentlyViewed } from '../utils/recentlyViewed'
@@ -185,11 +186,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     async function load() {
       try {
         const params = new URLSearchParams({ path, include_status: 'true', include_top_tags: 'true' })
-        const res = await fetch(`/api/directories/children?${params.toString()}`)
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-        const json: DirectoryChildrenResponse = await res.json()
+        const json = await api<DirectoryChildrenResponse>(`/api/directories/children?${params.toString()}`)
         if (!cancelled) {
           setData(json)
           setError(null)
@@ -283,10 +280,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   async function handleRescan() {
     setRescanning(true)
     try {
-      await fetch('/api/jobs/rescan-directory', {
+      await tryApi('/api/jobs/rescan-directory', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
+        body: { path },
       })
       await refreshJobs()
     } finally {
@@ -297,10 +293,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   async function handlePreviewFile(fileId: string) {
     setPreviewingFileId(fileId)
     try {
-      await fetch('/api/jobs/preview-file', {
+      await tryApi('/api/jobs/preview-file', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_id: fileId }),
+        body: { file_id: fileId },
       })
       await refreshJobs()
     } finally {
@@ -309,33 +304,31 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   }
 
   async function handleDeleteFile(fileId: string) {
-    const res = await fetch(`/api/files/${fileId}`, { method: 'DELETE' })
-    if (res.ok) {
+    const deleted = await tryApi(`/api/files/${fileId}`, { method: 'DELETE' })
+    if (deleted !== null) {
       setInfoFile(null)
       setReloadTick((tick) => tick + 1)
     }
   }
 
   async function handleToggleFavoriteFolder(dirPath: string, favorite: boolean) {
-    const res = await fetch('/api/directories/favorite', {
+    const saved = await tryApi('/api/directories/favorite', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: dirPath, favorite }),
+      body: { path: dirPath, favorite },
     })
-    if (res.ok) {
+    if (saved !== null) {
       setReloadTick((tick) => tick + 1)
     }
   }
 
   async function handleDeleteFolder(dirPath: string) {
-    const res = await fetch(`/api/directories?${new URLSearchParams({ path: dirPath }).toString()}`, {
-      method: 'DELETE',
-    })
-    if (res.ok) {
+    try {
+      await api(`/api/directories?${new URLSearchParams({ path: dirPath }).toString()}`, {
+        method: 'DELETE',
+      })
       setReloadTick((tick) => tick + 1)
-    } else {
-      const json = await res.json().catch(() => null)
-      const code = json?.detail?.error?.code
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : undefined
       window.alert(code === 'directory_not_empty' ? t('library.deleteFolderNotEmpty') : t('library.deleteFolderFailed'))
     }
   }

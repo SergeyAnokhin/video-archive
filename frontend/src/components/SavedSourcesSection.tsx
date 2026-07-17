@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
 import { useSource } from '../context/SourceContext'
-import type { SavedSource } from '../types/api'
+import { api, tryApi } from '../api/client'
+import type { SavedSource, SourceConfig } from '../types/api'
 
 function formatSize(bytes: number): string {
   if (bytes <= 0) return '0 KB'
@@ -22,9 +23,8 @@ export function SavedSourcesSection() {
   async function loadSources() {
     setLoading(true)
     try {
-      const res = await fetch('/api/sources')
-      if (res.ok) {
-        const json: { sources: SavedSource[] } = await res.json()
+      const json = await tryApi<{ sources: SavedSource[] }>('/api/sources')
+      if (json) {
         setSources(json.sources)
       }
     } finally {
@@ -40,12 +40,7 @@ export function SavedSourcesSection() {
     setBusyId(sourceId)
     setError(null)
     try {
-      const res = await fetch(`/api/sources/${sourceId}/activate`, { method: 'POST' })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
-      const json = await res.json()
+      const json = await api<SourceConfig>(`/api/sources/${sourceId}/activate`, { method: 'POST' })
       setSource(json)
       await refreshJobs()
       await loadSources()
@@ -61,11 +56,7 @@ export function SavedSourcesSection() {
     setBusyId(sourceId)
     setError(null)
     try {
-      const res = await fetch(`/api/sources/${sourceId}/preview-cache`, { method: 'DELETE' })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
+      await api(`/api/sources/${sourceId}/preview-cache`, { method: 'DELETE' })
       await loadSources()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -79,11 +70,7 @@ export function SavedSourcesSection() {
     setBusyId(sourceId)
     setError(null)
     try {
-      const res = await fetch(`/api/sources/${sourceId}`, { method: 'DELETE' })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
+      await api(`/api/sources/${sourceId}`, { method: 'DELETE' })
       await loadSources()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

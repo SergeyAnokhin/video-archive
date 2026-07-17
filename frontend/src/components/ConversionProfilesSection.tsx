@@ -2,6 +2,7 @@ import { Copy, Pencil, Plus, Save, Star, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConversionProfiles } from '../context/ConversionProfilesContext'
+import { api, tryApi } from '../api/client'
 import type { ConversionProfile, ConversionSettings } from '../types/api'
 
 type ProfileFormValue = ConversionProfile | 'new' | null
@@ -12,21 +13,20 @@ function MinSizeReductionSetting() {
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch('/api/conversion-settings')
-      if (res.ok) {
-        setSettings(await res.json())
+      const loaded = await tryApi<ConversionSettings>('/api/conversion-settings')
+      if (loaded) {
+        setSettings(loaded)
       }
     })()
   }, [])
 
   async function handleChange(value: number) {
     setSettings((prev) => (prev ? { ...prev, min_size_reduction_percent: value } : prev))
-    const res = await fetch('/api/conversion-settings', {
+    const saved = await tryApi<ConversionSettings>('/api/conversion-settings', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ min_size_reduction_percent: value }),
+      body: { min_size_reduction_percent: value },
     })
-    if (res.ok) setSettings(await res.json())
+    if (saved) setSettings(saved)
   }
 
   if (!settings) return null
@@ -56,7 +56,7 @@ export function ConversionProfilesSection() {
   async function handleDelete(id: string) {
     setBusyId(id)
     try {
-      await fetch(`/api/conversion-profiles/${id}`, { method: 'DELETE' })
+      await tryApi(`/api/conversion-profiles/${id}`, { method: 'DELETE' })
       await refresh()
     } finally {
       setBusyId(null)
@@ -66,10 +66,9 @@ export function ConversionProfilesSection() {
   async function handleSetDefault(profile: ConversionProfile) {
     setBusyId(profile.id)
     try {
-      await fetch(`/api/conversion-profiles/${profile.id}`, {
+      await tryApi(`/api/conversion-profiles/${profile.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...profile, is_default: true }),
+        body: { ...profile, is_default: true },
       })
       await refresh()
     } finally {
@@ -212,15 +211,10 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
       const url = editingExisting
         ? `/api/conversion-profiles/${initial!.id}`
         : '/api/conversion-profiles'
-      const res = await fetch(url, {
+      await api(url, {
         method: editingExisting ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body,
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       await onSaved()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

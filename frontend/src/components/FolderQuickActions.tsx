@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Folder, History } from 'lucide-react'
+import { api, tryApi } from '../api/client'
 import type { DirectoryEntry, FavoriteDirectory } from '../types/api'
 import { getRecentFolders, recordFolderVisit } from '../utils/recentFolders'
 import { DirectoryMoveMenu } from './DirectoryMoveMenu'
@@ -26,14 +27,12 @@ export function FolderQuickActions({ fileId, onMoved }: FolderQuickActionsProps)
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/directories/favorites')
-      .then((res) => (res.ok ? res.json() : { favorites: [] }))
-      .then((json: { favorites: FavoriteDirectory[] }) => {
+    tryApi<{ favorites: FavoriteDirectory[] }>('/api/directories/favorites')
+      .then((json) => {
         if (!cancelled) {
-          setFavorites(json.favorites)
+          setFavorites(json?.favorites ?? [])
         }
       })
-      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -55,15 +54,10 @@ export function FolderQuickActions({ fileId, onMoved }: FolderQuickActionsProps)
   async function moveTo(path: string) {
     setError(null)
     try {
-      const res = await fetch(`/api/files/${fileId}/move`, {
+      await api(`/api/files/${fileId}/move`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_directory: path }),
+        body: { target_directory: path },
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => null)
-        throw new Error(json?.detail?.error?.message ?? `HTTP ${res.status}`)
-      }
       recordFolderVisit(path)
       setOpenMenu(null)
       onMoved()
@@ -80,9 +74,10 @@ export function FolderQuickActions({ fileId, onMoved }: FolderQuickActionsProps)
     setCheckingPath(fav.path)
     setError(null)
     try {
-      const res = await fetch(`/api/directories/children?path=${encodeURIComponent(fav.path)}`)
-      const json: { directories: DirectoryEntry[] } = res.ok ? await res.json() : { directories: [] }
-      if (json.directories.length === 0) {
+      const json = await tryApi<{ directories: DirectoryEntry[] }>(
+        `/api/directories/children?path=${encodeURIComponent(fav.path)}`,
+      )
+      if ((json?.directories ?? []).length === 0) {
         await moveTo(fav.path)
       } else {
         setOpenMenu(fav.path)

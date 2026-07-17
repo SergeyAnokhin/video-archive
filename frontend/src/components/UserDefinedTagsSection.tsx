@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { tryApi } from '../api/client'
 import type { Tag } from '../types/api'
 import { TagChipEditor } from './TagChipEditor'
 
@@ -13,9 +14,8 @@ export function UserDefinedTagsSection() {
   const [tags, setTags] = useState<Tag[]>([])
 
   const refresh = useCallback(async () => {
-    const res = await fetch('/api/tags?category=user')
-    if (res.ok) {
-      const data: { tags: Tag[] } = await res.json()
+    const data = await tryApi<{ tags: Tag[] }>('/api/tags?category=user')
+    if (data) {
       setTags(data.tags)
     }
   }, [])

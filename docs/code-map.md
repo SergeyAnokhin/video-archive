@@ -18,4 +18,5 @@ The full V1 scope plus numerous post-V1 additions are implemented; what the appl
 | [`package.json`](../package.json) | Root developer entrypoint; `npm run dev` starts `frontend` and `backend` together via `concurrently`. `predev` runs the stale-dev-server check below. |
 | [`scripts/check-stale-dev-servers.ps1`](../scripts/check-stale-dev-servers.ps1) | Warning-only check for an orphaned dev server already holding port `5173`/`8000` before `npm run dev` starts fresh ones — an orphan keeps answering with outdated code while the new server fails to bind (see [development.md](development.md)). Also runnable via `npm run check-dev-servers`. |
 | [`README.md`](../README.md) | Project overview, capabilities, and startup commands. |
+| [`.github/workflows/build.yml`](../.github/workflows/build.yml), [`deploy/`](../deploy/) | CI image build and k3s deployment (Helm chart, ArgoCD app, Dockerfiles) — file-by-file map lives in [deployment.md](deployment.md). |
 | [`docs/`](./) | Living project documentation ([index](./README.md)); frozen V1 specification archived in [`docs/spec/`](./spec/README.md) — reference only, do not read by default. |

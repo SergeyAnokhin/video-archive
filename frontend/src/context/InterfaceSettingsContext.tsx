@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { tryApi } from '../api/client'
 import i18n, { persistLanguage, SUPPORTED_LANGUAGES, type SupportedLanguage } from '../i18n'
 import { THEME_PRESETS, type InterfaceSettings, type SearchLimits, type ThemePreset } from '../types/api'
 import {
@@ -83,10 +84,9 @@ function persistToBackend(
   profiles: Record<PreviewProfileKey, PreviewStyleProfile>,
   searchLimits: SearchLimits,
 ) {
-  void fetch('/api/interface-settings', {
+  void tryApi('/api/interface-settings', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    body: {
       language,
       theme_preset: theme,
       search_tag_limit: searchLimits.tags,
@@ -104,7 +104,7 @@ function persistToBackend(
       profile_b_contrast: profiles.b.contrast,
       profile_b_sepia: profiles.b.sepia,
       profile_b_hue_rotate: profiles.b.hueRotate,
-    }),
+    },
   })
 }
 
@@ -130,8 +130,9 @@ export function InterfaceSettingsProvider({ children }: { children: ReactNode })
   // resolves.
   useEffect(() => {
     let cancelled = false
-    fetch('/api/interface-settings')
-      .then((res) => (res.ok ? (res.json() as Promise<InterfaceSettings>) : null))
+    // Best-effort sync (tryApi resolves null on failure); localStorage/
+    // browser-locale detection already applied above.
+    tryApi<InterfaceSettings>('/api/interface-settings')
       .then((data) => {
         if (cancelled || !data) return
         if (data.theme_preset && data.theme_preset !== theme) {
@@ -163,9 +164,6 @@ export function InterfaceSettingsProvider({ children }: { children: ReactNode })
             dirs: data.search_dir_limit,
           })
         }
-      })
-      .catch(() => {
-        // Best-effort sync; localStorage/browser-locale detection already applied above.
       })
     return () => {
       cancelled = true

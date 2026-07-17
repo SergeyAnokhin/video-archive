@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { api, tryApi } from '../api/client'
 import type { BatchSubmission } from '../types/api'
 import './ConvertDialog.css'
 import './BatchSubmissionsModal.css'
@@ -19,9 +20,7 @@ export function BatchSubmissionsModal({ onClose }: BatchSubmissionsModalProps) {
 
   async function refresh() {
     try {
-      const res = await fetch('/api/jobs/batch-submissions')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json: { submissions: BatchSubmission[] } = await res.json()
+      const json = await api<{ submissions: BatchSubmission[] }>('/api/jobs/batch-submissions')
       setSubmissions(json.submissions)
       setError(null)
     } catch (err) {
@@ -39,7 +38,7 @@ export function BatchSubmissionsModal({ onClose }: BatchSubmissionsModalProps) {
     if (!window.confirm(t('batchSubmissions.confirmForget'))) return
     setBusyId(id)
     try {
-      await fetch(`/api/jobs/batch-submissions/${id}`, { method: 'DELETE' })
+      await tryApi(`/api/jobs/batch-submissions/${id}`, { method: 'DELETE' })
       await refresh()
     } finally {
       setBusyId(null)

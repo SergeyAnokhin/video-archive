@@ -1,6 +1,7 @@
 import { Check, Copy, RefreshCw, Wifi, Smartphone, ShieldAlert } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { tryApi } from '../api/client'
 import type { NetworkInfo } from '../types/api'
 
 export function NetworkAccessSection() {
@@ -12,9 +13,9 @@ export function NetworkAccessSection() {
   const loadInfo = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/app/network-info')
-      if (res.ok) {
-        setInfo(await res.json())
+      const info = await tryApi<NetworkInfo>('/api/app/network-info')
+      if (info) {
+        setInfo(info)
       }
     } finally {
       setLoading(false)

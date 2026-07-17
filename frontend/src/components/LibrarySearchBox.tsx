@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileVideo, Folder, Search, Tag as TagIcon, X } from 'lucide-react'
+import { tryApi } from '../api/client'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
 import type { DirectoryEntry, DirectorySearchResponse, FileEntry, Tag } from '../types/api'
 import {
@@ -37,9 +38,7 @@ export function LibrarySearchBox({ activeSearch, onSearch, onClear, onOpenDirect
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    fetch('/api/tags/used?limit=500')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { tags: Tag[] } | null) => setTags(data?.tags ?? []))
+    tryApi<{ tags: Tag[] }>('/api/tags/used?limit=500').then((data) => setTags(data?.tags ?? []))
   }, [])
 
   // The active search can change from outside the box (the results view's
@@ -88,15 +87,13 @@ export function LibrarySearchBox({ activeSearch, onSearch, onClear, onOpenDirect
             search: term,
             limit: String(searchLimits.files),
           })
-          const res = await fetch(`/api/files?${params.toString()}`)
-          const json: { files: FileEntry[] } = await res.json()
-          if (!cancelled) setFileMatches(res.ok ? json.files : [])
+          const json = await tryApi<{ files: FileEntry[] }>(`/api/files?${params.toString()}`)
+          if (!cancelled) setFileMatches(json?.files ?? [])
         }
         if (wantDirs) {
           const params = new URLSearchParams({ q: term, limit: String(searchLimits.dirs) })
-          const res = await fetch(`/api/directories/search?${params.toString()}`)
-          const json: DirectorySearchResponse = await res.json()
-          if (!cancelled) setDirMatches(res.ok ? json.directories : [])
+          const json = await tryApi<DirectorySearchResponse>(`/api/directories/search?${params.toString()}`)
+          if (!cancelled) setDirMatches(json?.directories ?? [])
         }
       } catch {
         // suggestions are best-effort; the search itself still works on Enter
