@@ -119,7 +119,9 @@
     "crf": "Quality (CRF)",
     "dropAudio": "Drop audio",
     "summary": "{{codec}} · CRF {{crf}} · max {{dimension}}",
-    "duplicateName": "{{name}} copy"
+    "duplicateName": "{{name}} copy",
+    "minSizeReduction": "Min. file size reduction (%)",
+    "minSizeReductionHint": "If a converted file shrinks by less than this percentage (or comes out bigger), the result is discarded and the original is kept — logged as skipped. Especially important for batch conversion."
   },
   "sidebar": {
     "title": "Library",

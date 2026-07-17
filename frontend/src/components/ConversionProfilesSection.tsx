@@ -1,10 +1,51 @@
 import { Copy, Pencil, Plus, Save, Star, Trash2, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConversionProfiles } from '../context/ConversionProfilesContext'
-import type { ConversionProfile } from '../types/api'
+import type { ConversionProfile, ConversionSettings } from '../types/api'
 
 type ProfileFormValue = ConversionProfile | 'new' | null
+
+function MinSizeReductionSetting() {
+  const { t } = useTranslation()
+  const [settings, setSettings] = useState<ConversionSettings | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch('/api/conversion-settings')
+      if (res.ok) {
+        setSettings(await res.json())
+      }
+    })()
+  }, [])
+
+  async function handleChange(value: number) {
+    setSettings((prev) => (prev ? { ...prev, min_size_reduction_percent: value } : prev))
+    const res = await fetch('/api/conversion-settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ min_size_reduction_percent: value }),
+    })
+    if (res.ok) setSettings(await res.json())
+  }
+
+  if (!settings) return null
+
+  return (
+    <label className="settings-modal__label">
+      {t('conversionProfiles.minSizeReduction')}
+      <input
+        className="settings-modal__input"
+        type="number"
+        min={0}
+        max={90}
+        value={settings.min_size_reduction_percent}
+        onChange={(event) => void handleChange(Number(event.target.value))}
+      />
+      <span className="settings-modal__hint">{t('conversionProfiles.minSizeReductionHint')}</span>
+    </label>
+  )
+}
 
 export function ConversionProfilesSection() {
   const { t } = useTranslation()
@@ -48,6 +89,8 @@ export function ConversionProfilesSection() {
   return (
     <section className="settings-modal__section">
       <h3 className="settings-modal__section-title">{t('conversionProfiles.title')}</h3>
+
+      <MinSizeReductionSetting />
 
       {profiles.length === 0 && (
         <p className="settings-modal__hint">{t('conversionProfiles.empty')}</p>

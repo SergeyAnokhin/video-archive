@@ -431,6 +431,11 @@ export interface PerformanceSettings {
   updated_at: string
 }
 
+export interface ConversionSettings {
+  min_size_reduction_percent: number
+  updated_at: string
+}
+
 export interface NetworkInfo {
   lan_addresses: string[]
   frontend_port: number

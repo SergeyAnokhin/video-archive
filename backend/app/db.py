@@ -669,6 +669,23 @@ MIGRATIONS: dict[int, list[str]] = {
     31: [
         "ALTER TABLE tag_catalog ADD COLUMN color TEXT",
     ],
+    # Post-V1: minimum size-reduction threshold for production/test-mode
+    # conversion replace (user report) -- a converted output must shrink the
+    # source by at least this percentage to actually replace it, otherwise
+    # the attempt is logged and skipped, keeping the original untouched (see
+    # `app/conversion_settings.py`, `app/jobs/convert.py`). A tuning-sweep
+    # variant is exempt (deliberate comparison output, never replaces the
+    # source). Same singleton convention as performance/playback/backup/
+    # interface_settings.
+    32: [
+        """
+        CREATE TABLE IF NOT EXISTS conversion_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            min_size_reduction_percent INTEGER NOT NULL DEFAULT 20,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -764,6 +781,11 @@ def init_db() -> int:
             from app.model_pricing import seed_default_prices
 
             seed_default_prices(conn)
+
+        if current_version < 32 <= SCHEMA_VERSION:
+            from app.conversion_settings import seed_default_settings as seed_default_conversion_settings
+
+            seed_default_conversion_settings(conn)
 
     return SCHEMA_VERSION
 

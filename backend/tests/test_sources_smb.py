@@ -21,6 +21,7 @@ from sqlalchemy import text
 from app import (
     conversion,
     conversion_profiles,
+    conversion_settings,
     directory_ops,
     preview_cache,
     preview_layouts,
@@ -162,9 +163,12 @@ def test_convert_production_mode_over_smb(engine, smb_source, tmp_path):
     local_video = tmp_path / "movie.mp4"
     # Bigger than the module default so the h265 re-encode actually shrinks
     # it -- a trivially tiny clip's re-encode can end up bigger than the
-    # source from container/codec overhead alone, which the
-    # larger-than-source guard would (correctly) skip instead of replacing.
+    # source from container/codec overhead alone, which the size-reduction
+    # guard would (correctly) skip instead of replacing. The threshold is
+    # also lowered below the modest real reduction such a small clip
+    # achieves -- this test is about the SMB round-trip, not the guard.
     make_video(local_video, size="480x360", duration=1.0)
+    conversion_settings.update_settings(engine, {"min_size_reduction_percent": 0})
     smb_source["fs"].seed("clips/movie.mp4", local_video.read_bytes())
 
     access = get_source_access(_source_row(engine, smb_source["id"]))
@@ -193,6 +197,7 @@ def test_convert_production_mode_over_smb(engine, smb_source, tmp_path):
 def test_convert_test_mode_over_smb_preserves_original(engine, smb_source, tmp_path):
     local_video = tmp_path / "clip.mp4"
     make_video(local_video, size="480x360", duration=1.0)
+    conversion_settings.update_settings(engine, {"min_size_reduction_percent": 0})
     smb_source["fs"].seed("clips/clip.mp4", local_video.read_bytes())
 
     access = get_source_access(_source_row(engine, smb_source["id"]))
