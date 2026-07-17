@@ -42,6 +42,16 @@ Test conventions (per-suite details in [`code-map-tests.md`](code-map-tests.md))
 - A jsdom component test's mock `fetch` (`fetchRouter()`'s strict `handlers` map, see `TaggingSettingsSection.test.tsx`) throws `Unhandled fetch in test` for any URL it doesn't recognize. Mounting a new child component inside an already-tested parent (e.g. adding `<UserDefinedTagsSection />` as a sibling inside `TaggingSettingsSection`'s render) means that child's own `fetch` calls need handlers added to every existing test case's map too, or the test fails even though nothing about the test's own assertions changed.
 - Per [`CLAUDE.md`](../CLAUDE.md): run the smallest relevant suite after every change; a task is not complete while required tests fail.
 
+## Recipe: adding a global settings singleton
+
+The repo has one recurring pattern for an app-wide setting (7 singletons already: preview, tagging, playback, backup, interface, performance, conversion). Copy an existing small one — [`backend/app/performance_settings.py`](../backend/app/performance_settings.py) / [`backend/app/conversion_settings.py`](../backend/app/conversion_settings.py) are the shortest — and touch these spots:
+
+1. `backend/app/<name>_settings.py` — constants (default/min/max), `get_settings()`, `update_settings()` (clamp there), `seed_default_settings()`.
+2. `backend/app/db.py` — append a `CREATE TABLE IF NOT EXISTS <name>_settings (id INTEGER PRIMARY KEY CHECK (id = 1), ...)` migration **and** a matching `if current_version < N <= SCHEMA_VERSION:` seed call in `init_db()`.
+3. `backend/app/routers/<name>_settings.py` — `GET`/`PUT /api/<name>-settings`, pydantic `Field(ge=..., le=...)` bounds imported from the module's constants; wire it into `backend/app/main.py` (import + `include_router`).
+4. Frontend: interface in `frontend/src/types/api.ts`, a Settings section/block component (fetch on mount, `PUT` on change — see `PerformanceSettingsSection.tsx`), i18n keys in **both** `en.json` and `ru.json`.
+5. Tests: copy `backend/tests/test_performance_settings.py` (defaults/round-trip, clamping, HTTP round-trip).
+
 ## Before starting a nontrivial feature
 
 Run `git status`/`git diff HEAD` first, before exploring or planning. This repo has been worked on across multiple sessions (and sometimes multiple concurrent sessions — see the stale-dev-server note above); an earlier session can leave substantial uncommitted progress on the very feature you're about to start, sitting silently in the working tree. Missing this can cost an entire session's worth of redundant exploration/implementation before the overlap is noticed — cross-check the diff against your plan early, not after you've already re-implemented half of it.
