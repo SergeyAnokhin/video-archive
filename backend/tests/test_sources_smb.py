@@ -160,7 +160,11 @@ def test_create_and_delete_directory_over_smb(engine, smb_source):
 @pytest.mark.skipif(not ffmpeg_available, reason="ffmpeg/ffprobe not on PATH")
 def test_convert_production_mode_over_smb(engine, smb_source, tmp_path):
     local_video = tmp_path / "movie.mp4"
-    make_video(local_video)
+    # Bigger than the module default so the h265 re-encode actually shrinks
+    # it -- a trivially tiny clip's re-encode can end up bigger than the
+    # source from container/codec overhead alone, which the
+    # larger-than-source guard would (correctly) skip instead of replacing.
+    make_video(local_video, size="480x360", duration=1.0)
     smb_source["fs"].seed("clips/movie.mp4", local_video.read_bytes())
 
     access = get_source_access(_source_row(engine, smb_source["id"]))
@@ -188,7 +192,7 @@ def test_convert_production_mode_over_smb(engine, smb_source, tmp_path):
 @pytest.mark.skipif(not ffmpeg_available, reason="ffmpeg/ffprobe not on PATH")
 def test_convert_test_mode_over_smb_preserves_original(engine, smb_source, tmp_path):
     local_video = tmp_path / "clip.mp4"
-    make_video(local_video)
+    make_video(local_video, size="480x360", duration=1.0)
     smb_source["fs"].seed("clips/clip.mp4", local_video.read_bytes())
 
     access = get_source_access(_source_row(engine, smb_source["id"]))

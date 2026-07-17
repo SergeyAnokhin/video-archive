@@ -43,6 +43,12 @@ class ConversionError(Exception):
     guaranteed untouched whenever this is raised."""
 
 
+class ConversionSkipped(Exception):
+    """Raised when the encode succeeded and validated but should not replace
+    the source (e.g. the output ended up larger than the source); the source
+    is guaranteed untouched whenever this is raised."""
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -64,7 +70,8 @@ def _temp_output_path(directory: Path, stem: str, container: str) -> Path:
 
 
 def _encode_and_validate(
-    engine, job_id: str, file_id: str, source_path: Path, temp_path: Path, params: dict
+    engine, job_id: str, file_id: str, source_path: Path, temp_path: Path, params: dict,
+    *, reject_if_larger: bool = False,
 ) -> float | None:
     """Returns the source's duration in seconds (from the ffprobe call this
     already performs for max-dimension resolution), so callers can persist it
@@ -73,7 +80,13 @@ def _encode_and_validate(
     Logs a `job_item_progress` event (post-V1, user request) around each
     stage -- probing, the ffmpeg encode itself, and output validation -- so
     a slow conversion's time can be attributed to a specific stage instead
-    of sitting silent between "started" and "completed"."""
+    of sitting silent between "started" and "completed".
+
+    `reject_if_larger` (user report): when set, an encode that validates
+    fine but comes out bigger than the source raises `ConversionSkipped`
+    instead of being handed back to the caller -- production/test-mode
+    replace call this so a bad trade never lands, while a tuning-sweep
+    variant (comparison output, never replaces the source) leaves it off."""
 
     def progress(message: str) -> None:
         service.log_event(engine, job_id, file_id, "info", "job_item_progress", message)
@@ -112,6 +125,18 @@ def _encode_and_validate(
         raise ConversionError(f"Validation failed: {reason}")
     progress(f"Validated output in {time.monotonic() - t0:.2f}s")
 
+    if reject_if_larger:
+        source_size = source_path.stat().st_size
+        output_size = temp_path.stat().st_size
+        if output_size > source_size:
+            temp_path.unlink()
+            message = (
+                f"Converted output ({output_size} bytes) is larger than the source "
+                f"({source_size} bytes); keeping the original."
+            )
+            service.log_event(engine, job_id, file_id, "warning", "job_item_progress", message)
+            raise ConversionSkipped(message)
+
     return source_info.get("duration") if source_info else None
 
 
@@ -127,7 +152,9 @@ def _replace_production(
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(engine, job_id, file_row.id, old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(
+        engine, job_id, file_row.id, old_path, temp_path, params, reject_if_larger=True
+    )
 
     final_name = f"{stem}.{params['container']}"
     final_rel = sibling_relative_path(file_row.relative_path, final_name)
@@ -181,7 +208,9 @@ def _replace_test_mode(
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(engine, job_id, file_row.id, old_path, temp_path, params)
+    duration_seconds = _encode_and_validate(
+        engine, job_id, file_row.id, old_path, temp_path, params, reject_if_larger=True
+    )
 
     # Original is always renamed, even without a name collision, so preserved
     # originals stay uniformly recognizable (Specification §8.2). Renaming
@@ -393,12 +422,12 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
     return _run_directory_scope(engine, job, access, params, profile, mode, worker_count)
 
 
-def _process_convert_file(engine, job_id: str, access: SourceAccess, row, profile: dict, mode: str, profile_id: str) -> bool:
+def _process_convert_file(engine, job_id: str, access: SourceAccess, row, profile: dict, mode: str, profile_id: str) -> str:
     """One directory-scope file, run from inside a batch's thread pool.
-    Returns whether it succeeded; failures go through the normal job-item/
-    event mechanism (thread-safe, see `app/jobs/service.py`) rather than
-    being raised, so one file's failure can't abort a whole in-flight
-    batch."""
+    Returns "completed"/"skipped"/"failed"; failures and skips go through
+    the normal job-item/event mechanism (thread-safe, see
+    `app/jobs/service.py`) rather than being raised, so one file's outcome
+    can't abort a whole in-flight batch."""
     item_id = service.create_job_item(engine, job_id, file_id=row.id, step_name="convert_file")
     service.start_job_item(engine, item_id)
     service.log_event(engine, job_id, row.id, "info", "job_item_started", f"Converting {row.relative_path}")
@@ -406,13 +435,19 @@ def _process_convert_file(engine, job_id: str, access: SourceAccess, row, profil
         outcome = _convert_one_file(engine, job_id, access, row, profile, mode, profile_id)
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
-        return True
+        return "completed"
+    except ConversionSkipped as exc:
+        service.skip_job_item(engine, item_id, message=str(exc))
+        service.log_event(
+            engine, job_id, row.id, "info", "job_item_skipped", f"Skipped {row.relative_path}: {exc}"
+        )
+        return "skipped"
     except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
         service.fail_job_item(engine, item_id, message=str(exc))
         service.log_event(
             engine, job_id, row.id, "error", "job_item_failed", f"Failed to convert {row.relative_path}: {exc}"
         )
-        return False
+        return "failed"
 
 
 def _run_directory_scope(
@@ -459,7 +494,7 @@ def _run_directory_scope(
     batch: list = []
 
     def flush(pending: list) -> None:
-        nonlocal processed, failed
+        nonlocal processed, skipped, failed
         if not pending:
             return
         with ThreadPoolExecutor(max_workers=len(pending)) as executor:
@@ -469,9 +504,11 @@ def _run_directory_scope(
                     pending,
                 )
             )
-        for ok in results:
-            if ok:
+        for status in results:
+            if status == "completed":
                 processed += 1
+            elif status == "skipped":
+                skipped += 1
             else:
                 failed += 1
 
@@ -543,6 +580,10 @@ def _run_file_scope(
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job["id"], row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
         return "completed", "File converted."
+    except ConversionSkipped as exc:
+        service.skip_job_item(engine, item_id, message=str(exc))
+        service.log_event(engine, job["id"], row.id, "info", "job_item_skipped", f"Skipped: {exc}")
+        return "completed", str(exc)
     except Exception as exc:  # noqa: BLE001 - failure is reported through the job, not raised further
         service.fail_job_item(engine, item_id, message=str(exc))
         service.log_event(

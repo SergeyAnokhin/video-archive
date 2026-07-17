@@ -135,6 +135,14 @@ def build_ffmpeg_command(
     if extra_encoder_args:
         args += extra_encoder_args
 
+    if output_path.suffix.lower() == ".mp4":
+        # Moves the moov atom to the front of the file so the embedded
+        # player can start playback after fetching just the first Range
+        # request instead of needing the tail of the file first (user
+        # report: long stall before playback starts over the streaming
+        # proxy). No-op for containers other than mp4.
+        args += ["-movflags", "+faststart"]
+
     args.append(str(output_path))
     return args
 

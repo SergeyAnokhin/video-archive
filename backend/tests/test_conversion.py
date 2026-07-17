@@ -9,6 +9,7 @@ make_video() (skipped automatically if ffmpeg/ffprobe aren't on PATH).
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -195,11 +196,90 @@ def test_invalid_conversion_never_deletes_original(engine, source, monkeypatch):
     assert leftovers == []
 
 
+def test_production_mode_skips_when_output_larger_than_source(engine, source, monkeypatch):
+    """User report: a converted file that ends up bigger than the source is
+    a bad trade. The encode/validation must still run (so the failure mode
+    is observable), but the source is kept untouched and the item is marked
+    "skipped", not "completed" or "failed"."""
+    make_video(source["root"] / "clips" / "clip.mp4")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/clip.mp4")
+    original_size = (source["root"] / "clips" / "clip.mp4").stat().st_size
+
+    real_run_ffmpeg = conversion.run_ffmpeg
+
+    def bloated_run_ffmpeg(args, timeout=3600):
+        ok, err = real_run_ffmpeg(args, timeout=timeout)
+        if ok:
+            with open(Path(args[-1]), "ab") as f:
+                f.write(b"0" * (original_size + 1024))
+        return ok, err
+
+    monkeypatch.setattr(conversion, "run_ffmpeg", bloated_run_ffmpeg)
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+
+    assert job["status"] == "completed"
+    assert (source["root"] / "clips" / "clip.mp4").exists()
+    assert (source["root"] / "clips" / "clip.mp4").stat().st_size == original_size
+
+    items = service.get_job_items(engine, job["id"])
+    assert items[0]["status"] == "skipped"
+    assert "larger than the source" in items[0]["message"]
+
+    row = _file_row(engine, "clips/clip.mp4")
+    assert row.converted_at is None
+
+    leftovers = list((source["root"] / "clips").glob(".clip.convert-*"))
+    assert leftovers == []
+
+
+def test_variant_sweep_keeps_variants_larger_than_source(engine, source, monkeypatch):
+    """The larger-than-source guard only applies to production/test-mode
+    replace (Specification-adjacent, user report). A tuning-sweep variant is
+    a deliberate comparison output that never touches the source anyway, so
+    it must not be rejected just for being bigger."""
+    make_video(source["root"] / "clips" / "clip.mp4")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/clip.mp4")
+    original_size = (source["root"] / "clips" / "clip.mp4").stat().st_size
+
+    real_run_ffmpeg = conversion.run_ffmpeg
+
+    def bloated_run_ffmpeg(args, timeout=3600):
+        ok, err = real_run_ffmpeg(args, timeout=timeout)
+        if ok:
+            with open(Path(args[-1]), "ab") as f:
+                f.write(b"0" * (original_size + 1024))
+        return ok, err
+
+    monkeypatch.setattr(conversion, "run_ffmpeg", bloated_run_ffmpeg)
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "test", "variants": [{"crf": 24}]},
+    )
+
+    assert job["status"] == "completed"
+    items = service.get_job_items(engine, job["id"])
+    assert items[0]["status"] == "completed"
+    assert (source["root"] / "clips" / "clip.variant-crf24.mp4").stat().st_size > original_size
+
+
 # --- test mode -----------------------------------------------------------------
 
 
 def test_test_mode_preserves_original_same_extension(engine, source):
-    make_video(source["root"] / "clips" / "clip.mp4")
+    # Bigger than the module default: a trivially tiny clip's re-encode can
+    # come out larger than the source from container/codec overhead alone,
+    # which the larger-than-source guard would (correctly) skip instead of
+    # replacing -- see test_production_mode_skips_when_output_larger_than_source.
+    make_video(source["root"] / "clips" / "clip.mp4", size="480x360", duration=1.0)
     scan_source(engine, source["id"], source["root"])
     profile = _make_profile(engine)
     file_row = _file_row(engine, "clips/clip.mp4")
@@ -222,7 +302,7 @@ def test_test_mode_preserves_original_same_extension(engine, source):
 
 
 def test_test_mode_preserves_original_different_extension(engine, source):
-    make_video(source["root"] / "clips" / "clip.mov")
+    make_video(source["root"] / "clips" / "clip.mov", size="480x360", duration=1.0)
     scan_source(engine, source["id"], source["root"])
     profile = _make_profile(engine)
     file_row = _file_row(engine, "clips/clip.mov")
@@ -385,8 +465,8 @@ def test_repeated_variant_combination_across_sweeps_does_not_fail(engine, source
 
 
 def test_directory_scope_skip_processed(engine, source):
-    make_video(source["root"] / "clips" / "a.mp4")
-    make_video(source["root"] / "clips" / "b.mp4")
+    make_video(source["root"] / "clips" / "a.mp4", size="480x360", duration=1.0)
+    make_video(source["root"] / "clips" / "b.mp4", size="480x360", duration=1.0)
     scan_source(engine, source["id"], source["root"])
     profile = _make_profile(engine)
 
@@ -430,8 +510,8 @@ def test_directory_recursive_conversion_excludes_test_artifacts(engine, source):
 
 
 def test_directory_test_mode_recursive(engine, source):
-    make_video(source["root"] / "top.mp4")
-    make_video(source["root"] / "sub" / "nested.mp4")
+    make_video(source["root"] / "top.mp4", size="480x360", duration=1.0)
+    make_video(source["root"] / "sub" / "nested.mp4", size="480x360", duration=1.0)
     scan_source(engine, source["id"], source["root"])
     profile = _make_profile(engine)
 
@@ -457,7 +537,7 @@ def test_directory_scope_converts_all_files_across_multiple_batches(engine, sour
     once regardless of the batch boundaries."""
     performance_settings.update_settings(engine, {"parallel_workers": 2})
     for i in range(5):
-        make_video(source["root"] / "clips" / f"clip_{i}.mp4")
+        make_video(source["root"] / "clips" / f"clip_{i}.mp4", size="480x360", duration=1.0)
     scan_source(engine, source["id"], source["root"])
     profile = _make_profile(engine)
 

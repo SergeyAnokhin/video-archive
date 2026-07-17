@@ -204,6 +204,22 @@ def test_build_ffmpeg_command_scale_audio_and_extra_args():
     assert passthrough[passthrough.index("-c:v") + 1] == "mycodec"
 
 
+def test_build_ffmpeg_command_faststart_for_mp4_only():
+    """User report: a converted mp4's moov atom otherwise lands at the end
+    of the file, forcing the embedded player to stall on a Range-streamed
+    file before it can start playback. `+faststart` is mp4-specific, so it
+    must not be added for other containers."""
+    mp4_args = build_ffmpeg_command(
+        Path("in.mp4"), Path("out.mp4"), video_codec="h264", crf=23, drop_audio=False
+    )
+    assert mp4_args[mp4_args.index("-movflags") + 1] == "+faststart"
+
+    mkv_args = build_ffmpeg_command(
+        Path("in.mp4"), Path("out.mkv"), video_codec="h264", crf=23, drop_audio=False
+    )
+    assert "-movflags" not in mkv_args
+
+
 # --- preview settings: aspect ratio resolution ---------------------------
 
 
