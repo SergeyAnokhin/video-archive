@@ -140,6 +140,12 @@ class SMBBackend:
 
     def commit_new_file(self, local_path: Path, dest_rel_path: str) -> None:
         def _upload() -> None:
+            # Unlike a same-volume local move, the destination's parent
+            # directory chain (e.g. `.video-archive/backups/`) may not exist
+            # yet on the share -- smbclient.open_file() doesn't create it.
+            parent = PureWindowsPath(dest_rel_path).parent
+            if str(parent) not in ("", "."):
+                smbclient.makedirs(self._unc(str(parent)), exist_ok=True)
             with open(local_path, "rb") as local_f, smbclient.open_file(self._unc(dest_rel_path), mode="wb") as remote_f:
                 shutil.copyfileobj(local_f, remote_f)
 

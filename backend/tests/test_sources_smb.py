@@ -98,6 +98,20 @@ def test_commit_new_file_uploads_and_cleans_up_local_temp(fake_smb, tmp_path):
     assert not local_file.exists()
 
 
+def test_commit_new_file_creates_missing_parent_directories(fake_smb, tmp_path):
+    # Regression: unlike a same-volume local move, `smbclient.open_file()`
+    # does not create missing parent directories on the share -- writing the
+    # very first backup into `.video-archive/backups/` (neither ancestor
+    # directory pre-exists) used to fail with NtStatus 0xc000003a.
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass")
+    local_file = tmp_path / "backup.zip"
+    local_file.write_bytes(b"zip-bytes")
+
+    backend.commit_new_file(local_file, ".video-archive/backups/backup.zip")
+
+    assert fake_smb.read(".video-archive/backups/backup.zip") == b"zip-bytes"
+
+
 def test_local_copy_downloads_and_cleans_up(fake_smb):
     fake_smb.seed("clips/movie.mp4", b"remote-bytes")
     backend = SMBBackend("testnas", 445, "testshare", "user", "pass")

@@ -145,6 +145,12 @@ class FakeSMBFS:
     def open_file(self, unc_path: str, mode: str = "r", **kwargs):
         self._maybe_fail()
         rel_path = self._to_rel(unc_path)
+        if "w" in mode:
+            # Mirrors real SMB: opening a file for write does not create
+            # missing parent directories (unlike a local filesystem move).
+            parent = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
+            if not self.exists(parent):
+                raise OSError(2, "No such file or directory", unc_path)
         return _FakeSMBFile(self, rel_path, mode)
 
     def rename(self, src_unc: str, dst_unc: str, **kwargs) -> None:
@@ -159,6 +165,15 @@ class FakeSMBFS:
     def mkdir(self, unc_path: str, **kwargs) -> None:
         self._maybe_fail()
         self.dirs.add(self._to_rel(unc_path))
+
+    def makedirs(self, unc_path: str, exist_ok: bool = False, **kwargs) -> None:
+        self._maybe_fail()
+        rel_path = self._to_rel(unc_path)
+        if not exist_ok and self.exists(rel_path):
+            raise OSError(17, "File exists", unc_path)
+        parts = rel_path.split("/")
+        for i in range(len(parts)):
+            self.dirs.add("/".join(parts[: i + 1]))
 
     def rmdir(self, unc_path: str, **kwargs) -> None:
         self._maybe_fail()
@@ -239,6 +254,7 @@ def fake_smb(monkeypatch):
     monkeypatch.setattr(smbclient, "rename", fs.rename)
     monkeypatch.setattr(smbclient, "remove", fs.remove)
     monkeypatch.setattr(smbclient, "mkdir", fs.mkdir)
+    monkeypatch.setattr(smbclient, "makedirs", fs.makedirs)
     monkeypatch.setattr(smbclient, "rmdir", fs.rmdir)
     monkeypatch.setattr(smbclient.path, "exists", fs.path_exists)
     monkeypatch.setattr(smbclient.path, "isdir", fs.path_isdir)

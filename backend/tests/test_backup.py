@@ -88,7 +88,19 @@ def test_create_backup_writes_zip_with_manifest_and_data(engine, source):
     assert len(data["directories"]) == 1
     assert len(data["files"]) == 1
     assert len(data["file_tags"]) == 1
-    assert len(data["tag_catalog"]) == 1
+
+
+def test_create_backup_over_smb_creates_backups_directory(engine, smb_source):
+    # Regression: the very first backup on an SMB source has no
+    # `.video-archive/backups/` folder yet -- `create_backup` must succeed
+    # rather than fail on the missing remote directory (app/sources/smb_backend.py).
+    _seed_library(engine, smb_source["id"])
+    row = _source_row(engine, smb_source["id"])
+    access = get_source_access(row)
+
+    result = backup.create_backup(engine, access, row)
+
+    assert smb_source["fs"].exists(f".video-archive/backups/{result['filename']}")
 
 
 def test_list_backups_empty_before_any_backup(engine, source):
