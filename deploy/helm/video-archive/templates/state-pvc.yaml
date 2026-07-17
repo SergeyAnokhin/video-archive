@@ -1,0 +1,18 @@
+# Backend state volume: SQLite DB, secrets.env, preview cache, detection
+# models, logs. Default StorageClass is k3s local-path -> RWO and node-local,
+# so once bound the backend is pinned to whichever node the PV landed on
+# (see docs/deployment.md "Switching the backend between nodes").
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "video-archive.fullname" . }}-state
+  labels:
+    {{- include "video-archive.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- if .Values.backend.state.storageClass }}
+  storageClassName: {{ .Values.backend.state.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backend.state.size }}

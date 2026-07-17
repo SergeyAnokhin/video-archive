@@ -1,0 +1,23 @@
+# Registered once by a human with cluster access:
+#   kubectl apply -f deploy/argocd/application.yaml
+# From then on ArgoCD auto-syncs the `deploy` branch (CI-updated mirror of
+# main) into the `video-archive` namespace. See docs/deployment.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: video-archive
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/SergeyAnokhin/video-archive.git
+    targetRevision: deploy # ArgoCD tracks the CI-updated branch, not main
+    path: deploy/helm/video-archive
+    helm:
+      releaseName: video-archive
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: video-archive
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

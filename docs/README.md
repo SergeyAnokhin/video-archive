@@ -9,6 +9,7 @@ This folder contains the living project documentation — the documents that are
 | [`code-map.md`](code-map.md) | File-by-file map of the implementation — an index over four parts: [frontend](code-map-frontend.md), [backend](code-map-backend.md), [HTTP routers](code-map-routers.md), [tests](code-map-tests.md) | Files are added, moved, or removed (update the matching part) |
 | [`architecture.md`](architecture.md) | Current high-level architecture and cross-cutting conventions | A component, flow, or convention changes |
 | [`development.md`](development.md) | Developer workflow: run, test, manual verification | Commands, test suites, or workflows change |
+| [`deployment.md`](deployment.md) | k3s cluster deployment: CI → GHCR → ArgoCD flow, Helm chart, node placement switch, human checklist | Dockerfiles, chart, CI workflow, or cluster setup change |
 
 Project overview and startup instructions live in the root [`README.md`](../README.md).
 

@@ -18,6 +18,8 @@ import threading
 import urllib.request
 from pathlib import Path
 
+from app.config import STATE_DIR
+
 logger = logging.getLogger(__name__)
 
 # The face detector/recognizer below are shared, lazily-created cv2 DNN
@@ -29,7 +31,7 @@ logger = logging.getLogger(__name__)
 # `blur_score()` are stateless/thread-safe already and stay unlocked.
 _cv2_face_lock = threading.Lock()
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+MODELS_DIR = STATE_DIR / "models"
 
 _YUNET_FILENAME = "face_detection_yunet_2023mar.onnx"
 _YUNET_URL = (

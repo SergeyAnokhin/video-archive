@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "video-archive.fullname" . }}
+  labels:
+    {{- include "video-archive.labels" . | nindent 4 }}
+  {{- if .Values.ingress.tls }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.certIssuer }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ include "video-archive.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          # The backend serves everything under /api already — forward as-is,
+          # no StripPrefix middleware.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "video-archive.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "video-archive.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}

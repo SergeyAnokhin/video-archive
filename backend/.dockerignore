@@ -1,0 +1,14 @@
+# Keep local state and caches out of the image build context.
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+video_archive.db
+video_archive.db-shm
+video_archive.db-wal
+secrets.env
+preview_cache/
+models/
+logs/
+tests/
+Dockerfile
+.dockerignore

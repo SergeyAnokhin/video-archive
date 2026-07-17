@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "video-archive.fullname" . }}-backend
+  labels:
+    {{- include "video-archive.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  # Stateful (SQLite + caches on a node-local RWO PVC): single replica and
+  # Recreate so two pods never hold the DB at once.
+  replicas: {{ .Values.backend.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "video-archive.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.backend.computeNode }}
+      # Pin to the powerful node (see values.yaml backend.computeNode).
+      nodeSelector:
+        role: compute
+      tolerations:
+        - key: role
+          operator: Equal
+          value: compute
+          effect: NoSchedule
+      {{- end }}
+      containers:
+        - name: backend
+          image: {{ include "video-archive.backendImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: VIDEO_ARCHIVE_STATE_DIR
+              value: {{ .Values.backend.stateDir | quote }}
+          volumeMounts:
+            - name: state
+              mountPath: {{ .Values.backend.stateDir }}
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            periodSeconds: 10
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ include "video-archive.fullname" . }}-state

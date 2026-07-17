@@ -12,6 +12,7 @@ module only wires up *where* every logger's output goes.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -21,7 +22,14 @@ from pathlib import Path
 # see docs/development.md's reload-wedging note), so a log file written
 # inside it would retrigger the watcher on every single line logged --
 # reloading the app because the app logged something, forever.
-LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
+# With VIDEO_ARCHIVE_STATE_DIR set (container/cluster run, no --reload —
+# see app/config.py) logs join the rest of the state on that volume.
+_STATE_DIR_ENV = os.environ.get("VIDEO_ARCHIVE_STATE_DIR")
+LOG_DIR = (
+    Path(_STATE_DIR_ENV) / "logs"
+    if _STATE_DIR_ENV
+    else Path(__file__).resolve().parent.parent.parent / "logs"
+)
 LOG_FILE = LOG_DIR / "backend.log"
 
 _FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"

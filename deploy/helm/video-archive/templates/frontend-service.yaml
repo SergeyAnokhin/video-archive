@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "video-archive.fullname" . }}-frontend
+  labels:
+    {{- include "video-archive.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/component: frontend
+  ports:
+    - port: {{ .Values.frontend.service.port }}
+      targetPort: 80

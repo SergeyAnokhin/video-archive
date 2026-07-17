@@ -1,0 +1,41 @@
+# The only file CI mutates: .github/workflows/build.yml rewrites
+# image.backend.tag / image.frontend.tag on every green build of main and
+# force-pushes the result to the `deploy` branch that ArgoCD tracks.
+fullnameOverride: "video-archive"
+
+image:
+  registry: ghcr.io/sergeyanokhin/video-archive # lowercase, one repo -> many component images
+  pullPolicy: IfNotPresent
+  backend: { repository: backend, tag: "REPLACED_BY_CI" }
+  frontend: { repository: frontend, tag: "REPLACED_BY_CI" }
+imagePullSecrets: [] # [{name: ghcr-creds}] only if the GHCR packages stay private
+
+backend:
+  replicas: 1 # stateful (SQLite on the PVC) -> keep at 1, strategy Recreate
+  service: { port: 8000 }
+  # Node placement switch. false -> the general-purpose node (`k3s`).
+  # true  -> pinned to the powerful node (`ubuntu-server`, label role=compute,
+  #          taint role=compute:NoSchedule) for heavy ffmpeg work.
+  # CAUTION: the state PVC below is k3s local-path, i.e. node-pinned once
+  # bound. Flipping this after first deploy strands the pod (volume node
+  # affinity) — see docs/deployment.md "Switching the backend between nodes".
+  computeNode: false
+  # Mutable state (SQLite DB, secrets.env, preview cache, detection models,
+  # logs) — mounted at stateDir, injected as VIDEO_ARCHIVE_STATE_DIR.
+  stateDir: /data/state
+  state:
+    size: 20Gi
+    storageClass: "" # "" = cluster default (k3s local-path, RWO, node-local)
+
+frontend:
+  replicas: 1
+  service: { port: 80 }
+
+ingress:
+  enabled: true
+  className: traefik
+  host: video-archive.192.168.1.97.nip.io # nip.io -> no DNS/router config needed
+  tls: true # HTTPS via cert-manager
+  certIssuer: home-ca # ClusterIssuer already on the cluster
+  # No StripPrefix middleware: the backend already serves every route under
+  # /api (FastAPI routers use prefix="/api"), so /api must be forwarded as-is.
