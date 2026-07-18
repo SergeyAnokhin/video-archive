@@ -151,6 +151,8 @@
     "convert": "Convert folder",
     "convertFile": "Convert file",
     "tuneFile": "Tune",
+    "playFile": "Play video",
+    "viewFullSize": "View full size",
     "preview": "Generate previews for folder",
     "previewFile": "Generate preview",
     "tag": "Tag folder",

@@ -17,6 +17,7 @@ import {
   Film,
   FolderInput,
   Images,
+  PlayCircle,
   Plus,
   SlidersHorizontal,
   Tags,
@@ -91,9 +92,11 @@ export function FileInfoPanel({
 }: FileInfoPanelProps) {
   const { t } = useTranslation()
   const showThumbnail = file.is_video_supported && file.has_preview_asset
+  const hasThumbImage = file.is_image_supported || showThumbnail
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const draggingRef = useRef(false)
   const [splitPercent, setSplitPercent] = useState<number>(() => detectInitialSplit())
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const [mediaInfo, setMediaInfo] = useState<FileMediaInfo | null>(null)
   const [mediaInfoLoading, setMediaInfoLoading] = useState(true)
   const [tags, setTags] = useState<FileTagAssignment[]>([])
@@ -383,31 +386,23 @@ export function FileInfoPanel({
           ref={bodyRef}
           style={{ '--fip-split': `${splitPercent}%` } as CSSProperties}
         >
-          {onOpenPlayback ? (
+          {hasThumbImage ? (
             <button
               type="button"
               className="file-info-panel__thumb file-info-panel__thumb--clickable"
-              aria-label={t('library.play')}
-              title={t('library.play')}
-              onClick={onOpenPlayback}
+              aria-label={t('library.viewFullSize')}
+              title={t('library.viewFullSize')}
+              onClick={() => setLightboxOpen(true)}
             >
               {file.is_image_supported ? (
                 <img src={`/api/files/${file.id}/stream`} alt="" className="file-info-panel__thumb-img" />
-              ) : showThumbnail ? (
-                <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
               ) : (
-                <Film size={40} />
+                <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
               )}
             </button>
           ) : (
             <div className="file-info-panel__thumb">
-              {file.is_image_supported ? (
-                <img src={`/api/files/${file.id}/stream`} alt="" className="file-info-panel__thumb-img" />
-              ) : showThumbnail ? (
-                <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
-              ) : (
-                <Film size={40} />
-              )}
+              <Film size={40} />
             </div>
           )}
 
@@ -562,6 +557,11 @@ export function FileInfoPanel({
         </div>
 
         <div className="convert-dialog__actions">
+          {file.is_video_supported && onOpenPlayback && (
+            <button type="button" className="convert-dialog__button" onClick={onOpenPlayback}>
+              <PlayCircle size={14} /> {t('library.playFile')}
+            </button>
+          )}
           {file.is_video_supported && (
             <button type="button" className="convert-dialog__button" onClick={onPreview} disabled={previewing}>
               <Images size={14} /> {t('library.previewFile')}
@@ -591,6 +591,46 @@ export function FileInfoPanel({
           </button>
         </div>
       </div>
+
+      {lightboxOpen && hasThumbImage && (
+        <div
+          className="file-info-panel__lightbox-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={file.file_name}
+          onClick={(event) => {
+            event.stopPropagation()
+            setLightboxOpen(false)
+          }}
+        >
+          <div className="file-info-panel__lightbox-actions" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="file-info-panel__lightbox-delete"
+              aria-label={t('library.deleteFile')}
+              title={t('library.deleteFile')}
+              onClick={handleDelete}
+            >
+              <Trash2 size={18} />
+            </button>
+            <button
+              type="button"
+              className="file-info-panel__lightbox-close"
+              aria-label={t('playbackModal.close')}
+              title={t('playbackModal.close')}
+              onClick={() => setLightboxOpen(false)}
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <img
+            src={file.is_image_supported ? `/api/files/${file.id}/stream` : `/api/files/${file.id}/preview.jpg`}
+            alt=""
+            className="file-info-panel__lightbox-img"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }
