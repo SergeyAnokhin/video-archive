@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 
 from app import backup
-from app.scan import scan_source_access
+from app.jobs import service
 from app.sources import get_source_access
 
 # Wiped unconditionally on every switch, same as the original `PUT /source`
@@ -72,12 +72,25 @@ def switch_active_source(engine, new_row) -> dict:
         except backup.RestoreError:
             pass
 
-    # Diff-based, so this reconciles any filesystem drift since the backup
-    # was taken (or does a first-time scan when there was nothing to
-    # restore) while preserving ids/tags the restore just put in place.
-    scan_source_access(engine, new_row.id, access)
+    # Diff-based (the same `rescan` job the "rescan whole library" button
+    # uses), so this reconciles any filesystem drift since the backup was
+    # taken -- or does a first-time scan when there was nothing to restore --
+    # while preserving ids/tags the restore just put in place. Runs as a
+    # background job rather than a synchronous walk here: a full walk of a
+    # large/slow share (SMB especially) can take a while, and a job gives the
+    # frontend live per-item progress (top-bar activity indicator, Jobs
+    # modal) instead of a request that blocks with no feedback until the
+    # whole tree has been walked.
+    scan_job = service.create_job(
+        engine, job_type="rescan", scope_type="source", scope_ref=None, parameters={"path": ""}
+    )
 
     with engine.connect() as conn:
         row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": new_row.id}).fetchone()
 
-    return {"row": row, "detected_backups": detected_backups, "auto_restored": auto_restored}
+    return {
+        "row": row,
+        "detected_backups": detected_backups,
+        "auto_restored": auto_restored,
+        "scan_job": scan_job,
+    }

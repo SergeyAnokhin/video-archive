@@ -144,6 +144,7 @@
     "folderNavHistory": "Recent folders",
     "loading": "Loading…",
     "loadError": "Could not load this folder: {{message}}",
+    "scanning": "Scanning the source for the first time — this can take a while for a large share. The library will appear as soon as it's done.",
     "empty": "This folder is empty.",
     "folderFileCount": "{{count}} files",
     "rescan": "Rescan folder",

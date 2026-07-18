@@ -4,6 +4,7 @@ sources.py`/`app/source_switch.py`)."""
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -13,6 +14,16 @@ from sqlalchemy import text
 from app import preview_cache
 from app.jobs import service
 from app.main import app
+
+
+def _wait_for_job(engine, job_id: str, timeout: float = 10.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = service.get_job(engine, job_id)
+        if job["status"] in service.FINISHED_STATUSES:
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish within {timeout}s")
 
 
 def _insert_source(engine, name: str, root_path, is_active: bool) -> str:
@@ -87,6 +98,7 @@ def test_activate_switches_source_and_reflects_its_own_files(engine, source, tmp
         assert r.status_code == 200
         assert r.json()["id"] == b_id
         assert r.json()["is_active"] is True
+        _wait_for_job(engine, r.json()["scan_job"]["id"])
 
         r = client.get("/api/source")
         assert r.json()["id"] == b_id

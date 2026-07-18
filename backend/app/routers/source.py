@@ -104,8 +104,8 @@ def put_source(body: SourceRequest):
     duplicate -- resubmitting the same connection is how a saved source is
     renamed or has its credentials refreshed. Switching itself (backup of
     whatever was active, wipe, auto-restore of the new source's own data,
-    rescan) is handled by `switch_active_source()`, shared with
-    `POST /sources/{id}/activate`."""
+    enqueuing the reconciling rescan job) is handled by
+    `switch_active_source()`, shared with `POST /sources/{id}/activate`."""
     if body.protocol not in SUPPORTED_PROTOCOLS:
         raise _unsupported_protocol_error()
 
@@ -207,6 +207,7 @@ def put_source(body: SourceRequest):
         **_source_row_to_dict(result["row"]),
         "detected_backups": result["detected_backups"],
         "auto_restored": result["auto_restored"],
+        "scan_job": result["scan_job"],
     }
 
 

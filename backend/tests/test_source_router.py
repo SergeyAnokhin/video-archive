@@ -47,6 +47,7 @@ def test_local_source_connect_and_test_connection(tmp_path, monkeypatch):
         body = r.json()
         assert body["protocol"] == "local"
         assert body["detected_backups"] == []
+        _wait_for_job(client, body["scan_job"]["id"])
 
         r = client.get("/api/source")
         assert r.json()["root_path"] == str(root.resolve())
@@ -85,6 +86,7 @@ def test_smb_source_test_connection_and_connect(tmp_path, monkeypatch, fake_smb)
         body = r.json()
         assert body["protocol"] == "smb"
         assert body["host"] == fake_smb.host
+        _wait_for_job(client, body["scan_job"]["id"])
 
         r = client.get("/api/source")
         assert r.json()["host"] == fake_smb.host
@@ -168,6 +170,7 @@ def test_switching_sources_backs_up_and_auto_restores_from_saved_backup(tmp_path
     with TestClient(app) as client:
         r = client.put("/api/source", json={"name": "A", "protocol": "local", "root_path": str(root_a)})
         assert r.status_code == 200
+        _wait_for_job(client, r.json()["scan_job"]["id"])
 
         engine = db_module.get_engine()
         with engine.connect() as conn:
@@ -191,11 +194,15 @@ def test_switching_sources_backs_up_and_auto_restores_from_saved_backup(tmp_path
         _wait_for_job(client, r.json()["id"])
         assert client.get("/api/jobs").json()["jobs"]
 
-        # Switching to B backs A up (onto A's own disk) before wiping.
+        # Switching to B backs A up (onto A's own disk) before wiping --
+        # including the old job history, so the only job left right after
+        # the switch is the new source's own reconciling scan.
         r = client.put("/api/source", json={"name": "B", "protocol": "local", "root_path": str(root_b)})
         assert r.status_code == 200
         assert r.json()["root_path"] == str(root_b.resolve())
-        assert client.get("/api/jobs").json()["jobs"] == []
+        scan_job_b = r.json()["scan_job"]
+        assert [j["id"] for j in client.get("/api/jobs").json()["jobs"]] == [scan_job_b["id"]]
+        _wait_for_job(client, scan_job_b["id"])
         with engine.connect() as conn:
             assert conn.execute(text("SELECT COUNT(*) FROM file_tags")).scalar() == 0
 
@@ -203,7 +210,9 @@ def test_switching_sources_backs_up_and_auto_restores_from_saved_backup(tmp_path
         r = client.put("/api/source", json={"name": "A", "protocol": "local", "root_path": str(root_a)})
         assert r.status_code == 200
         assert r.json()["auto_restored"] is not None
-        assert client.get("/api/jobs").json()["jobs"] == []
+        scan_job_a = r.json()["scan_job"]
+        assert [j["id"] for j in client.get("/api/jobs").json()["jobs"]] == [scan_job_a["id"]]
+        _wait_for_job(client, scan_job_a["id"])
         with engine.connect() as conn:
             assert conn.execute(text("SELECT COUNT(*) FROM file_tags")).scalar() == 1
 

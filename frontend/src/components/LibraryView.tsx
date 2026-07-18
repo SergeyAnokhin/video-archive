@@ -67,6 +67,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const { activeJob, jobItemsById, refresh: refreshJobs } = useJobs()
   const [data, setData] = useState<DirectoryChildrenResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined)
   const [rescanning, setRescanning] = useState(false)
   const [convertDirOpen, setConvertDirOpen] = useState(false)
   const [convertFile, setConvertFile] = useState<FileEntry | null>(null)
@@ -181,6 +182,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     if (isNewLocation) {
       setData(null)
       setError(null)
+      setErrorCode(undefined)
     }
 
     async function load() {
@@ -190,10 +192,12 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
         if (!cancelled) {
           setData(json)
           setError(null)
+          setErrorCode(undefined)
         }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err))
+          setErrorCode(err instanceof ApiError ? err.code : undefined)
         }
       }
     }
@@ -206,6 +210,15 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
   const segments = path ? path.split('/') : []
   const recentVisits = getRecentFolderVisits().filter((visitPath) => visitPath !== path)
+
+  // A brand-new (or just-switched-to) source's directories/files rows only
+  // exist once its background `rescan` job finishes -- until then, even the
+  // root path 404s ("directory_not_found"), which is expected here, not a
+  // real error (user report: this used to render as a hard error while the
+  // initial scan was still walking a large SMB share). `reloadTick`'s
+  // job-completion effect above retries automatically once the job ends.
+  const sourceScanInProgress = activeJob?.job_type === 'rescan' && activeJob.scope_type === 'source'
+  const showScanningState = error && errorCode === 'directory_not_found' && sourceScanInProgress
 
   // Next/prev navigation in PlaybackModal/ImageViewerModal/FileInfoPanel
   // walks this directory's own sorted listing while browsing, or the search
@@ -498,7 +511,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
         />
       ) : (
         <>
-          {error && (
+          {showScanningState && <p className="library-view__message">{t('library.scanning')}</p>}
+
+          {error && !showScanningState && (
             <p className="library-view__message library-view__message--error">
               {t('library.loadError', { message: error })}
             </p>

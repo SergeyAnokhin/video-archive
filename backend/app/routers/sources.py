@@ -53,6 +53,7 @@ def activate_source(source_id: str):
         **_source_row_to_dict(result["row"]),
         "detected_backups": result["detected_backups"],
         "auto_restored": result["auto_restored"],
+        "scan_job": result["scan_job"],
     }
 
 

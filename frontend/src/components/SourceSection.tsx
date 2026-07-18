@@ -87,6 +87,7 @@ export function SourceSection() {
       setPassword('')
       setDetectedBackups(json.detected_backups)
       setRestoreMessage(null)
+      await refreshJobs()
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err))
     } finally {
