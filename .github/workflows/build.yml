@@ -6,11 +6,15 @@ name: build-and-push
 on:
   push:
     branches: [main]
-    # Source paths only — never deploy/** — so the tag-bump commit on the
-    # deploy branch can never re-trigger this workflow.
+    # Source paths, plus the Helm chart so a chart-only change (e.g. a
+    # node-placement tweak) also reaches the `deploy` branch. Loop-safe
+    # despite including deploy/helm/**: the bot's own tag-bump commit lands
+    # on the `deploy` BRANCH (see branches: [main] above), never on `main`,
+    # so it can never re-trigger this workflow regardless of path filters.
     paths:
       - backend/**
       - frontend/**
+      - deploy/helm/**
       - .github/workflows/build.yml
   workflow_dispatch:
 concurrency:

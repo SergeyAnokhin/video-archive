@@ -13,13 +13,18 @@ imagePullSecrets: [] # [{name: ghcr-creds}] only if the GHCR packages stay priva
 backend:
   replicas: 1 # stateful (SQLite on the PVC) -> keep at 1, strategy Recreate
   service: { port: 8000 }
-  # Node placement switch. false -> the general-purpose node (`k3s`).
-  # true  -> pinned to the powerful node (`ubuntu-server`, label role=compute,
-  #          taint role=compute:NoSchedule) for heavy ffmpeg work.
-  # CAUTION: the state PVC below is k3s local-path, i.e. node-pinned once
-  # bound. Flipping this after first deploy strands the pod (volume node
-  # affinity) — see docs/deployment.md "Switching the backend between nodes".
-  computeNode: false
+  # Node placement: soft preference, not a hard requirement. When true, the
+  # backend *prefers* the powerful node (`ubuntu-server`, label role=compute)
+  # at scheduling time, and falls back to the general-purpose node (`k3s`)
+  # automatically if the compute node isn't schedulable right then — no
+  # manual flag flip needed. Set false for no preference either way.
+  # CAUTION: this only affects *scheduling decisions* (pod/PVC creation).
+  # The state PVC below is k3s local-path, i.e. pinned to whichever node it
+  # first bound on — once bound, the backend can only run on that node until
+  # the PVC is recreated, regardless of this preference. It does NOT give
+  # live failover if the node the PVC is already on goes down. See
+  # docs/deployment.md "Node placement".
+  preferComputeNode: true
   # Mutable state (SQLite DB, secrets.env, preview cache, detection models,
   # logs) — mounted at stateDir, injected as VIDEO_ARCHIVE_STATE_DIR.
   stateDir: /data/state

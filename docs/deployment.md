@@ -30,28 +30,37 @@ Notes that follow from this:
 - **The video library comes from the app's own `smb` source type.** In a pod, a `local` source would point at the container filesystem — useless. Connect the Synology share (`//192.168.1.91/<share>`) as an `smb` source from Settings; the backend speaks SMB directly (`smbprotocol`), so the SMB CSI driver is **not** required for this app.
 - **Detection models** (~39 MB) auto-download into the state volume on first preview generation and persist across pod restarts.
 
-## Backend node placement — the switch
+## Backend node placement — soft preference, not a hard pin
 
-`backend.computeNode` in [`values.yaml`](../deploy/helm/video-archive/values.yaml):
+`backend.preferComputeNode` in [`values.yaml`](../deploy/helm/video-archive/values.yaml) (default `true`):
 
-- `false` (default) — the backend schedules on the general-purpose node (`k3s`, 192.168.1.97).
-- `true` — the backend is pinned to the powerful node (`ubuntu-server`) via `nodeSelector: {role: compute}` + a toleration for the `role=compute:NoSchedule` taint. Worth it for heavy ffmpeg conversion batches. Requires the one-time node label/taint (checklist step 2).
+- The backend always **tolerates** the `role=compute:NoSchedule` taint (so it's *allowed* on `ubuntu-server`), and when `preferComputeNode: true` it also carries a **soft** `nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution` for `role=compute` (weight 100).
+- This is a preference the scheduler evaluates only at **pod (re)scheduling time**: if `ubuntu-server` is `Ready`/schedulable right then, the pod lands there; if it's powered off, cordoned, or out of resources, the pod lands on `k3s` automatically instead — no manual flag flip, no `Pending` pod. Set `preferComputeNode: false` for no preference either way (whichever node the default scheduler picks).
+- Requires the one-time node label (checklist step 2) so the `role: compute` match has something to find: `kubectl label node ubuntu-server role=compute` + the taint. Without the label, the preference simply never matches and the pod schedules normally.
 
-**Caveat — the PVC pins the pod to a node.** k3s `local-path` volumes are node-local: the PV is created on whichever node the pod first runs on, and from then on the pod can only schedule there. Flipping `computeNode` after the first deploy therefore leaves the pod `Pending` (volume node affinity conflict). To actually move the backend:
+**What this does *not* give you: live failover.** k3s `local-path` volumes are node-local — the PV is created on whichever node the pod's PVC first binds to, and from then on the pod can *only* run there, no matter what the affinity says (the storage, not the scheduler, is the hard constraint from that point on). So:
+
+- **First-ever deploy, or any time after you delete the PVC:** the soft preference decides the node fresh — prefers `ubuntu-server`, falls back to `k3s` if it's unavailable at that moment.
+- **Once the PVC is bound:** if that node later goes down, the backend goes down with it and stays `Pending` until the node returns — it will **not** silently hop to the other node, because the SQLite DB/cache/secrets physically live only on that node's disk.
+
+To actually move the backend to the other node deliberately (not automatic):
 
 1. In the app, run a metadata **backup** (Settings → Backups) — it lands in the source's own `.video-archive/backups/` on the NAS, not on the PVC.
-2. Flip `backend.computeNode`, push to `main`, let ArgoCD sync.
-3. Delete the stranded PVC/PV: `kubectl -n video-archive delete pvc video-archive-state` (delete the pod too so the new one rebinds); a fresh PV is created on the new node.
-4. In the app, reconnect the source — the automatic restore-from-backup recovers tags/settings; preview cache and models regenerate/redownload on demand.
+2. Delete the stranded PVC/PV: `kubectl -n video-archive delete pvc video-archive-state` (delete the pod too so the new one rebinds); a fresh PV is created on whichever node the soft preference (or manual `kubectl cordon` on the node you want to avoid) picks.
+3. In the app, reconnect the source — the automatic restore-from-backup recovers tags/settings; preview cache and models regenerate/redownload on demand.
 
-Also note: `ubuntu-server` may be powered off. If the backend lives there while it's off, the app is down (expected); if that bothers ArgoCD health, the optional `argocd-cm` Lua health override from the platform spec (§6.2) applies.
+**Why not real live failover?** That would need the state to *not* be node-local — e.g. RWX/shared storage via the SMB CSI driver. But this app's state includes a SQLite DB, and SQLite's file locking is unsafe on CIFS/SMB (the platform spec calls this out explicitly, §5.7) — so moving the PVC to RWX storage isn't a safe option without first moving the DB off SQLite or onto something replicated. Out of scope unless you want that bigger redesign.
+
+Also note: if `ubuntu-server` is powered off while the backend's PVC lives there, the app is down (expected); if that bothers ArgoCD health, the optional `argocd-cm` Lua health override from the platform spec (§6.2) applies.
+
+**Reusing this pattern elsewhere:** the soft-affinity block above (tolerate the taint + `preferredDuringSchedulingIgnoredDuringExecution`) is generic and works well for genuinely **stateless** components in any chart — no storage-locality caveat applies to them, so "prefer node A, fall back to node B" behaves exactly as expected on every (re)schedule, including after a node recovers and the pod is later rescheduled for unrelated reasons (it does not proactively rebalance a pod that's already happily running elsewhere — only new scheduling decisions consult the preference).
 
 ## Human-only checklist (once)
 
 The agent cannot touch the cluster, GHCR visibility, or ArgoCD. Run top to bottom on a machine with `kubectl` access:
 
 1. **First build:** push to `main` (or run the `build-and-push` workflow manually) and wait for green — this creates the GHCR packages and the `deploy` branch. Then make both packages public: GitHub → repo → Packages → `backend`/`frontend` → Package settings → Change visibility → Public. (Or keep them private and create a `ghcr-creds` pull secret + set `imagePullSecrets` in values.)
-2. **Powerful-node pinning** (only if you plan to use `backend.computeNode: true`), once ever:
+2. **Powerful-node label/taint** (needed for `backend.preferComputeNode: true`, the default), once ever:
    ```bash
    kubectl label node ubuntu-server role=compute
    kubectl taint nodes ubuntu-server role=compute:NoSchedule
@@ -77,7 +86,7 @@ helm template video-archive deploy/helm/video-archive -n video-archive   # local
 | Symptom | Likely cause |
 | --- | --- |
 | `ImagePullBackOff` | GHCR packages still private (checklist 1) |
-| Backend `Pending` after flipping `computeNode` | PVC node-affinity conflict — see "the switch" above; or node not labelled/tainted |
+| Backend `Pending` after deleting the PVC to move nodes | node not labelled/tainted, or the target node isn't `Ready` — see "Node placement" above |
 | `/api` calls 404 through the ingress | something re-introduced StripPrefix — the backend serves routes under `/api` already; the ingress must forward `/api` as-is |
 | ArgoCD `OutOfSync` forever | it tracks `deploy`, not `main` — check the Actions run pushed the bump |
 | App up but library empty | expected on first run — connect an `smb` source in Settings (cluster state is separate from local) |

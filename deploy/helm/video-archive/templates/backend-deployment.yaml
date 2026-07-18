@@ -25,15 +25,26 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.backend.computeNode }}
-      # Pin to the powerful node (see values.yaml backend.computeNode).
-      nodeSelector:
-        role: compute
+      # Always tolerate the compute-node taint so the scheduler is *allowed*
+      # to place the pod there — this alone doesn't request that node.
       tolerations:
         - key: role
           operator: Equal
           value: compute
           effect: NoSchedule
+      {{- if .Values.backend.preferComputeNode }}
+      # Soft preference (see values.yaml backend.preferComputeNode): try
+      # ubuntu-server first, fall back to any other node automatically if
+      # it isn't schedulable right now.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: role
+                    operator: In
+                    values: [compute]
       {{- end }}
       containers:
         - name: backend
