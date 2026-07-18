@@ -44,7 +44,8 @@
 
 .playback-overlay__close,
 .playback-overlay__mode-toggle,
-.playback-overlay__info-toggle {
+.playback-overlay__info-toggle,
+.playback-overlay__delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -61,6 +62,15 @@
 .playback-overlay__mode-toggle:hover,
 .playback-overlay__info-toggle:hover {
   background: rgba(0, 0, 0, 0.8);
+}
+
+.playback-overlay__delete {
+  color: var(--color-danger, #ff4d4f);
+}
+
+.playback-overlay__delete:hover {
+  background: var(--color-danger, #ff4d4f);
+  color: #fff;
 }
 
 .playback-overlay__mode-toggle {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronLeft, ChevronRight, Info, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Info, Trash2, X } from 'lucide-react'
 import type { FileEntry } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { QuickTagAdd } from './QuickTagAdd'
@@ -12,6 +12,7 @@ interface ImageViewerModalProps {
   onClose: () => void
   onMoved?: () => void
   onOpenInfo?: () => void
+  onDelete?: () => void
   onTagAdded?: () => void
   hasPrev?: boolean
   hasNext?: boolean
@@ -24,6 +25,7 @@ export function ImageViewerModal({
   onClose,
   onMoved,
   onOpenInfo,
+  onDelete,
   onTagAdded,
   hasPrev,
   hasNext,
@@ -51,6 +53,12 @@ export function ImageViewerModal({
     document.addEventListener('keydown', handleKeyDown, true)
     return () => document.removeEventListener('keydown', handleKeyDown, true)
   }, [onClose, hasPrev, hasNext, onPrev, onNext])
+
+  function handleDelete() {
+    if (onDelete && window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
+      onDelete()
+    }
+  }
 
   return (
     <div className="image-viewer-overlay" role="dialog" aria-modal="true" aria-label={file.file_name} onClick={onClose}>
@@ -84,6 +92,17 @@ export function ImageViewerModal({
       </div>
 
       <div className="image-viewer-overlay__top-right" onClick={(event) => event.stopPropagation()}>
+        {onDelete && (
+          <button
+            type="button"
+            className="image-viewer-overlay__delete"
+            aria-label={t('library.deleteFile')}
+            title={t('library.deleteFile')}
+            onClick={handleDelete}
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
         <button
           type="button"
           className="image-viewer-overlay__close"

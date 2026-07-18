@@ -438,6 +438,15 @@
     "optimizeDb": "Optimize database",
     "actionStarted": "Started as a background job — see Jobs for progress."
   },
+  "appSettingsExport": {
+    "title": "Application settings",
+    "hint": "Export or import app-wide settings that aren't tied to a specific source: tags, conversion profiles, preview layouts, and every other settings tab except AI providers (which has its own export, since it carries API keys) and Source.",
+    "export": "Export",
+    "import": "Import",
+    "importConfirm": "This replaces your current app-wide settings (preview, tagging, playback, backup, interface, performance) and adds/updates tags, conversion profiles, and preview layouts from the file. Continue?",
+    "importResult": "Imported: {{tags}} tags, {{profiles}} conversion profiles, {{layouts}} preview layouts.",
+    "importError": "Could not import this file — make sure it's an app-settings export."
+  },
   "savedSources": {
     "title": "Saved sources",
     "hint": "Switch between archives without losing each one's tags — its own data is backed up automatically when you switch away, and restored when you come back.",

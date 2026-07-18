@@ -280,6 +280,21 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     }
   }
 
+  // Info panel's collage/thumbnail click (user request) -- the reverse of
+  // openInfoFromPlayback: switch straight into the fullscreen playback/image
+  // screen for the same file instead of stacking a second overlay.
+  function openPlaybackFromInfo() {
+    if (infoTagsChangedRef.current) {
+      infoTagsChangedRef.current = false
+      playingTagsChangedRef.current = true
+    }
+    if (infoFile?.is_video_supported) {
+      recordRecentlyViewed(infoFile.id)
+    }
+    setPlayingFile(infoFile)
+    setInfoFile(null)
+  }
+
   const nextSortBy = SORT_OPTIONS[(SORT_OPTIONS.indexOf(sortBy) + 1) % SORT_OPTIONS.length]
   const SortIcon = SORT_ICON[sortBy]
   const sortToggleLabel = t('library.sortToggle', { mode: t(SORT_LABEL_KEY[nextSortBy]) })
@@ -320,6 +335,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     const deleted = await tryApi(`/api/files/${fileId}`, { method: 'DELETE' })
     if (deleted !== null) {
       setInfoFile(null)
+      setPlayingFile(null)
       setReloadTick((tick) => tick + 1)
     }
   }
@@ -606,6 +622,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           onClose={closePlayback}
           onMoved={handleMoved}
           onOpenInfo={openInfoFromPlayback}
+          onDelete={() => void handleDeleteFile(playingFile.id)}
           onTagAdded={() => {
             playingTagsChangedRef.current = true
           }}
@@ -621,6 +638,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           onClose={closePlayback}
           onMoved={handleMoved}
           onOpenInfo={openInfoFromPlayback}
+          onDelete={() => void handleDeleteFile(playingFile.id)}
           onTagAdded={() => {
             playingTagsChangedRef.current = true
           }}
@@ -669,6 +687,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             closeInfoPanel()
           }}
           onMoved={handleMoved}
+          onOpenPlayback={openPlaybackFromInfo}
           onTagsChanged={() => {
             infoTagsChangedRef.current = true
           }}

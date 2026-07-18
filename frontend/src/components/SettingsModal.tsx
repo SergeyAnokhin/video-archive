@@ -8,6 +8,7 @@ import { PreviewSettingsSection } from './PreviewSettingsSection'
 import { TaggingSettingsSection } from './TaggingSettingsSection'
 import { ProviderSettingsSection } from './ProviderSettingsSection'
 import { PlaybackSettingsSection } from './PlaybackSettingsSection'
+import { AppSettingsExportSection } from './AppSettingsExportSection'
 import { BackupMaintenanceSection } from './BackupMaintenanceSection'
 import { InterfaceSection } from './InterfaceSection'
 import { PerformanceSettingsSection } from './PerformanceSettingsSection'
@@ -46,6 +47,15 @@ function SourceSettingsSection() {
   )
 }
 
+function BackupSettingsSection() {
+  return (
+    <>
+      <BackupMaintenanceSection />
+      <AppSettingsExportSection />
+    </>
+  )
+}
+
 const TABS: TabDef[] = [
   { id: 'source', icon: HardDrive, labelKey: 'settings.sourceSection', Component: SourceSettingsSection },
   { id: 'profiles', icon: Wand2, labelKey: 'conversionProfiles.title', Component: ConversionProfilesSection },
@@ -53,7 +63,7 @@ const TABS: TabDef[] = [
   { id: 'playback', icon: PlayCircle, labelKey: 'playbackSettings.title', Component: PlaybackSettingsSection },
   { id: 'tagging', icon: Tags, labelKey: 'tagging.title', Component: TaggingSettingsSection },
   { id: 'providers', icon: Bot, labelKey: 'providerSettings.title', Component: ProviderSettingsSection },
-  { id: 'backup', icon: Archive, labelKey: 'backupMaintenance.title', Component: BackupMaintenanceSection },
+  { id: 'backup', icon: Archive, labelKey: 'backupMaintenance.title', Component: BackupSettingsSection },
   { id: 'performance', icon: Cpu, labelKey: 'performanceSettings.title', Component: PerformanceSettingsSection },
   { id: 'network', icon: Wifi, labelKey: 'networkAccess.title', Component: NetworkAccessSection },
   { id: 'interface', icon: Palette, labelKey: 'settings.interfaceSection', Component: InterfaceSection },

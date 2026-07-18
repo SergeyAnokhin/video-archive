@@ -48,6 +48,7 @@ interface FileInfoPanelProps {
   onDelete: () => void
   onMove: () => void
   onMoved?: () => void
+  onOpenPlayback?: () => void
   onTagsChanged?: () => void
   hasPrev?: boolean
   hasNext?: boolean
@@ -81,6 +82,7 @@ export function FileInfoPanel({
   onDelete,
   onMove,
   onMoved,
+  onOpenPlayback,
   onTagsChanged,
   hasPrev,
   hasNext,
@@ -381,15 +383,33 @@ export function FileInfoPanel({
           ref={bodyRef}
           style={{ '--fip-split': `${splitPercent}%` } as CSSProperties}
         >
-          <div className="file-info-panel__thumb">
-            {file.is_image_supported ? (
-              <img src={`/api/files/${file.id}/stream`} alt="" className="file-info-panel__thumb-img" />
-            ) : showThumbnail ? (
-              <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
-            ) : (
-              <Film size={40} />
-            )}
-          </div>
+          {onOpenPlayback ? (
+            <button
+              type="button"
+              className="file-info-panel__thumb file-info-panel__thumb--clickable"
+              aria-label={t('library.play')}
+              title={t('library.play')}
+              onClick={onOpenPlayback}
+            >
+              {file.is_image_supported ? (
+                <img src={`/api/files/${file.id}/stream`} alt="" className="file-info-panel__thumb-img" />
+              ) : showThumbnail ? (
+                <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
+              ) : (
+                <Film size={40} />
+              )}
+            </button>
+          ) : (
+            <div className="file-info-panel__thumb">
+              {file.is_image_supported ? (
+                <img src={`/api/files/${file.id}/stream`} alt="" className="file-info-panel__thumb-img" />
+              ) : showThumbnail ? (
+                <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
+              ) : (
+                <Film size={40} />
+              )}
+            </div>
+          )}
 
           <div
             className="file-info-panel__divider"

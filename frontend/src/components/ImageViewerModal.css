@@ -43,7 +43,8 @@
 }
 
 .image-viewer-overlay__close,
-.image-viewer-overlay__info-toggle {
+.image-viewer-overlay__info-toggle,
+.image-viewer-overlay__delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -59,6 +60,15 @@
 .image-viewer-overlay__close:hover,
 .image-viewer-overlay__info-toggle:hover {
   background: rgba(0, 0, 0, 0.8);
+}
+
+.image-viewer-overlay__delete {
+  color: var(--color-danger, #ff4d4f);
+}
+
+.image-viewer-overlay__delete:hover {
+  background: var(--color-danger, #ff4d4f);
+  color: #fff;
 }
 
 /* Prev/next: a wide invisible click zone spanning the vertical middle of

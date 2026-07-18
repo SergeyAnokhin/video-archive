@@ -11,6 +11,7 @@ from app.logging_config import configure_logging
 from app.request_logging import RequestLoggingMiddleware
 from app.routers import (
     app_info,
+    app_settings,
     backup_settings,
     backups,
     conversion_profiles,
@@ -89,3 +90,4 @@ app.include_router(logs.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(backup_settings.router, prefix="/api")
 app.include_router(performance_settings.router, prefix="/api")
+app.include_router(app_settings.router, prefix="/api")

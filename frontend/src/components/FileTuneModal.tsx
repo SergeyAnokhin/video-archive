@@ -43,11 +43,11 @@ const DIMENSION_PRESETS = [480, 640, 720, 960, 1024]
 type SweepParameter = 'dimension' | 'crf' | 'codec'
 
 // Centered on the app's own defaults (h265 CRF 26, Specification §7): a
-// narrow band around "good enough to archive" so the sweep still finishes
+// band around "good enough to archive" so the sweep still finishes
 // quickly and every generated variant is a plausible real choice, not a
 // throwaway extreme.
 const DEFAULT_SWEEP_RANGES: Record<'crf', { min: number; max: number; step: number }> = {
-  crf: { min: 22, max: 30, step: 4 },
+  crf: { min: 18, max: 34, step: 4 },
 }
 
 function generateRange(min: number, max: number, step: number): number[] {

@@ -93,6 +93,17 @@
   overflow: hidden;
 }
 
+.file-info-panel__thumb--clickable {
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.file-info-panel__thumb--clickable:hover {
+  opacity: 0.85;
+}
+
 .file-info-panel__divider {
   flex: 0 0 6px;
   align-self: stretch;

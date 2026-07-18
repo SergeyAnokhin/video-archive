@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Info, Link, PlayCircle, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Info, Link, PlayCircle, Trash2, X } from 'lucide-react'
 import { api } from '../api/client'
 import type { FileEntry, PlaybackInfo, PlaybackMode } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
@@ -13,6 +13,7 @@ interface PlaybackModalProps {
   onClose: () => void
   onMoved?: () => void
   onOpenInfo?: () => void
+  onDelete?: () => void
   onTagAdded?: () => void
   hasPrev?: boolean
   hasNext?: boolean
@@ -25,6 +26,7 @@ export function PlaybackModal({
   onClose,
   onMoved,
   onOpenInfo,
+  onDelete,
   onTagAdded,
   hasPrev,
   hasNext,
@@ -96,6 +98,12 @@ export function PlaybackModal({
     setTimeout(() => setCopied(false), 2000)
   }
 
+  function handleDelete() {
+    if (onDelete && window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
+      onDelete()
+    }
+  }
+
   return (
     <div className="playback-overlay" role="dialog" aria-modal="true" aria-label={file.file_name} onClick={onClose}>
       <div className="playback-overlay__top-left" onClick={(event) => event.stopPropagation()}>
@@ -136,6 +144,17 @@ export function PlaybackModal({
           >
             {mode === 'stream' ? <Link size={14} /> : <PlayCircle size={14} />}{' '}
             {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            className="playback-overlay__delete"
+            aria-label={t('library.deleteFile')}
+            title={t('library.deleteFile')}
+            onClick={handleDelete}
+          >
+            <Trash2 size={16} />
           </button>
         )}
         <button
