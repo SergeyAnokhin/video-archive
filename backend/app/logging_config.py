@@ -86,3 +86,10 @@ def configure_logging() -> None:
     # list of polling endpoints it stays silent on) -- disable the built-in
     # one so requests aren't logged twice.
     logging.getLogger("uvicorn.access").disabled = True
+
+    # smbprotocol logs one INFO line per SMB2 read/write response -- with
+    # large files that's dozens of lines per second. The bytes it reports
+    # are already folded into our own network-throughput indicators (see
+    # `app.sources.smb_backend`), so the raw per-chunk log adds noise
+    # without new information. Keep warnings/errors, drop the per-chunk chatter.
+    logging.getLogger("smbprotocol").setLevel(logging.WARNING)
