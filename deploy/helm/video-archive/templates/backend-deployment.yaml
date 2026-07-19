@@ -9,6 +9,9 @@ spec:
   # Stateful (SQLite + caches on a node-local RWO PVC): single replica and
   # Recreate so two pods never hold the DB at once.
   replicas: {{ .Values.backend.replicas }}
+  # Keep only a few old ReplicaSets around (CI deploys on every green main
+  # build, so the default of 10 clutters the ArgoCD resource tree fast).
+  revisionHistoryLimit: 3
   strategy:
     type: Recreate
   selector:

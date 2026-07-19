@@ -13,7 +13,15 @@ export interface ByteSample {
  * answering with an older response shape mid-rolling-deploy -- which would
  * otherwise poison every derived value downstream with `NaN`. */
 export function computeNetworkRate(prev: ByteSample | null, curr: ByteSample): number {
-  if (!prev || !Number.isFinite(prev.bytes) || !Number.isFinite(curr.bytes)) return 0
+  if (
+    !prev ||
+    !Number.isFinite(prev.bytes) ||
+    !Number.isFinite(curr.bytes) ||
+    !Number.isFinite(prev.timestampSeconds) ||
+    !Number.isFinite(curr.timestampSeconds)
+  ) {
+    return 0
+  }
   const deltaBytes = curr.bytes - prev.bytes
   const deltaSeconds = curr.timestampSeconds - prev.timestampSeconds
   if (deltaBytes <= 0 || deltaSeconds <= 0) return 0

@@ -34,4 +34,16 @@ describe('computeNetworkRate', () => {
     expect(computeNetworkRate(prev, curr)).toBe(0)
     expect(computeNetworkRate(curr, prev)).toBe(0)
   })
+
+  it('clamps to 0 instead of NaN when a sample is missing its timestamp', () => {
+    // Regression: the same stale-response-shape scenario as above, but for
+    // `timestampSeconds` -- this field wasn't checked for finiteness, so
+    // `undefined - number` produced `NaN` for `deltaSeconds`, which then
+    // failed the `<= 0` guard (NaN comparisons are always false) and fell
+    // through to `deltaBytes / NaN`, rendering "NaN KB/s" in the meter.
+    const prev = { bytes: 1000, timestampSeconds: undefined as unknown as number }
+    const curr = { bytes: 2000, timestampSeconds: 15 }
+    expect(computeNetworkRate(prev, curr)).toBe(0)
+    expect(computeNetworkRate(curr, prev)).toBe(0)
+  })
 })

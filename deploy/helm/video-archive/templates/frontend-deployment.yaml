@@ -7,6 +7,9 @@ metadata:
     app.kubernetes.io/component: frontend
 spec:
   replicas: {{ .Values.frontend.replicas }}
+  # Keep only a few old ReplicaSets around (CI deploys on every green main
+  # build, so the default of 10 clutters the ArgoCD resource tree fast).
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ .Chart.Name }}
