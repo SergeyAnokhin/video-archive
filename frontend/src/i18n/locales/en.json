@@ -205,6 +205,7 @@
     "mediaInfoLoading": "Loading technical info…",
     "resizePanels": "Resize preview and details panels",
     "mediaInfoUnavailable": "—",
+    "mediaInfoProbeFailed": "Couldn't read video info (the file may still be settling after conversion). Click refresh to retry.",
     "tagsSectionTitle": "Tags",
     "tagsEmpty": "No tags assigned yet.",
     "tagsModelLabel": "Detected by: {{model}}",

@@ -81,7 +81,9 @@ export function AppLayout() {
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
-      {jobsOpen && <JobsModal onClose={() => setJobsOpen(false)} />}
+      {jobsOpen && (
+        <JobsModal onClose={() => setJobsOpen(false)} onNavigate={handleSelectPath} />
+      )}
     </div>
   )
 }

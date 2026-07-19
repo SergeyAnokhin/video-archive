@@ -362,6 +362,15 @@
   }
 }
 
+.file-info-panel__media-warning {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
+  font-size: 12px;
+}
+
 .file-info-panel__media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));

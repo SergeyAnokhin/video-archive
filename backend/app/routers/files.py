@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from math import gcd
 from pathlib import PurePosixPath
 
@@ -214,7 +215,19 @@ def get_file_media_info(file_id: str):
     ffprobe would fail immediately and this endpoint would silently return
     every field empty (bug report: file info panel showed size but nothing
     else for a file whose preview had already been generated via
-    `local_copy()`, which does work)."""
+    `local_copy()`, which does work).
+
+    One bounded retry after a short delay (user report: same "size shows,
+    nothing else does" symptom right after converting a file) -- a file
+    that was just written (test-mode replace renames the original then
+    uploads the new encode to the freed name/relative_path) can briefly be
+    unreadable by a fresh probe: an SMB server hasn't caught up with a
+    just-committed write, or antivirus is still scanning a newly created
+    file, both externally-timed and not something a single probe attempt can
+    tell apart from "genuinely unprobeable". `probe_failed` in the response
+    lets the frontend show an explicit retry affordance instead of quietly
+    rendering blank fields that look identical to "this file has no video
+    stream"."""
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(
@@ -235,6 +248,10 @@ def get_file_media_info(file_id: str):
     access = get_source_access(row)
     with access.local_copy(row.relative_path) as local_path:
         info = conversion.probe_media(local_path)
+    if info is None:
+        time.sleep(0.4)
+        with access.local_copy(row.relative_path) as local_path:
+            info = conversion.probe_media(local_path)
 
     aspect_ratio = None
     if info and info.get("width") and info.get("height"):
@@ -250,6 +267,7 @@ def get_file_media_info(file_id: str):
         "duration": info.get("duration") if info else None,
         "bit_rate": info.get("bit_rate") if info else None,
         "conversion_profile": profile,
+        "probe_failed": info is None,
     }
 
 

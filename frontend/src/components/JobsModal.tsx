@@ -22,13 +22,14 @@ import { tryApi } from '../api/client'
 import { useJobs } from '../context/JobsContext'
 import type { JobItem, JobStatus, JobSummary } from '../types/api'
 import { estimateEtaSeconds, type ProgressSample } from '../utils/eta'
-import { basename, formatElapsed, formatElapsedCompact, type DurationUnitLabels } from '../utils/format'
+import { basename, dirname, formatElapsed, formatElapsedCompact, type DurationUnitLabels } from '../utils/format'
 import { BatchSubmissionsModal } from './BatchSubmissionsModal'
 import { LogViewerModal } from './LogViewerModal'
 import './JobsModal.css'
 
 interface JobsModalProps {
   onClose: () => void
+  onNavigate?: (path: string) => void
 }
 
 const SECTION_ORDER: JobStatus[] = ['running', 'paused', 'queued', 'failed', 'cancelled', 'completed']
@@ -52,7 +53,7 @@ const STATUS_ICON: Record<JobStatus, LucideIcon> = {
   cancelled: Ban,
 }
 
-export function JobsModal({ onClose }: JobsModalProps) {
+export function JobsModal({ onClose, onNavigate }: JobsModalProps) {
   const { t } = useTranslation()
   const { jobs, jobItemsById, refresh } = useJobs()
   const [logJobId, setLogJobId] = useState<string | null>(null)
@@ -112,6 +113,11 @@ export function JobsModal({ onClose }: JobsModalProps) {
   async function handleClearFinished() {
     await tryApi('/api/jobs', { method: 'DELETE' })
     await refresh()
+  }
+
+  function handleNavigate(path: string) {
+    onNavigate?.(path)
+    onClose()
   }
 
   const hasFinished = jobs.some(
@@ -184,6 +190,7 @@ export function JobsModal({ onClose }: JobsModalProps) {
                     onRestart={() => handleRestart(job.id)}
                     onRemove={() => handleRemove(job.id)}
                     onViewLog={() => setLogJobId(job.id)}
+                    onNavigate={onNavigate ? handleNavigate : undefined}
                   />
                 ))}
               </div>
@@ -265,9 +272,21 @@ interface JobRowProps {
   onRestart: () => void
   onRemove: () => void
   onViewLog: () => void
+  onNavigate?: (path: string) => void
 }
 
-function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRemove, onViewLog }: JobRowProps) {
+function JobRow({
+  job,
+  items,
+  busy,
+  onCancel,
+  onPause,
+  onResume,
+  onRestart,
+  onRemove,
+  onViewLog,
+  onNavigate,
+}: JobRowProps) {
   const { t } = useTranslation()
   const canCancel = job.status === 'queued' || job.status === 'running' || job.status === 'paused'
   const canPause =
@@ -312,6 +331,14 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
   const clickableForLog = job.status === 'running' || job.status === 'queued' || job.status === 'paused'
   const StatusIcon = STATUS_ICON[job.status]
   const statusLabel = t(`jobs.section.${job.status}`)
+
+  // Post-V1, user request: never show a raw job/file id on the card -- a
+  // file-scope job's `scope_label` (resolved server-side) or a
+  // directory-scope job's `scope_ref` (already a relative directory path)
+  // is shown instead, with the full path in a tooltip and a click that jumps
+  // to the containing directory.
+  const scopePath = job.scope_label ?? job.scope_ref
+  const scopeTargetDir = scopePath ? (job.scope_type === 'file' ? dirname(scopePath) : scopePath) : null
 
   return (
     <div
@@ -404,7 +431,23 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
         </div>
       </div>
 
-      <div className="jobs-modal__row-scope">{job.scope_ref ?? t('jobs.scopeWholeSource')}</div>
+      {scopePath && onNavigate && scopeTargetDir !== null ? (
+        <button
+          type="button"
+          className="jobs-modal__row-scope jobs-modal__row-scope--link"
+          title={scopePath}
+          onClick={(event) => {
+            event.stopPropagation()
+            onNavigate(scopeTargetDir)
+          }}
+        >
+          {basename(scopePath)}
+        </button>
+      ) : (
+        <div className="jobs-modal__row-scope" title={scopePath ?? undefined}>
+          {scopePath ? basename(scopePath) : t('jobs.scopeWholeSource')}
+        </div>
+      )}
 
       {job.summary_message && <div className="jobs-modal__row-message">{job.summary_message}</div>}
 
@@ -414,11 +457,33 @@ function JobRow({ job, items, busy, onCancel, onPause, onResume, onRestart, onRe
         </div>
       )}
 
-      {currentItem && (
-        <div className="jobs-modal__row-message" title={currentItem.item_key ?? undefined}>
-          {t('jobs.progress.current', {
-            name: currentItem.item_key ? basename(currentItem.item_key) : (currentItem.file_id ?? '…'),
-          })}
+      {currentItem &&
+        (currentItem.item_key && onNavigate ? (
+          <button
+            type="button"
+            className="jobs-modal__row-message jobs-modal__row-message--link"
+            title={currentItem.item_key}
+            onClick={(event) => {
+              event.stopPropagation()
+              onNavigate(dirname(currentItem.item_key as string))
+            }}
+          >
+            {t('jobs.progress.current', { name: basename(currentItem.item_key) })}
+          </button>
+        ) : (
+          <div className="jobs-modal__row-message" title={currentItem.item_key ?? undefined}>
+            {t('jobs.progress.current', {
+              name: currentItem.item_key ? basename(currentItem.item_key) : (currentItem.file_id ?? '…'),
+            })}
+          </div>
+        ))}
+
+      {isRunning && currentItem?.progress_pct != null && (
+        <div className="jobs-modal__progress jobs-modal__progress--item">
+          <div className="jobs-modal__progress-track">
+            <div className="jobs-modal__progress-fill" style={{ width: `${currentItem.progress_pct}%` }} />
+          </div>
+          <span className="jobs-modal__progress-count">{Math.round(currentItem.progress_pct)}%</span>
         </div>
       )}
 

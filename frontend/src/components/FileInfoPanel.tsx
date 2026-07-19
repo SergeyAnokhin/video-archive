@@ -574,6 +574,9 @@ export function FileInfoPanel({
                 <RefreshCw size={13} className={mediaInfoLoading ? 'file-info-panel__media-refresh-icon--spinning' : undefined} />
               </button>
             </div>
+            {mediaInfo?.probe_failed && !mediaInfoLoading && (
+              <p className="file-info-panel__media-warning">{t('library.mediaInfoProbeFailed')}</p>
+            )}
             <dl className={`file-info-panel__media-grid ${mediaInfoLoading ? 'file-info-panel__media-grid--loading' : ''}`}>
               {mediaFields.map((field) => (
                 <div key={field.label} className="file-info-panel__media-field">

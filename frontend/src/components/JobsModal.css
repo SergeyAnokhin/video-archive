@@ -189,6 +189,24 @@
   white-space: nowrap;
 }
 
+.jobs-modal__row-scope--link,
+.jobs-modal__row-message--link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.jobs-modal__row-scope--link:hover,
+.jobs-modal__row-message--link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
 .jobs-modal__error-count {
   font-size: 12px;
   font-weight: 600;
@@ -228,6 +246,18 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
+}
+
+.jobs-modal__progress--item {
+  margin-top: 2px;
+}
+
+.jobs-modal__progress--item .jobs-modal__progress-track {
+  height: 3px;
+}
+
+.jobs-modal__progress--item .jobs-modal__progress-fill {
+  background: var(--color-text-muted);
 }
 
 .jobs-modal__meta {

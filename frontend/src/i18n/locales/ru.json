@@ -205,6 +205,7 @@
     "mediaInfoLoading": "Загрузка технических данных…",
     "resizePanels": "Изменить соотношение панелей",
     "mediaInfoUnavailable": "—",
+    "mediaInfoProbeFailed": "Не удалось прочитать данные о видео (файл мог ещё не «устояться» после конвертации). Нажмите обновить, чтобы повторить.",
     "tagsSectionTitle": "Теги",
     "tagsEmpty": "Теги ещё не назначены.",
     "tagsModelLabel": "Определено моделью: {{model}}",

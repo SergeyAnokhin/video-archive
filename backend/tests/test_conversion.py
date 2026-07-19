@@ -173,12 +173,93 @@ def test_convert_job_logs_per_stage_progress_events(engine, source):
     event_types = [event_type for event_type, _ in events]
     progress_messages = [message for event_type, message in events if event_type == "job_item_progress"]
 
-    assert event_types.index("job_item_started") < event_types.index("job_item_progress") < event_types.index(
-        "job_item_completed"
+    # `.index()` alone would find the job-level "File: ..." progress event
+    # logged before job_item_started (post-V1, user request to show the
+    # source directory/file at the top of the log) -- look for the first
+    # per-file progress event that comes after the item actually started.
+    started_index = event_types.index("job_item_started")
+    completed_index = event_types.index("job_item_completed")
+    progress_index = next(
+        i for i, event_type in enumerate(event_types) if event_type == "job_item_progress" and i > started_index
     )
+    assert started_index < progress_index < completed_index
     assert any("Probed" in message for message in progress_messages)
     assert any("Encoding" in message or "Encoded" in message for message in progress_messages)
     assert any("Validated" in message for message in progress_messages)
+
+
+def test_convert_job_logs_command_directory_and_size(engine, source):
+    """User request: the job log should show the ffmpeg command line (to
+    copy/paste and reproduce in a terminal), which file/directory is being
+    converted, and the original vs. resulting file size."""
+    make_video(source["root"] / "clips" / "movie.avi")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/movie.avi")
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+    assert job["status"] == "completed"
+    # scope_label (user request): the Jobs modal shouldn't have to fall back
+    # to the raw file id for a file-scope job -- resolved live from the
+    # file's current relative_path, so it reflects the post-conversion name.
+    assert job["scope_label"] == "clips/movie.mp4"
+
+    with engine.connect() as conn:
+        messages = [
+            row.message
+            for row in conn.execute(
+                text("SELECT message FROM app_events WHERE job_id = :id ORDER BY rowid"), {"id": job["id"]}
+            ).all()
+        ]
+
+    assert any("File: clips/movie.avi" in message for message in messages)
+    assert any("ffmpeg command:" in message and "-c:v" in message for message in messages)
+    assert any(message.startswith("[#1] Size:") or "Size:" in message and "->" in message for message in messages)
+
+    # Live encode progress (user request): a successful encode always ends
+    # by reporting 100% on its job_items row, even for a clip too short to
+    # produce more than one `-progress` line.
+    items = service.get_job_items(engine, job["id"])
+    assert items[0]["progress_pct"] == 100.0
+
+
+def test_run_ffmpeg_reports_progress(source):
+    """User request: live within-file encode progress, parsed from ffmpeg's
+    own `-progress` output, so the Jobs modal can show more than "file N of
+    M" for a slow encode."""
+    src = source["root"] / "clip.mp4"
+    out = source["root"] / "out.mp4"
+    make_video(src, duration=3)
+    info = conversion.probe_media(src)
+    args = conversion.build_ffmpeg_command(src, out, video_codec="h265", crf=30, drop_audio=True)
+
+    progress_values: list[float] = []
+    ok, err = conversion.run_ffmpeg(args, duration=info["duration"], on_progress=progress_values.append)
+
+    assert ok, err
+    assert progress_values
+    assert all(0.0 <= value <= 100.0 for value in progress_values)
+    assert progress_values[-1] == 100.0
+
+
+def test_run_ffmpeg_should_stop_kills_the_process(source):
+    """User request: cancelling a job should interrupt an in-flight ffmpeg
+    encode right away instead of only being noticed once it finishes on its
+    own (previously the only way out was `service.cancel_job`'s
+    force-cancel path, which abandons the worker thread but leaves ffmpeg
+    running to completion in the background)."""
+    src = source["root"] / "clip.mp4"
+    out = source["root"] / "out.mp4"
+    make_video(src, duration=5)
+    args = conversion.build_ffmpeg_command(src, out, video_codec="h265", crf=30, drop_audio=True)
+
+    ok, err = conversion.run_ffmpeg(args, should_stop=lambda: True)
+
+    assert ok is False
+    assert err == "Cancelled."
 
 
 def test_invalid_conversion_never_deletes_original(engine, source, monkeypatch):
@@ -272,8 +353,8 @@ def _bloat_ffmpeg_output(monkeypatch, *, extra_bytes: int) -> None:
     without depending on how well a tiny synthetic clip actually compresses."""
     real_run_ffmpeg = conversion.run_ffmpeg
 
-    def bloated_run_ffmpeg(args, timeout=3600):
-        ok, err = real_run_ffmpeg(args, timeout=timeout)
+    def bloated_run_ffmpeg(args, timeout=3600, **kwargs):
+        ok, err = real_run_ffmpeg(args, timeout=timeout, **kwargs)
         if ok:
             with open(Path(args[-1]), "ab") as f:
                 f.write(b"0" * extra_bytes)

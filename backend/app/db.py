@@ -686,6 +686,17 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Post-V1: live within-file encode progress (user request -- "some files
+    # take a very long time to convert, I want to see something is actually
+    # happening"). Previously the Jobs modal could only show "file N of M";
+    # this lets a single running `job_items` row carry a 0-100 percentage
+    # parsed from ffmpeg's own `-progress` output (`app/conversion.py`,
+    # `app/jobs/convert.py`), polled by the same REST refresh the Jobs modal
+    # already uses (`frontend/src/context/JobsContext.tsx`) -- no new
+    # transport needed. NULL until a file's encode actually starts reporting.
+    33: [
+        "ALTER TABLE job_items ADD COLUMN progress_pct REAL",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

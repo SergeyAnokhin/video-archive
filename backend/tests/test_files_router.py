@@ -176,9 +176,12 @@ def test_media_info_not_found(engine, source):
     assert res.status_code == 404
 
 
-def test_media_info_gracefully_nulls_when_unprobeable(engine, source):
+def test_media_info_gracefully_nulls_when_unprobeable(engine, source, monkeypatch):
     # Not a real video (ffprobe will fail or be absent), so codec/resolution
     # fields should come back null rather than erroring.
+    from app.routers import files as files_router
+
+    monkeypatch.setattr(files_router.time, "sleep", lambda _seconds: None)
     root_id = _insert_directory(engine, source["id"], "", None)
     (source["root"] / "clip.mp4").write_bytes(b"not actually a video")
     file_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
@@ -190,6 +193,47 @@ def test_media_info_gracefully_nulls_when_unprobeable(engine, source):
     assert body["width"] is None
     assert body["aspect_ratio"] is None
     assert body["conversion_profile"] is None
+    assert body["probe_failed"] is True
+
+
+def test_media_info_retries_once_after_transient_probe_failure(engine, source, monkeypatch):
+    """User report: right after converting a file, the info panel showed
+    size but not codec/resolution -- a freshly written file can briefly be
+    unreadable by ffprobe (SMB server catch-up, antivirus scan). One bounded
+    retry (`routers/files.py::get_file_media_info`) should recover from a
+    transient failure instead of giving up after a single attempt."""
+    from app.routers import files as files_router
+
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "clip.mp4").write_bytes(b"data")
+    file_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+
+    calls = {"count": 0}
+    real_info = {
+        "has_video_stream": True,
+        "width": 640,
+        "height": 480,
+        "video_codec_name": "hevc",
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": 5.0,
+        "bit_rate": 100000,
+    }
+
+    def fake_probe_media(path):
+        calls["count"] += 1
+        return None if calls["count"] == 1 else real_info
+
+    monkeypatch.setattr(files_router.conversion, "probe_media", fake_probe_media)
+    monkeypatch.setattr(files_router.time, "sleep", lambda _seconds: None)
+
+    with TestClient(app) as client:
+        res = client.get(f"/api/files/{file_id}/media-info")
+    assert res.status_code == 200
+    body = res.json()
+    assert calls["count"] == 2
+    assert body["probe_failed"] is False
+    assert body["width"] == 640
+    assert body["video_codec"] == "hevc"
 
 
 def test_media_info_includes_conversion_profile_used(engine, source):

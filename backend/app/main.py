@@ -6,6 +6,7 @@ from app import batch_submissions
 from app.config import APP_VERSION
 from app.db import get_engine, init_db
 from app.ffmpeg import check_ffmpeg
+from app.jobs import service as jobs_service
 from app.jobs.worker import JobWorker
 from app.logging_config import configure_logging
 from app.request_logging import RequestLoggingMiddleware
@@ -60,6 +61,12 @@ async def lifespan(app: FastAPI):
     # starts; `app/jobs/tag.py::run_tag_job()` detects the pending
     # submission and resumes polling it instead of re-scanning the directory.
     batch_submissions.requeue_stalled_jobs(get_engine())
+    # Any job still `running` after the requeue above was left behind by a
+    # backend process that stopped/crashed mid-job -- nothing will ever move
+    # it out of `running` on its own (post-V1, user report: a job stayed
+    # stuck and un-restartable after a backend restart). Reap it to `failed`
+    # so the existing Restart button becomes available for it.
+    jobs_service.reap_orphaned_jobs(get_engine())
     _worker.start()
     yield
     _worker.stop()

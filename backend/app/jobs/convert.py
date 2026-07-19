@@ -24,6 +24,7 @@ directly on the remote source without re-uploading their bytes.
 
 from __future__ import annotations
 
+import shlex
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -53,6 +54,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _size_change_message(source_size: int, output_size: int) -> str:
+    pct = (output_size - source_size) / source_size * 100 if source_size else 0.0
+    return f"Size: {source_size} -> {output_size} bytes ({pct:+.1f}%)"
+
+
 def _effective_params(profile: dict, overrides: dict | None) -> dict:
     overrides = overrides or {}
     return {
@@ -70,17 +76,22 @@ def _temp_output_path(directory: Path, stem: str, container: str) -> Path:
 
 
 def _encode_and_validate(
-    engine, job_id: str, file_id: str, source_path: Path, temp_path: Path, params: dict,
+    engine, job_id: str, file_id: str, item_id: str, source_path: Path, temp_path: Path, params: dict,
     *, min_size_reduction_percent: float | None = None,
-) -> float | None:
-    """Returns the source's duration in seconds (from the ffprobe call this
-    already performs for max-dimension resolution), so callers can persist it
-    without a second probe. Re-encoding does not change a video's duration.
+) -> dict:
+    """Returns `{"duration", "source_size", "output_size"}`: the source's
+    duration in seconds (from the ffprobe call this already performs for
+    max-dimension resolution), so callers can persist it without a second
+    probe (re-encoding does not change a video's duration), plus the
+    before/after byte sizes (user request: show original vs. resulting size
+    in the job log) so callers don't need a third `stat()` call of their own.
 
     Logs a `job_item_progress` event (post-V1, user request) around each
     stage -- probing, the ffmpeg encode itself, and output validation -- so
     a slow conversion's time can be attributed to a specific stage instead
-    of sitting silent between "started" and "completed".
+    of sitting silent between "started" and "completed". Also logs the exact
+    ffmpeg command line (user request: let the user copy it into a terminal
+    to reproduce/inspect the encode themselves).
 
     `min_size_reduction_percent` (user report): when set, an encode that
     validates fine but doesn't shrink the source by at least this percentage
@@ -106,10 +117,29 @@ def _encode_and_validate(
         extra_encoder_args=params["extra_encoder_args"],
     )
     progress(f"Probed source in {time.monotonic() - t0:.2f}s")
+    progress(f"ffmpeg command: {shlex.join(args)}")
+
+    # Live within-file progress (post-V1, user request): throttled to at
+    # most once a second (or a >=1% jump) so a fast-moving encode doesn't
+    # hammer the job_items row with writes -- the Jobs modal polls it every
+    # 1.5s anyway (`JobsContext.tsx`), so anything finer would be wasted.
+    last_reported = {"pct": -1.0, "at": 0.0}
+
+    def on_progress(pct: float) -> None:
+        now = time.monotonic()
+        if pct - last_reported["pct"] < 1.0 and now - last_reported["at"] < 1.0 and pct < 100.0:
+            return
+        last_reported["pct"] = pct
+        last_reported["at"] = now
+        service.update_job_item_progress(engine, item_id, pct)
+
+    def should_stop() -> bool:
+        return service.check_stop_requested(job_id) is not None
 
     t0 = time.monotonic()
     progress(f"Encoding with ffmpeg (codec={params['video_codec']}, crf={params['crf']})")
-    ok, error = conversion.run_ffmpeg(args)
+    duration = source_info.get("duration") if source_info else None
+    ok, error = conversion.run_ffmpeg(args, duration=duration, on_progress=on_progress, should_stop=should_stop)
     if not ok:
         if temp_path.exists():
             temp_path.unlink()
@@ -127,9 +157,9 @@ def _encode_and_validate(
         raise ConversionError(f"Validation failed: {reason}")
     progress(f"Validated output in {time.monotonic() - t0:.2f}s")
 
+    source_size = source_path.stat().st_size
+    output_size = temp_path.stat().st_size
     if min_size_reduction_percent is not None:
-        source_size = source_path.stat().st_size
-        output_size = temp_path.stat().st_size
         reduction_percent = (source_size - output_size) / source_size * 100 if source_size else 0.0
         if reduction_percent < min_size_reduction_percent:
             temp_path.unlink()
@@ -141,7 +171,11 @@ def _encode_and_validate(
             service.log_event(engine, job_id, file_id, "warning", "job_item_progress", message)
             raise ConversionSkipped(message)
 
-    return source_info.get("duration") if source_info else None
+    return {
+        "duration": duration,
+        "source_size": source_size,
+        "output_size": output_size,
+    }
 
 
 def _has_preview(access: SourceAccess, rel_path: str, stem: str) -> bool:
@@ -149,18 +183,19 @@ def _has_preview(access: SourceAccess, rel_path: str, stem: str) -> bool:
 
 
 def _replace_production(
-    engine, job_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str,
-    *, min_size_reduction_percent: float,
+    engine, job_id: str, item_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict,
+    profile_id: str, *, min_size_reduction_percent: float,
 ) -> dict:
     directory = old_path.parent
     stem = old_path.stem
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(
-        engine, job_id, file_row.id, old_path, temp_path, params,
+    encode_result = _encode_and_validate(
+        engine, job_id, file_row.id, item_id, old_path, temp_path, params,
         min_size_reduction_percent=min_size_reduction_percent,
     )
+    duration_seconds = encode_result["duration"]
 
     final_name = f"{stem}.{params['container']}"
     final_rel = sibling_relative_path(file_row.relative_path, final_name)
@@ -169,6 +204,10 @@ def _replace_production(
         access.remote_remove(file_row.relative_path)
     service.log_event(
         engine, job_id, file_row.id, "info", "job_item_progress", f"Replaced source with {final_name}"
+    )
+    service.log_event(
+        engine, job_id, file_row.id, "info", "job_item_progress",
+        _size_change_message(encode_result["source_size"], encode_result["output_size"]),
     )
 
     final_stat = access.stat_rel(final_rel)
@@ -202,12 +241,16 @@ def _replace_production(
             },
         )
 
-    return {"output_ref": final_rel}
+    return {
+        "output_ref": final_rel,
+        "source_size": encode_result["source_size"],
+        "output_size": encode_result["output_size"],
+    }
 
 
 def _replace_test_mode(
-    engine, job_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict, profile_id: str,
-    *, min_size_reduction_percent: float,
+    engine, job_id: str, item_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict,
+    profile_id: str, *, min_size_reduction_percent: float,
 ) -> dict:
     directory = old_path.parent
     stem = old_path.stem
@@ -215,10 +258,11 @@ def _replace_test_mode(
     params = _effective_params(profile, None)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(
-        engine, job_id, file_row.id, old_path, temp_path, params,
+    encode_result = _encode_and_validate(
+        engine, job_id, file_row.id, item_id, old_path, temp_path, params,
         min_size_reduction_percent=min_size_reduction_percent,
     )
+    duration_seconds = encode_result["duration"]
 
     # Original is always renamed, even without a name collision, so preserved
     # originals stay uniformly recognizable (Specification §8.2). Renaming
@@ -232,6 +276,10 @@ def _replace_test_mode(
     service.log_event(
         engine, job_id, file_row.id, "info", "job_item_progress",
         f"Kept original as {stem}.original.{original_ext}, wrote {new_output_name}",
+    )
+    service.log_event(
+        engine, job_id, file_row.id, "info", "job_item_progress",
+        _size_change_message(encode_result["source_size"], encode_result["output_size"]),
     )
 
     now = _now()
@@ -296,11 +344,16 @@ def _replace_test_mode(
             },
         )
 
-    return {"output_ref": new_output_rel}
+    return {
+        "output_ref": new_output_rel,
+        "source_size": encode_result["source_size"],
+        "output_size": encode_result["output_size"],
+    }
 
 
 def _create_variant(
-    engine, job_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict, overrides: dict
+    engine, job_id: str, item_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict,
+    overrides: dict,
 ) -> dict:
     directory = old_path.parent
     stem = old_path.stem
@@ -308,11 +361,16 @@ def _create_variant(
     suffix = conversion.encode_variant_suffix(profile, overrides)
 
     temp_path = _temp_output_path(directory, stem, params["container"])
-    duration_seconds = _encode_and_validate(engine, job_id, file_row.id, old_path, temp_path, params)
+    encode_result = _encode_and_validate(engine, job_id, file_row.id, item_id, old_path, temp_path, params)
+    duration_seconds = encode_result["duration"]
 
     variant_name = f"{stem}.variant-{suffix}.{params['container']}"
     variant_rel = sibling_relative_path(file_row.relative_path, variant_name)
     access.commit_new_file(temp_path, variant_rel)
+    service.log_event(
+        engine, job_id, file_row.id, "info", "job_item_progress",
+        _size_change_message(encode_result["source_size"], encode_result["output_size"]),
+    )
 
     stat = access.stat_rel(variant_rel)
     now = _now()
@@ -401,7 +459,7 @@ def _create_variant(
 
 
 def _convert_one_file(
-    engine, job_id: str, access: SourceAccess, file_row, profile: dict, mode: str, profile_id: str,
+    engine, job_id: str, item_id: str, access: SourceAccess, file_row, profile: dict, mode: str, profile_id: str,
     *, min_size_reduction_percent: float,
 ) -> dict:
     if not access.exists(file_row.relative_path):
@@ -410,11 +468,11 @@ def _convert_one_file(
     with access.local_copy(file_row.relative_path) as old_path:
         if mode == "test":
             return _replace_test_mode(
-                engine, job_id, access, old_path, file_row, profile, profile_id,
+                engine, job_id, item_id, access, old_path, file_row, profile, profile_id,
                 min_size_reduction_percent=min_size_reduction_percent,
             )
         return _replace_production(
-            engine, job_id, access, old_path, file_row, profile, profile_id,
+            engine, job_id, item_id, access, old_path, file_row, profile, profile_id,
             min_size_reduction_percent=min_size_reduction_percent,
         )
 
@@ -443,35 +501,39 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
 def _process_convert_file(
     engine, job_id: str, access: SourceAccess, row, profile: dict, mode: str, profile_id: str,
     min_size_reduction_percent: float,
-) -> str:
+) -> tuple[str, int | None, int | None]:
     """One directory-scope file, run from inside a batch's thread pool.
-    Returns "completed"/"skipped"/"failed"; failures and skips go through
-    the normal job-item/event mechanism (thread-safe, see
-    `app/jobs/service.py`) rather than being raised, so one file's outcome
-    can't abort a whole in-flight batch."""
-    item_id = service.create_job_item(engine, job_id, file_id=row.id, step_name="convert_file")
+    Returns `(status, source_size, output_size)` -- status is
+    "completed"/"skipped"/"failed"; failures and skips go through the normal
+    job-item/event mechanism (thread-safe, see `app/jobs/service.py`) rather
+    than being raised, so one file's outcome can't abort a whole in-flight
+    batch. `item_key` (user request) lets the Jobs modal show this file's
+    path instead of a raw file id for the currently-running item."""
+    item_id = service.create_job_item(
+        engine, job_id, file_id=row.id, item_key=row.relative_path, step_name="convert_file"
+    )
     service.start_job_item(engine, item_id)
     service.log_event(engine, job_id, row.id, "info", "job_item_started", f"Converting {row.relative_path}")
     try:
         outcome = _convert_one_file(
-            engine, job_id, access, row, profile, mode, profile_id,
+            engine, job_id, item_id, access, row, profile, mode, profile_id,
             min_size_reduction_percent=min_size_reduction_percent,
         )
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
-        return "completed"
+        return "completed", outcome.get("source_size"), outcome.get("output_size")
     except ConversionSkipped as exc:
         service.skip_job_item(engine, item_id, message=str(exc))
         service.log_event(
             engine, job_id, row.id, "info", "job_item_skipped", f"Skipped {row.relative_path}: {exc}"
         )
-        return "skipped"
+        return "skipped", None, None
     except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
         service.fail_job_item(engine, item_id, message=str(exc))
         service.log_event(
             engine, job_id, row.id, "error", "job_item_failed", f"Failed to convert {row.relative_path}: {exc}"
         )
-        return "failed"
+        return "failed", None, None
 
 
 def _run_directory_scope(
@@ -481,6 +543,11 @@ def _run_directory_scope(
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
     profile_id = profile["id"]
+
+    service.log_event(
+        engine, job["id"], None, "info", "job_item_progress",
+        f"Directory: {relative_path or '(whole source)'}",
+    )
 
     with engine.connect() as conn:
         source_id = conn.execute(
@@ -504,6 +571,8 @@ def _run_directory_scope(
     processed = 0
     skipped = 0
     failed = 0
+    total_source_bytes = 0
+    total_output_bytes = 0
     total = len(candidates)
     service.set_job_total_items(engine, job["id"], total)
 
@@ -519,7 +588,7 @@ def _run_directory_scope(
     batch: list = []
 
     def flush(pending: list) -> None:
-        nonlocal processed, skipped, failed
+        nonlocal processed, skipped, failed, total_source_bytes, total_output_bytes
         if not pending:
             return
         with ThreadPoolExecutor(max_workers=len(pending)) as executor:
@@ -531,9 +600,12 @@ def _run_directory_scope(
                     pending,
                 )
             )
-        for status in results:
+        for status, source_size, output_size in results:
             if status == "completed":
                 processed += 1
+                if source_size is not None and output_size is not None:
+                    total_source_bytes += source_size
+                    total_output_bytes += output_size
             elif status == "skipped":
                 skipped += 1
             else:
@@ -550,7 +622,9 @@ def _run_directory_scope(
             return status, message
 
         if skip_processed and row.converted_at:
-            item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="convert_file")
+            item_id = service.create_job_item(
+                engine, job["id"], file_id=row.id, item_key=row.relative_path, step_name="convert_file"
+            )
             service.skip_job_item(engine, item_id, "Already converted; skipped.")
             service.log_event(
                 engine, job["id"], row.id, "debug", "job_item_skipped",
@@ -572,6 +646,9 @@ def _run_directory_scope(
     if failed:
         summary += f", {failed} failed"
     summary += "."
+    if total_source_bytes:
+        pct = (total_output_bytes - total_source_bytes) / total_source_bytes * 100
+        summary += f" Total size: {total_source_bytes} -> {total_output_bytes} bytes ({pct:+.1f}%)."
 
     status = "failed" if failed and processed == 0 and total > 0 else "completed"
     return status, summary
@@ -590,11 +667,15 @@ def _run_file_scope(
     if row is None:
         raise RuntimeError("File not found.")
 
+    service.log_event(engine, job["id"], None, "info", "job_item_progress", f"File: {row.relative_path}")
+
     if variants:
         return _run_variant_sweep(engine, job, access, row, profile, variants, worker_count)
 
     skip_processed = params.get("skip_processed", True)
-    item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="convert_file")
+    item_id = service.create_job_item(
+        engine, job["id"], file_id=row.id, item_key=row.relative_path, step_name="convert_file"
+    )
 
     if skip_processed and row.converted_at:
         service.skip_job_item(engine, item_id, "Already converted; skipped.")
@@ -605,7 +686,7 @@ def _run_file_scope(
     service.log_event(engine, job["id"], row.id, "info", "job_item_started", f"Converting {row.relative_path}")
     try:
         outcome = _convert_one_file(
-            engine, job["id"], access, row, profile, mode, profile_id,
+            engine, job["id"], item_id, access, row, profile, mode, profile_id,
             min_size_reduction_percent=min_size_reduction_percent,
         )
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
@@ -633,7 +714,7 @@ def _process_variant(engine, job_id: str, access: SourceAccess, old_path: Path, 
     service.start_job_item(engine, item_id)
     service.log_event(engine, job_id, row.id, "info", "job_item_started", f"Encoding variant {suffix}")
     try:
-        outcome = _create_variant(engine, job_id, access, old_path, row, profile, overrides)
+        outcome = _create_variant(engine, job_id, item_id, access, old_path, row, profile, overrides)
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Variant produced.")
         service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Variant {suffix} produced.")
         return True

@@ -11,7 +11,10 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import threading
+import time
 from pathlib import Path
+from typing import Callable
 
 # Short codec names used in profiles/variants -> (ffmpeg encoder, ffprobe-reported codec name).
 _CODEC_INFO = {
@@ -147,22 +150,100 @@ def build_ffmpeg_command(
     return args
 
 
-def run_ffmpeg(args: list[str], timeout: int = 3600) -> tuple[bool, str]:
-    """Run an ffmpeg command; returns (success, stderr tail for diagnostics)."""
+def _parse_ffmpeg_out_time(value: str) -> float | None:
+    """Parses `-progress`'s `out_time=HH:MM:SS.ffffff` line into seconds."""
+    try:
+        hours, minutes, seconds = value.split(":")
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    except (ValueError, AttributeError):
+        return None
+
+
+def run_ffmpeg(
+    args: list[str],
+    timeout: int = 3600,
+    *,
+    duration: float | None = None,
+    on_progress: Callable[[float], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> tuple[bool, str]:
+    """Run an ffmpeg command; returns (success, stderr tail for diagnostics).
+
+    Runs via `Popen` with `-progress pipe:1 -nostats` instead of a single
+    blocking `subprocess.run()` so two things become possible (post-V1, user
+    request): `on_progress(percent)` is called as the encode advances
+    (parsed from the `out_time=` lines against `duration` in seconds) so a
+    live progress bar can move within a single file's encode instead of only
+    jumping between files; and `should_stop()`, polled between progress
+    lines, lets a cooperative cancel/pause request kill an in-flight encode
+    right away instead of only being noticed once ffmpeg finishes on its own
+    (previously the only way out of a stuck encode was the force-cancel path
+    in `app/jobs/service.py::cancel_job`)."""
+    # `-progress pipe:1` is a global option -- inserted right after the
+    # binary so it applies regardless of where the caller's own args end.
+    popen_args = [args[0], "-progress", "pipe:1", "-nostats", *args[1:]]
     try:
         # See probe_media()'s comment: ffmpeg's stderr log can echo the
         # source path, so decoding it against the OS console codepage
         # instead of UTF-8 risks the same reader-thread crash for
         # non-Latin-1 filenames.
-        result = subprocess.run(
-            args, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, check=False
+        process = subprocess.Popen(
+            popen_args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+    except OSError as exc:
         return False, str(exc)
 
-    if result.returncode != 0:
-        tail = "\n".join(result.stderr.strip().splitlines()[-10:])
-        return False, tail or f"ffmpeg exited with code {result.returncode}"
+    stderr_tail: list[str] = []
+
+    def _drain_stderr() -> None:
+        assert process.stderr is not None
+        for line in process.stderr:
+            stderr_tail.append(line.rstrip("\n"))
+            del stderr_tail[:-10]
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
+
+    deadline = time.monotonic() + timeout
+    stopped = False
+    timed_out = False
+    assert process.stdout is not None
+    for line in process.stdout:
+        line = line.strip()
+        if on_progress and duration and line.startswith("out_time="):
+            out_time_seconds = _parse_ffmpeg_out_time(line.split("=", 1)[1])
+            if out_time_seconds is not None:
+                on_progress(min(100.0, out_time_seconds / duration * 100))
+        if should_stop is not None and should_stop():
+            stopped = True
+            process.terminate()
+            break
+        if time.monotonic() > deadline:
+            timed_out = True
+            process.kill()
+            break
+
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+    stderr_thread.join(timeout=5)
+
+    if stopped:
+        return False, "Cancelled."
+    if timed_out:
+        return False, f"ffmpeg timed out after {timeout}s"
+    if process.returncode != 0:
+        tail = "\n".join(stderr_tail[-10:])
+        return False, tail or f"ffmpeg exited with code {process.returncode}"
+    if on_progress:
+        on_progress(100.0)
     return True, ""
 
 

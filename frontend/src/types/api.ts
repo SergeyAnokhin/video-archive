@@ -30,6 +30,7 @@ export interface JobSummary {
   job_type: string
   scope_type: string
   scope_ref: string | null
+  scope_label: string | null
   status: JobStatus
   parameters: Record<string, unknown>
   started_at: string | null
@@ -52,6 +53,7 @@ export interface JobItem {
   started_at: string | null
   finished_at: string | null
   output_ref: string | null
+  progress_pct: number | null
 }
 
 export interface LogEvent {
@@ -223,6 +225,7 @@ export interface FileMediaInfo {
   duration: number | null
   bit_rate: number | null
   conversion_profile: ConversionProfile | null
+  probe_failed: boolean
 }
 
 export type TimelineFlow = 'row' | 'column' | 'shuffle'

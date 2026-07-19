@@ -57,6 +57,35 @@ def test_restart_only_allowed_for_failed_or_cancelled(engine, source):
     assert restarted["id"] != job["id"]
 
 
+def test_reap_orphaned_jobs_fails_stuck_running_jobs_and_makes_them_restartable(engine, source):
+    """User request: a job left `running` by a backend process that
+    stopped/crashed mid-job (no worker thread left to ever finish it) should
+    become visibly stuck-and-actionable, not silently stuck forever --
+    `reap_orphaned_jobs` (called once at startup, before the worker starts)
+    fails it, which puts it in the same restartable state as any other
+    failed job."""
+    stuck = service.create_job(engine, "convert", "source", None, {"path": ""})
+    service.start_job(engine, stuck["id"])
+    queued = service.create_job(engine, "rescan", "source", None, {"path": ""})
+    completed = service.create_job(engine, "preview", "source", None, {"path": ""})
+    service.start_job(engine, completed["id"])
+    service.finish_job(engine, completed["id"], "completed", "done")
+
+    reaped = service.reap_orphaned_jobs(engine)
+
+    assert reaped == 1
+    stuck_after = service.get_job(engine, stuck["id"])
+    assert stuck_after["status"] == "failed"
+    assert "restarted" in stuck_after["summary_message"]
+    # Untouched: still queued, and the earlier real completion stays completed.
+    assert service.get_job(engine, queued["id"])["status"] == "queued"
+    assert service.get_job(engine, completed["id"])["status"] == "completed"
+
+    restarted = service.restart_job(engine, stuck["id"])
+    assert restarted["status"] == "queued"
+    assert restarted["job_type"] == "convert"
+
+
 def test_delete_requires_finished_status(engine, source):
     job = service.create_job(engine, "rescan", "source", None, {"path": ""})
 

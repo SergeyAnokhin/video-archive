@@ -246,22 +246,20 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
         <div className="library-card__meta">
           <span className="library-card__meta-size">
             {formatSize(file.size_bytes)}
-            {file.is_variant && (
-              <button
-                type="button"
-                className="library-card__delete-btn"
-                aria-label={t('library.deleteFile')}
-                title={t('library.deleteFile')}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  if (window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
-                    onDelete()
-                  }
-                }}
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
+            <button
+              type="button"
+              className="library-card__delete-btn"
+              aria-label={t('library.deleteFile')}
+              title={t('library.deleteFile')}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (window.confirm(t('library.confirmDeleteFile', { name: file.file_name }))) {
+                  onDelete()
+                }
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
           </span>
         </div>
         {file.ai_tags && file.ai_tags.length > 0 && (

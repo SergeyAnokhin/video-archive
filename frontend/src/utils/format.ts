@@ -82,3 +82,9 @@ export function basename(path: string): string {
   const parts = path.split(/[\\/]/)
   return parts[parts.length - 1] || path
 }
+
+/** Containing directory of a `/`- or `\`-separated relative path, e.g. "a/b/c.mp4" -> "a/b"; "c.mp4" -> "". */
+export function dirname(path: string): string {
+  const parts = path.split(/[\\/]/)
+  return parts.slice(0, -1).join('/')
+}

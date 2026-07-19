@@ -184,6 +184,7 @@ def _job_row_to_dict(row, failed_item_count: int = 0) -> dict:
         "job_type": row.job_type,
         "scope_type": row.scope_type,
         "scope_ref": row.scope_ref,
+        "scope_label": None,
         "status": row.status,
         "parameters": json.loads(row.parameters) if row.parameters else {},
         "started_at": row.started_at,
@@ -213,6 +214,32 @@ def _count_failed_items(engine, job_ids: list[str]) -> dict[str, int]:
     return {row.job_id: row.failed_count for row in rows}
 
 
+def _resolve_scope_labels(engine, jobs: list[dict]) -> dict[str, str]:
+    """Post-V1, user request: a file-scope job's `scope_ref` is the file's
+    id, which the Jobs modal would otherwise have no choice but to show
+    verbatim (a raw UUID) -- this resolves it to the file's current
+    `relative_path` so the card can show a name/path instead, batched here
+    (like `_count_failed_items`) so rendering the jobs list doesn't issue one
+    query per job. Directory-scope jobs need no resolution: `scope_ref` is
+    already the directory's relative path."""
+    file_ids = [job["scope_ref"] for job in jobs if job["scope_type"] == "file" and job["scope_ref"]]
+    if not file_ids:
+        return {}
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, relative_path FROM files WHERE id IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            ),
+            {"ids": file_ids},
+        ).all()
+    path_by_file_id = {row.id: row.relative_path for row in rows}
+    return {
+        job["id"]: path_by_file_id[job["scope_ref"]]
+        for job in jobs
+        if job["scope_type"] == "file" and job["scope_ref"] in path_by_file_id
+    }
+
+
 def _job_item_row_to_dict(row) -> dict:
     return {
         "id": row.id,
@@ -225,6 +252,7 @@ def _job_item_row_to_dict(row) -> dict:
         "started_at": row.started_at,
         "finished_at": row.finished_at,
         "output_ref": row.output_ref,
+        "progress_pct": row.progress_pct,
     }
 
 
@@ -321,7 +349,9 @@ def get_job(engine, job_id: str) -> dict | None:
     if row is None:
         return None
     failed_count = _count_failed_items(engine, [job_id]).get(job_id, 0)
-    return _job_row_to_dict(row, failed_count)
+    job = _job_row_to_dict(row, failed_count)
+    job["scope_label"] = _resolve_scope_labels(engine, [job]).get(job_id)
+    return job
 
 
 def list_jobs(
@@ -349,7 +379,11 @@ def list_jobs(
             params,
         ).all()
     failed_counts = _count_failed_items(engine, [row.id for row in rows])
-    return [_job_row_to_dict(row, failed_counts.get(row.id, 0)) for row in rows]
+    jobs = [_job_row_to_dict(row, failed_counts.get(row.id, 0)) for row in rows]
+    scope_labels = _resolve_scope_labels(engine, jobs)
+    for job in jobs:
+        job["scope_label"] = scope_labels.get(job["id"])
+    return jobs
 
 
 def get_current_job_summary(engine) -> dict | None:
@@ -363,7 +397,11 @@ def get_current_job_summary(engine) -> dict | None:
                 """
             )
         ).fetchone()
-    return _job_row_to_dict(row) if row else None
+    if row is None:
+        return None
+    job = _job_row_to_dict(row)
+    job["scope_label"] = _resolve_scope_labels(engine, [job]).get(job["id"])
+    return job
 
 
 def claim_next_queued_job(engine, job_types: frozenset[str] | None = None) -> dict | None:
@@ -409,6 +447,29 @@ def finish_job(engine, job_id: str, status: str, summary_message: str | None = N
     level = "error" if status == "failed" else "info"
     log_event(engine, job_id, None, level, _FINISH_EVENT_TYPES[status], summary_message or status)
     _forget_file_indices(job_id)
+
+
+def reap_orphaned_jobs(engine) -> int:
+    """Called once at startup (`app/main.py`'s lifespan), after
+    `batch_submissions.requeue_stalled_jobs()` has already put any `tag` job
+    with a still-polling batch submission back on the queue. Any job still
+    `status = 'running'` at this point was left running by a backend process
+    that stopped/crashed mid-job -- the worker thread that owned it is gone
+    (this is a single-process app: nothing else could still be driving it
+    forward), and nothing would otherwise ever move it out of `running`
+    (user report: a job stayed stuck in the Jobs modal, un-cancellable and
+    un-restartable, after a backend restart -- `restart_job` only accepts
+    `failed`/`cancelled` jobs).
+
+    Marks each one `failed` with a clear summary instead of a bespoke
+    "requeue" mechanism, so the existing Restart button (which already
+    re-submits a failed/cancelled job's exact `parameters` unchanged) simply
+    becomes available for it. Returns how many jobs were reaped."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT id FROM jobs WHERE status = 'running'")).all()
+    for row in rows:
+        finish_job(engine, row.id, "failed", "Interrupted: the backend restarted while this job was running.")
+    return len(rows)
 
 
 def set_job_total_items(engine, job_id: str, total: int) -> None:
@@ -609,6 +670,19 @@ def start_job_item(engine, item_id: str) -> None:
         conn.execute(
             text("UPDATE job_items SET status = 'running', started_at = :now WHERE id = :id"),
             {"now": _now(), "id": item_id},
+        )
+
+
+def update_job_item_progress(engine, item_id: str, progress_pct: float) -> None:
+    """Live within-file encode progress (post-V1, user request), parsed from
+    ffmpeg's own `-progress` output (`app/conversion.py::run_ffmpeg`) and
+    throttled by the caller -- a plain column write with no `app_events` row,
+    so a slow encode reporting progress every second or so doesn't flood the
+    event log/Log Viewer the way a `log_event` call for each update would."""
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE job_items SET progress_pct = :pct WHERE id = :id"),
+            {"pct": max(0.0, min(100.0, progress_pct)), "id": item_id},
         )
 
 
