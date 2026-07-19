@@ -370,6 +370,36 @@ def _bloat_ffmpeg_output(monkeypatch, *, extra_bytes: int) -> None:
     monkeypatch.setattr(conversion, "run_ffmpeg", bloated_run_ffmpeg)
 
 
+def test_convert_job_uses_configured_ffmpeg_timeout(engine, source, monkeypatch):
+    """User report: a slow encode hit the previously-hardcoded 3600s limit in
+    `conversion.run_ffmpeg` and was killed outright. The configured
+    `ffmpeg_timeout_seconds` (`app/conversion_settings.py`) must reach the
+    actual `run_ffmpeg` call made for each file's encode."""
+    make_video(source["root"] / "clips" / "clip.mp4", size="480x360", duration=1.0)
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    conversion_settings.update_settings(engine, {"ffmpeg_timeout_seconds": 90})
+
+    real_run_ffmpeg = conversion.run_ffmpeg
+    seen_timeouts: list[int] = []
+
+    def spying_run_ffmpeg(args, timeout=3600, **kwargs):
+        seen_timeouts.append(timeout)
+        return real_run_ffmpeg(args, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(conversion, "run_ffmpeg", spying_run_ffmpeg)
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+
+    assert job["status"] == "completed"
+    assert seen_timeouts == [90]
+
+
 def test_production_mode_skips_when_reduction_below_configured_threshold(engine, source):
     """User report: a small real reduction isn't good enough on its own --
     it must clear the configured minimum percentage, or the original is

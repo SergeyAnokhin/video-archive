@@ -712,6 +712,15 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # User report: a large/slow encode hit the previously-hardcoded 3600s
+    # (1h) limit in `app/conversion.py::run_ffmpeg` and was killed outright
+    # ("ffmpeg timed out after 3600s"). Made configurable, same singleton
+    # convention as `min_size_reduction_percent` in the same table
+    # (`app/conversion_settings.py`). Existing rows default to the previous
+    # hardcoded value so behavior is unchanged until a user raises it.
+    35: [
+        "ALTER TABLE conversion_settings ADD COLUMN ffmpeg_timeout_seconds INTEGER NOT NULL DEFAULT 3600",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

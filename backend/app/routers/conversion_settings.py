@@ -17,6 +17,11 @@ class ConversionSettingsRequest(BaseModel):
         ge=service.MIN_MIN_SIZE_REDUCTION_PERCENT,
         le=service.MAX_MIN_SIZE_REDUCTION_PERCENT,
     )
+    ffmpeg_timeout_seconds: int = Field(
+        default=service.DEFAULT_FFMPEG_TIMEOUT_SECONDS,
+        ge=service.MIN_FFMPEG_TIMEOUT_SECONDS,
+        le=service.MAX_FFMPEG_TIMEOUT_SECONDS,
+    )
 
 
 @router.get("/conversion-settings")

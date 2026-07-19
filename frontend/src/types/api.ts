@@ -450,6 +450,7 @@ export interface BackendHealthSettings {
 
 export interface ConversionSettings {
   min_size_reduction_percent: number
+  ffmpeg_timeout_seconds: number
   updated_at: string
 }
 

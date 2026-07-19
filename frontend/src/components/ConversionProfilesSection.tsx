@@ -7,7 +7,9 @@ import type { ConversionProfile, ConversionSettings } from '../types/api'
 
 type ProfileFormValue = ConversionProfile | 'new' | null
 
-function MinSizeReductionSetting() {
+type ConversionSettingsField = 'min_size_reduction_percent' | 'ffmpeg_timeout_seconds'
+
+function ConversionSettingsFields() {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<ConversionSettings | null>(null)
 
@@ -20,11 +22,20 @@ function MinSizeReductionSetting() {
     })()
   }, [])
 
-  async function handleChange(value: number) {
-    setSettings((prev) => (prev ? { ...prev, min_size_reduction_percent: value } : prev))
+  // Both fields always ship together in one PUT (same gotcha as
+  // BackendHealthSettingsSection) -- sending just the changed one would let
+  // the backend's per-field `Field(default=...)` silently reset the other
+  // back to its default on an omitted key.
+  async function handleChange(field: ConversionSettingsField, value: number) {
+    if (!settings) return
+    const next = { ...settings, [field]: value }
+    setSettings(next)
     const saved = await tryApi<ConversionSettings>('/api/conversion-settings', {
       method: 'PUT',
-      body: { min_size_reduction_percent: value },
+      body: {
+        min_size_reduction_percent: next.min_size_reduction_percent,
+        ffmpeg_timeout_seconds: next.ffmpeg_timeout_seconds,
+      },
     })
     if (saved) setSettings(saved)
   }
@@ -32,18 +43,32 @@ function MinSizeReductionSetting() {
   if (!settings) return null
 
   return (
-    <label className="settings-modal__label">
-      {t('conversionProfiles.minSizeReduction')}
-      <input
-        className="settings-modal__input"
-        type="number"
-        min={0}
-        max={90}
-        value={settings.min_size_reduction_percent}
-        onChange={(event) => void handleChange(Number(event.target.value))}
-      />
-      <span className="settings-modal__hint">{t('conversionProfiles.minSizeReductionHint')}</span>
-    </label>
+    <>
+      <label className="settings-modal__label">
+        {t('conversionProfiles.minSizeReduction')}
+        <input
+          className="settings-modal__input"
+          type="number"
+          min={0}
+          max={90}
+          value={settings.min_size_reduction_percent}
+          onChange={(event) => void handleChange('min_size_reduction_percent', Number(event.target.value))}
+        />
+        <span className="settings-modal__hint">{t('conversionProfiles.minSizeReductionHint')}</span>
+      </label>
+      <label className="settings-modal__label">
+        {t('conversionProfiles.ffmpegTimeout')}
+        <input
+          className="settings-modal__input"
+          type="number"
+          min={60}
+          max={86400}
+          value={settings.ffmpeg_timeout_seconds}
+          onChange={(event) => void handleChange('ffmpeg_timeout_seconds', Number(event.target.value))}
+        />
+        <span className="settings-modal__hint">{t('conversionProfiles.ffmpegTimeoutHint')}</span>
+      </label>
+    </>
   )
 }
 
@@ -89,7 +114,7 @@ export function ConversionProfilesSection() {
     <section className="settings-modal__section">
       <h3 className="settings-modal__section-title">{t('conversionProfiles.title')}</h3>
 
-      <MinSizeReductionSetting />
+      <ConversionSettingsFields />
 
       {profiles.length === 0 && (
         <p className="settings-modal__hint">{t('conversionProfiles.empty')}</p>

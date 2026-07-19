@@ -161,7 +161,10 @@ def _encode_and_validate(
     t0 = time.monotonic()
     progress(f"Encoding with ffmpeg (codec={params['video_codec']}, crf={params['crf']})")
     duration = source_info.get("duration") if source_info else None
-    ok, error = conversion.run_ffmpeg(args, duration=duration, on_progress=on_progress, should_stop=should_stop)
+    timeout = conversion_settings.get_settings(engine)["ffmpeg_timeout_seconds"]
+    ok, error = conversion.run_ffmpeg(
+        args, timeout=timeout, duration=duration, on_progress=on_progress, should_stop=should_stop
+    )
     if not ok:
         if temp_path.exists():
             temp_path.unlink()

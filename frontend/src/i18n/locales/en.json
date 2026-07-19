@@ -130,7 +130,9 @@
     "summary": "{{codec}} · CRF {{crf}} · max {{dimension}}",
     "duplicateName": "{{name}} copy",
     "minSizeReduction": "Min. file size reduction (%)",
-    "minSizeReductionHint": "If a converted file shrinks by less than this percentage (or comes out bigger), the result is discarded and the original is kept — logged as skipped. Especially important for batch conversion."
+    "minSizeReductionHint": "If a converted file shrinks by less than this percentage (or comes out bigger), the result is discarded and the original is kept — logged as skipped. Especially important for batch conversion.",
+    "ffmpegTimeout": "ffmpeg timeout (seconds)",
+    "ffmpegTimeoutHint": "How long a single file's ffmpeg encode may run before it's force-killed and the job item fails. Raise this for large/slow files that legitimately take longer than an hour."
   },
   "sidebar": {
     "title": "Library",
