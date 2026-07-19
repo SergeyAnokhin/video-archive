@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
@@ -33,6 +34,17 @@ from app.sources.entries import Entry, EntryStat
 
 _RETRYABLE = (SMBException, ConnectionError, TimeoutError, OSError)
 _CHUNK_SIZE = 512 * 1024
+
+# `smbclient` caches one connection per host in a process-wide registry, so
+# every `SMBBackend` instance for the same host actually shares a single
+# underlying socket/session -- concurrent requests (e.g. a media-info lookup
+# racing a conversion job's download) issue SMB protocol messages on it at
+# the same time, which the server/library isn't guaranteed to interleave
+# safely (observed as "SMBException: ... 0 credits are available" and
+# "read of closed file" when one thread's retry reset the shared connection
+# out from under another thread's in-flight read). Serializing all backend
+# calls through this lock keeps SMB traffic to one operation at a time.
+_smb_lock = threading.Lock()
 
 
 def _copy_and_count(src, dst) -> None:
@@ -81,12 +93,13 @@ class SMBBackend:
         return f"\\\\{self.host}\\{tail}"
 
     def _with_retry(self, func, *args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except _RETRYABLE:
-            smbclient.reset_connection_cache()
-            self._register_session()
-            return func(*args, **kwargs)
+        with _smb_lock:
+            try:
+                return func(*args, **kwargs)
+            except _RETRYABLE:
+                smbclient.reset_connection_cache()
+                self._register_session()
+                return func(*args, **kwargs)
 
     def scandir(self, rel_dir: str) -> list[Entry]:
         def _do() -> list[Entry]:

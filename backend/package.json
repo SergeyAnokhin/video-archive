@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "Wraps the FastAPI backend startup so it can be launched from the root npm script.",
   "scripts": {
-    "dev": "python -m pip install -q -r requirements.txt && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    "dev": "python -m pip install -q -r requirements.txt && python -m uvicorn app.main:app --reload --reload-exclude video_archive.db --reload-exclude video_archive.db-wal --reload-exclude video_archive.db-shm --host 0.0.0.0 --port 8000"
   }
 }

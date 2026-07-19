@@ -18,10 +18,11 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 # Deliberately *outside* `backend/` (repo root instead): `uvicorn --reload`
-# watches the whole `backend/` tree (no `--reload-exclude` narrowing it --
-# see docs/development.md's reload-wedging note), so a log file written
-# inside it would retrigger the watcher on every single line logged --
-# reloading the app because the app logged something, forever.
+# watches the whole `backend/` tree (package.json's `--reload-exclude "*.db*"`
+# only narrows out the SQLite db/wal/shm files -- see docs/development.md's
+# reload-wedging note), so a log file written inside it would retrigger the
+# watcher on every single line logged -- reloading the app because the app
+# logged something, forever.
 # With VIDEO_ARCHIVE_STATE_DIR set (container/cluster run, no --reload —
 # see app/config.py) logs join the rest of the state on that volume.
 _STATE_DIR_ENV = os.environ.get("VIDEO_ARCHIVE_STATE_DIR")
