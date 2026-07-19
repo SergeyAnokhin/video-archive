@@ -54,9 +54,26 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _size_change_message(source_size: int, output_size: int) -> str:
-    pct = (output_size - source_size) / source_size * 100 if source_size else 0.0
-    return f"Size: {source_size} -> {output_size} bytes ({pct:+.1f}%)"
+def _format_size(num_bytes: int) -> str:
+    """Human-readable size (user request -- a raw byte count "is very hard
+    to read" in the job log); mirrors the frontend's own `formatSize()`
+    (`frontend/src/utils/format.ts`) unit-for-unit so the two stay visually
+    consistent."""
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    units = ["KB", "MB", "GB", "TB"]
+    value = num_bytes / 1024
+    unit_index = 0
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024
+        unit_index += 1
+    return f"{value:.1f} {units[unit_index]}"
+
+
+def _format_resolution(info: dict | None) -> str:
+    if not info or not info.get("width") or not info.get("height"):
+        return "unknown resolution"
+    return f"{info['width']}x{info['height']}"
 
 
 def _effective_params(profile: dict, overrides: dict | None) -> dict:
@@ -106,6 +123,7 @@ def _encode_and_validate(
 
     t0 = time.monotonic()
     source_info = conversion.probe_media(source_path)
+    source_size = source_path.stat().st_size
     max_dim = conversion.effective_max_dimension(source_info, params["max_dimension"])
     args = conversion.build_ffmpeg_command(
         source_path,
@@ -117,6 +135,10 @@ def _encode_and_validate(
         extra_encoder_args=params["extra_encoder_args"],
     )
     progress(f"Probed source in {time.monotonic() - t0:.2f}s")
+    # Source resolution/size up front (user request): so the log identifies
+    # what file was picked up and its starting parameters before the encode
+    # even runs, not just the end result.
+    progress(f"Source: {_format_resolution(source_info)}, {_format_size(source_size)}")
     progress(f"ffmpeg command: {shlex.join(args)}")
 
     # Live within-file progress (post-V1, user request): throttled to at
@@ -157,8 +179,16 @@ def _encode_and_validate(
         raise ConversionError(f"Validation failed: {reason}")
     progress(f"Validated output in {time.monotonic() - t0:.2f}s")
 
-    source_size = source_path.stat().st_size
     output_size = temp_path.stat().st_size
+    output_info = conversion.probe_media(temp_path)
+    # Resulting resolution/size (user request): paired with the "Source: ..."
+    # line above so the log shows what was taken and what it became without
+    # having to cross-reference the ffmpeg command line.
+    progress(
+        f"Result: {_format_resolution(output_info)}, "
+        f"{_format_size(source_size)} -> {_format_size(output_size)} "
+        f"({(output_size - source_size) / source_size * 100 if source_size else 0.0:+.1f}%)"
+    )
     if min_size_reduction_percent is not None:
         reduction_percent = (source_size - output_size) / source_size * 100 if source_size else 0.0
         if reduction_percent < min_size_reduction_percent:
@@ -166,7 +196,7 @@ def _encode_and_validate(
             message = (
                 f"Converted output only reduced size by {reduction_percent:.1f}% "
                 f"(needs at least {min_size_reduction_percent}%); keeping the original. "
-                f"({output_size} vs {source_size} bytes)"
+                f"({_format_size(output_size)} vs {_format_size(source_size)})"
             )
             service.log_event(engine, job_id, file_id, "warning", "job_item_progress", message)
             raise ConversionSkipped(message)
@@ -204,10 +234,6 @@ def _replace_production(
         access.remote_remove(file_row.relative_path)
     service.log_event(
         engine, job_id, file_row.id, "info", "job_item_progress", f"Replaced source with {final_name}"
-    )
-    service.log_event(
-        engine, job_id, file_row.id, "info", "job_item_progress",
-        _size_change_message(encode_result["source_size"], encode_result["output_size"]),
     )
 
     final_stat = access.stat_rel(final_rel)
@@ -276,10 +302,6 @@ def _replace_test_mode(
     service.log_event(
         engine, job_id, file_row.id, "info", "job_item_progress",
         f"Kept original as {stem}.original.{original_ext}, wrote {new_output_name}",
-    )
-    service.log_event(
-        engine, job_id, file_row.id, "info", "job_item_progress",
-        _size_change_message(encode_result["source_size"], encode_result["output_size"]),
     )
 
     now = _now()
@@ -367,10 +389,6 @@ def _create_variant(
     variant_name = f"{stem}.variant-{suffix}.{params['container']}"
     variant_rel = sibling_relative_path(file_row.relative_path, variant_name)
     access.commit_new_file(temp_path, variant_rel)
-    service.log_event(
-        engine, job_id, file_row.id, "info", "job_item_progress",
-        _size_change_message(encode_result["source_size"], encode_result["output_size"]),
-    )
 
     stat = access.stat_rel(variant_rel)
     now = _now()
@@ -648,7 +666,7 @@ def _run_directory_scope(
     summary += "."
     if total_source_bytes:
         pct = (total_output_bytes - total_source_bytes) / total_source_bytes * 100
-        summary += f" Total size: {total_source_bytes} -> {total_output_bytes} bytes ({pct:+.1f}%)."
+        summary += f" Total size: {_format_size(total_source_bytes)} -> {_format_size(total_output_bytes)} ({pct:+.1f}%)."
 
     status = "failed" if failed and processed == 0 and total > 0 else "completed"
     return status, summary

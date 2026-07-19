@@ -191,7 +191,8 @@ def test_convert_job_logs_per_stage_progress_events(engine, source):
 def test_convert_job_logs_command_directory_and_size(engine, source):
     """User request: the job log should show the ffmpeg command line (to
     copy/paste and reproduce in a terminal), which file/directory is being
-    converted, and the original vs. resulting file size."""
+    converted, and the original vs. resulting resolution/file size, in
+    human-readable units (a raw byte count "is very hard to read")."""
     make_video(source["root"] / "clips" / "movie.avi")
     scan_source(engine, source["id"], source["root"])
     profile = _make_profile(engine)
@@ -217,7 +218,13 @@ def test_convert_job_logs_command_directory_and_size(engine, source):
 
     assert any("File: clips/movie.avi" in message for message in messages)
     assert any("ffmpeg command:" in message and "-c:v" in message for message in messages)
-    assert any(message.startswith("[#1] Size:") or "Size:" in message and "->" in message for message in messages)
+    # Source resolution/size up front, resulting resolution/size after the
+    # encode -- both in human-readable units (KB/MB/GB), not raw byte counts.
+    assert any("Source: " in message and "x" in message and ("B" in message) for message in messages)
+    source_line = next(message for message in messages if "Source: " in message)
+    assert "bytes" not in source_line
+    result_line = next(message for message in messages if "Result: " in message)
+    assert "->" in result_line and "%" in result_line and "bytes" not in result_line
 
     # Live encode progress (user request): a successful encode always ends
     # by reporting 100% on its job_items row, even for a clip too short to
