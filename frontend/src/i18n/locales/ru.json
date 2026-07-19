@@ -8,7 +8,9 @@
     "hidePreviews": "Скрыть превью",
     "settingsToggle": "Настройки",
     "jobsToggle": "Задания",
-    "switchTheme": "Переключить на тему «{{theme}}»"
+    "switchTheme": "Переключить на тему «{{theme}}»",
+    "backendOnline": "Бэкенд доступен",
+    "backendOffline": "Бэкенд недоступен"
   },
   "language": {
     "en": "Английский",
@@ -190,6 +192,8 @@
     "moveFileCollision": "В папке назначения уже есть файл с таким именем.",
     "expandFolder": "Развернуть папку",
     "collapseFolder": "Свернуть папку",
+    "mediaInfoSectionTitle": "Технические данные",
+    "mediaInfoRefresh": "Обновить информацию о файле",
     "mediaInfoSize": "Размер",
     "mediaInfoResolution": "Разрешение",
     "mediaInfoAspectRatio": "Соотношение сторон",
@@ -652,5 +656,11 @@
     "ffmpeg": "ffmpeg",
     "ffmpegAvailable": "Доступен ({{version}})",
     "ffmpegMissing": "Не найден в PATH"
+  },
+  "backendMeter": {
+    "toggleView": "Переключить вид нагрузки бэкенда",
+    "cpuValue": "CPU: {{value}}%",
+    "memoryValue": "Память: {{value}}",
+    "networkValue": "Сеть (SMB): {{value}}/с"
   }
 }

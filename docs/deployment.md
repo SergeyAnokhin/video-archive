@@ -22,7 +22,7 @@ git push (main) ──► GitHub Actions ──► GHCR images (tag = short SHA)
 
 ## State: one env var, one PVC
 
-Locally every piece of mutable backend state lives where it always did (`backend/video_archive.db`, `backend/secrets.env`, `backend/preview_cache/`, `backend/models/`, repo-root `logs/`). On the cluster the Deployment sets **`VIDEO_ARCHIVE_STATE_DIR=/data/state`** (see [`backend/app/config.py`](../backend/app/config.py)) and mounts a single `local-path` PVC (`video-archive-state`, 20Gi by default) there — DB, secrets, preview cache, detection models, and logs all move onto the volume. Unset locally → nothing changes.
+Locally every piece of mutable backend state lives where it always did (`backend/video_archive.db`, `backend/secrets.env`, `backend/models/`, repo-root `logs/`). On the cluster the Deployment sets **`VIDEO_ARCHIVE_STATE_DIR=/data/state`** (see [`backend/app/config.py`](../backend/app/config.py)) and mounts a single `local-path` PVC (`video-archive-state`, 20Gi by default) there — DB, secrets, detection models, and logs all move onto the volume. Unset locally → nothing changes. Animated GIF previews aren't part of this state at all — they're written into the source's own `.video-archive/previews/` (same as the JPEG collage and metadata backups), so they don't need a PVC and survive a PVC loss untouched.
 
 Notes that follow from this:
 
@@ -47,7 +47,7 @@ To actually move the backend to the other node deliberately (not automatic):
 
 1. In the app, run a metadata **backup** (Settings → Backups) — it lands in the source's own `.video-archive/backups/` on the NAS, not on the PVC.
 2. Delete the stranded PVC/PV: `kubectl -n video-archive delete pvc video-archive-state` (delete the pod too so the new one rebinds); a fresh PV is created on whichever node the soft preference (or manual `kubectl cordon` on the node you want to avoid) picks.
-3. In the app, reconnect the source — the automatic restore-from-backup recovers tags/settings; preview cache and models regenerate/redownload on demand.
+3. In the app, reconnect the source — the automatic restore-from-backup recovers tags/settings; detection models redownload on demand. Preview GIFs need neither: they already lived on the source, not the PVC, so they're untouched by the whole PVC/pod loss.
 
 **Why not real live failover?** That would need the state to *not* be node-local — e.g. RWX/shared storage via the SMB CSI driver. But this app's state includes a SQLite DB, and SQLite's file locking is unsafe on CIFS/SMB (the platform spec calls this out explicitly, §5.7) — so moving the PVC to RWX storage isn't a safe option without first moving the DB off SQLite or onto something replicated. Out of scope unless you want that bigger redesign.
 

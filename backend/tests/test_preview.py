@@ -16,9 +16,10 @@ import pytest
 from PIL import Image
 from sqlalchemy import text
 
-from app import performance_settings, preview, preview_cache, preview_layouts, preview_settings
+from app import performance_settings, preview, preview_layouts, preview_settings
 from app.jobs import preview as preview_job
 from app.jobs import service
+from app.media import folder_gif_relative_path, preview_gif_relative_path
 from app.sampling import sample_interior_timestamps
 from app.scan import scan_source
 
@@ -349,10 +350,10 @@ def test_preview_job_file_scope_marks_file_previewed(engine, source):
     status, _message = preview_job.run_preview_job(engine, job)
 
     assert status == "completed"
-    # Collage lands next to the video on the source; GIF stays in the local
-    # cache (`app/preview_cache.py`).
+    # Collage lands next to the video on the source; GIF lands in the
+    # source's technical folder alongside it (`app/media.py`).
     assert (source["root"] / "clips" / "movie.jpg").exists()
-    assert preview_cache.gif_path(source["id"], "clips/movie.mp4").exists()
+    assert (source["root"] / preview_gif_relative_path("clips/movie.mp4")).exists()
 
     with engine.connect() as conn:
         updated = conn.execute(text("SELECT * FROM files WHERE id = :id"), {"id": file_row.id}).fetchone()
@@ -375,9 +376,9 @@ def test_preview_job_directory_scope_recursive_with_folder_previews(engine, sour
     assert status == "completed"
     assert (source["root"] / "clips" / "a.jpg").exists()
     assert (source["root"] / "clips" / "nested" / "b.jpg").exists()
-    assert preview_cache.folder_gif_path(source["id"], "").exists()
-    assert preview_cache.folder_gif_path(source["id"], "clips").exists()
-    assert preview_cache.folder_gif_path(source["id"], "clips/nested").exists()
+    assert (source["root"] / folder_gif_relative_path("")).exists()
+    assert (source["root"] / folder_gif_relative_path("clips")).exists()
+    assert (source["root"] / folder_gif_relative_path("clips/nested")).exists()
 
     with engine.connect() as conn:
         directories = {

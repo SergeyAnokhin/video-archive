@@ -2,6 +2,14 @@ export interface HealthResponse {
   status: string
 }
 
+export interface SystemStatsResponse {
+  cpu_percent: number
+  memory_rss_bytes: number
+  memory_percent: number
+  smb_bytes_read_total: number
+  timestamp: number
+}
+
 export interface FfmpegInfo {
   available: boolean
   version: string | null

@@ -23,14 +23,14 @@ from app import (
     conversion_profiles,
     conversion_settings,
     directory_ops,
-    preview_cache,
     preview_layouts,
     preview_settings,
     tags as tags_service,
 )
 from app.jobs import convert, preview as preview_job, service, tag as tag_job
+from app.media import preview_gif_relative_path
 from app.scan import scan_source_access
-from app.sources import get_source_access
+from app.sources import get_source_access, smb_stats
 from app.sources.smb_backend import SMBBackend, test_connection as smb_test_connection
 
 from .conftest import make_video
@@ -121,6 +121,19 @@ def test_local_copy_downloads_and_cleans_up(fake_smb):
         assert local_path.read_bytes() == b"remote-bytes"
         captured_path = local_path
     assert not captured_path.exists()
+
+
+def test_read_bytes_and_open_range_add_to_smb_stats_counter(fake_smb):
+    fake_smb.seed("clips/movie.mp4", b"x" * 40)
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass")
+
+    before = smb_stats.get_total_bytes_read()
+    backend.read_bytes("clips/movie.mp4")
+    assert smb_stats.get_total_bytes_read() == before + 40
+
+    before = smb_stats.get_total_bytes_read()
+    total_from_range = sum(len(chunk) for chunk in backend.open_range("clips/movie.mp4", start=10, end=29))
+    assert smb_stats.get_total_bytes_read() == before + total_from_range
 
 
 def test_smb_test_connection(fake_smb):
@@ -255,9 +268,10 @@ def test_preview_file_over_smb(engine, smb_source, tmp_path):
 
     assert status == "completed"
     # The collage is uploaded back to the SMB source next to the video (user
-    # request); the GIF still lands in the local cache (`app/preview_cache.py`).
+    # request); the GIF is uploaded the same way into the source's own
+    # technical folder (`app/media.py`).
     assert smb_source["fs"].exists("clips/movie.jpg")
-    assert preview_cache.gif_path(smb_source["id"], "clips/movie.mp4").exists()
+    assert smb_source["fs"].exists(preview_gif_relative_path("clips/movie.mp4"))
 
 
 @pytest.mark.skipif(not ffmpeg_available, reason="ffmpeg/ffprobe not on PATH")

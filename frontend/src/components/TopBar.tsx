@@ -7,6 +7,7 @@ import { LibrarySearchBox } from './LibrarySearchBox'
 import type { ActiveSearch } from '../utils/searchQuery'
 import { THEME_PRESETS } from '../types/api'
 import { THEME_ICON } from '../themeIcons'
+import { BackendHealthWidget } from './BackendHealthWidget'
 import './TopBar.css'
 
 interface TopBarProps {
@@ -64,6 +65,7 @@ export function TopBar({
       </button>
 
       <span className="top-bar__title">{t('app.title')}</span>
+      <BackendHealthWidget />
 
       <div className="top-bar__search-slot">
         <LibrarySearchBox

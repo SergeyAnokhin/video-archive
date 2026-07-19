@@ -59,3 +59,10 @@ def test_health_route_success_is_not_logged(tmp_path, monkeypatch, caplog):
         resp = client.get("/api/health")
     assert resp.status_code == 200
     assert _request_log_records(caplog) == []
+
+
+def test_system_stats_route_success_is_not_logged(tmp_path, monkeypatch, caplog):
+    with _isolated_client(tmp_path, monkeypatch) as client, caplog.at_level(logging.INFO, logger="app.requests"):
+        resp = client.get("/api/system/stats")
+    assert resp.status_code == 200
+    assert _request_log_records(caplog) == []

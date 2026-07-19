@@ -64,8 +64,8 @@ class TagLabError(Exception):
 # providers, shouldn't re-sample frames from it every time). Keyed by
 # file_id, holding only the most recent generation for that file -- a
 # fresh run whose tagging settings or vocabulary differ invalidates it.
-# Deliberately in-memory only (lost on backend restart), same tradeoff as
-# `preview_cache.py`'s on-disk cache but scoped to one process's lifetime.
+# Deliberately in-memory only (lost on backend restart), scoped to one
+# process's lifetime.
 _image_cache: dict[str, dict] = {}
 
 

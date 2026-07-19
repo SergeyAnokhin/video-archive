@@ -49,6 +49,14 @@ def preview_gif_relative_path(rel_path: str) -> str:
     return f"{PREVIEW_GIF_DIR}/{encoded}"
 
 
+def folder_gif_relative_path(directory_relative_path: str) -> str:
+    """Deterministic path for a directory's animated `folder-preview.gif`,
+    mirrored under `PREVIEW_GIF_DIR` rather than written into the directory
+    itself."""
+    base = f"{PREVIEW_GIF_DIR}/{directory_relative_path}" if directory_relative_path else PREVIEW_GIF_DIR
+    return f"{base}/{FOLDER_PREVIEW_FILENAME}"
+
+
 def file_row_to_dict(row, **extra) -> dict:
     """Common file summary fields shared by the `files` and `directories`
     listing endpoints (`app/routers/files.py`, `app/routers/directories.py`),

@@ -6,7 +6,6 @@ video_archive.db
 video_archive.db-shm
 video_archive.db-wal
 secrets.env
-preview_cache/
 models/
 logs/
 tests/

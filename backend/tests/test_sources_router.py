@@ -1,5 +1,5 @@
 """HTTP-layer tests for `/api/sources*` (saved-sources list, switching, and
-per-source preview-cache management -- user request, see `app/routers/
+active-source preview-asset management -- user request, see `app/routers/
 sources.py`/`app/source_switch.py`)."""
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app import preview_cache
 from app.jobs import service
 from app.main import app
+from app.media import preview_gif_relative_path
 
 
 def _wait_for_job(engine, job_id: str, timeout: float = 10.0) -> dict:
@@ -71,9 +71,16 @@ def test_list_sources_includes_preview_cache_stats(engine, source, tmp_path):
     root_b.mkdir()
     _insert_source(engine, "B", root_b, is_active=False)
 
-    gif = preview_cache.gif_path(source["id"], "clip.mp4")
+    gif = source["root"] / preview_gif_relative_path("clip.mp4")
     gif.parent.mkdir(parents=True, exist_ok=True)
     gif.write_bytes(b"gif-bytes")
+
+    # B has a GIF of its own too, but stats are never computed for an
+    # inactive source (would require connecting to it) -- must still report
+    # zero.
+    b_gif = root_b / preview_gif_relative_path("other.mp4")
+    b_gif.parent.mkdir(parents=True, exist_ok=True)
+    b_gif.write_bytes(b"gif-bytes")
 
     with TestClient(app) as client:
         r = client.get("/api/sources")
@@ -134,11 +141,11 @@ def test_forget_refuses_the_active_source(engine, source):
         assert r.json()["detail"]["error"]["code"] == "active_source"
 
 
-def test_forget_removes_an_inactive_source_and_its_preview_cache(engine, source, tmp_path):
+def test_forget_removes_an_inactive_source_without_touching_its_files(engine, source, tmp_path):
     root_b = tmp_path / "b"
     root_b.mkdir()
     b_id = _insert_source(engine, "B", root_b, is_active=False)
-    gif = preview_cache.gif_path(b_id, "clip.mp4")
+    gif = root_b / preview_gif_relative_path("clip.mp4")
     gif.parent.mkdir(parents=True, exist_ok=True)
     gif.write_bytes(b"gif-bytes")
 
@@ -149,12 +156,14 @@ def test_forget_removes_an_inactive_source_and_its_preview_cache(engine, source,
 
         remaining_ids = {row["id"] for row in client.get("/api/sources").json()["sources"]}
         assert b_id not in remaining_ids
-    assert not preview_cache.preview_cache_dir_for_source(b_id).exists()
+    # Forgetting a source only drops its saved config -- it must never
+    # connect to (or touch) that source's own disk.
+    assert gif.exists()
 
 
 def test_clear_preview_cache_for_active_source_resets_db_flags(engine, source):
     dir_id, file_id = _seed_previewed_file(engine, source["id"])
-    gif = preview_cache.gif_path(source["id"], "clip.mp4")
+    gif = source["root"] / preview_gif_relative_path("clip.mp4")
     gif.parent.mkdir(parents=True, exist_ok=True)
     gif.write_bytes(b"gif-bytes")
 
@@ -178,21 +187,23 @@ def test_clear_preview_cache_for_active_source_resets_db_flags(engine, source):
     assert dir_row.folder_preview_generated_at is None
 
 
-def test_clear_preview_cache_for_inactive_source_only_touches_its_own_cache(engine, source, tmp_path):
+def test_clear_preview_cache_rejects_inactive_source(engine, source, tmp_path):
     root_b = tmp_path / "b"
     root_b.mkdir()
     b_id = _insert_source(engine, "B", root_b, is_active=False)
 
-    active_gif = preview_cache.gif_path(source["id"], "clip.mp4")
+    active_gif = source["root"] / preview_gif_relative_path("clip.mp4")
     active_gif.parent.mkdir(parents=True, exist_ok=True)
     active_gif.write_bytes(b"gif-bytes")
-    b_gif = preview_cache.gif_path(b_id, "other.mp4")
+    b_gif = root_b / preview_gif_relative_path("other.mp4")
     b_gif.parent.mkdir(parents=True, exist_ok=True)
     b_gif.write_bytes(b"gif-bytes")
 
     with TestClient(app) as client:
         r = client.delete(f"/api/sources/{b_id}/preview-cache")
-        assert r.status_code == 200
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"]["code"] == "not_active_source"
 
-    assert not b_gif.exists()
+    # Clearing an inactive source must never connect to (or touch) it.
+    assert b_gif.exists()
     assert active_gif.exists()

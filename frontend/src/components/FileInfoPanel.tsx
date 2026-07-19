@@ -19,6 +19,7 @@ import {
   Images,
   PlayCircle,
   Plus,
+  RefreshCw,
   SlidersHorizontal,
   Tags,
   Trash2,
@@ -157,6 +158,21 @@ export function FileInfoPanel({
       })
     return () => {
       cancelled = true
+    }
+  }, [file.id])
+
+  // Manual re-probe (user request): the initial fetch above can come back
+  // empty for a reason that isn't permanent -- a transient share hiccup, a
+  // file still being copied, a backend that only just regained access to the
+  // source -- so this lets the user retry from the panel itself instead of
+  // closing and reopening it.
+  const refreshMediaInfo = useCallback(async () => {
+    setMediaInfoLoading(true)
+    try {
+      const data = await tryApi<FileMediaInfo>(`/api/files/${file.id}/media-info`)
+      setMediaInfo(data)
+    } finally {
+      setMediaInfoLoading(false)
     }
   }, [file.id])
 
@@ -545,6 +561,19 @@ export function FileInfoPanel({
               />
             </div>
 
+            <div className="file-info-panel__media-header">
+              <h3 className="file-info-panel__tags-title">{t('library.mediaInfoSectionTitle')}</h3>
+              <button
+                type="button"
+                className="file-info-panel__media-refresh"
+                aria-label={t('library.mediaInfoRefresh')}
+                title={t('library.mediaInfoRefresh')}
+                onClick={() => void refreshMediaInfo()}
+                disabled={mediaInfoLoading}
+              >
+                <RefreshCw size={13} className={mediaInfoLoading ? 'file-info-panel__media-refresh-icon--spinning' : undefined} />
+              </button>
+            </div>
             <dl className={`file-info-panel__media-grid ${mediaInfoLoading ? 'file-info-panel__media-grid--loading' : ''}`}>
               {mediaFields.map((field) => (
                 <div key={field.label} className="file-info-panel__media-field">

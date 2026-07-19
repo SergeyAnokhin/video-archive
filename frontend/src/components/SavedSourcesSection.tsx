@@ -96,12 +96,14 @@ export function SavedSourcesSection() {
             <p className="settings-modal__hint">
               {entry.protocol === 'smb' ? `${entry.host}/${entry.root_path}` : entry.root_path}
             </p>
-            <p className="settings-modal__hint">
-              {t('savedSources.cacheSummary', {
-                size: formatSize(entry.preview_cache.size_bytes),
-                count: entry.preview_cache.file_count,
-              })}
-            </p>
+            {entry.is_active && (
+              <p className="settings-modal__hint">
+                {t('savedSources.cacheSummary', {
+                  size: formatSize(entry.preview_cache.size_bytes),
+                  count: entry.preview_cache.file_count,
+                })}
+              </p>
+            )}
           </div>
           <div className="settings-modal__actions">
             {!entry.is_active && (
@@ -116,16 +118,18 @@ export function SavedSourcesSection() {
                 <Repeat size={14} />
               </button>
             )}
-            <button
-              type="button"
-              className="settings-modal__option settings-modal__option--icon"
-              onClick={() => handleClearCache(entry.id)}
-              disabled={busyId === entry.id || entry.preview_cache.file_count === 0}
-              aria-label={t('savedSources.clearCache')}
-              title={t('savedSources.clearCache')}
-            >
-              <ImageOff size={14} />
-            </button>
+            {entry.is_active && (
+              <button
+                type="button"
+                className="settings-modal__option settings-modal__option--icon"
+                onClick={() => handleClearCache(entry.id)}
+                disabled={busyId === entry.id || entry.preview_cache.file_count === 0}
+                aria-label={t('savedSources.clearCache')}
+                title={t('savedSources.clearCache')}
+              >
+                <ImageOff size={14} />
+              </button>
+            )}
             <button
               type="button"
               className="settings-modal__option settings-modal__option--icon"

@@ -62,7 +62,6 @@ backend/*.db-wal
 backend/*.db-shm
 backend/secrets.env
 backend/models/
-backend/preview_cache/
 
 # Project-local caches
 .npm-cache/
@@ -70,3 +69,4 @@ backend/preview_cache/
 # Local manual-testing fixtures (real video footage, not part of the source tree)
 /test-data/
 logs/*
+

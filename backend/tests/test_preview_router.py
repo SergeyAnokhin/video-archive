@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import app.db as db_module
-from app import preview_cache
 from app.main import app
+from app.media import folder_gif_relative_path, preview_gif_relative_path
 
 
 def _insert_source_and_folder(engine, root):
@@ -227,7 +227,7 @@ def test_file_preview_gif_serving(tmp_path, monkeypatch):
         r = client.get(f"/api/files/{file_id}/preview.gif")
         assert r.status_code == 404
 
-        gif_path = preview_cache.gif_path(_source_id, "clip_0.mp4")
+        gif_path = source_root / preview_gif_relative_path("clip_0.mp4")
         gif_path.parent.mkdir(parents=True, exist_ok=True)
         gif_path.write_bytes(b"GIF89a")
 
@@ -243,12 +243,12 @@ def test_directory_preview_image_serving(tmp_path, monkeypatch):
     with TestClient(app) as client:
         engine = db_module.get_engine()
         source_root = tmp_path / "source"
-        source_id, _file_id = _insert_source_and_folder(engine, source_root)
+        _source_id, _file_id = _insert_source_and_folder(engine, source_root)
 
         r = client.get("/api/directories/preview.gif", params={"path": ""})
         assert r.status_code == 404
 
-        folder_gif = preview_cache.folder_gif_path(source_id, "")
+        folder_gif = source_root / folder_gif_relative_path("")
         folder_gif.parent.mkdir(parents=True, exist_ok=True)
         folder_gif.write_bytes(b"GIF89a")
         r = client.get("/api/directories/preview.gif", params={"path": ""})

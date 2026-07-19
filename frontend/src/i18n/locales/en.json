@@ -8,7 +8,9 @@
     "hidePreviews": "Hide previews",
     "settingsToggle": "Settings",
     "jobsToggle": "Jobs",
-    "switchTheme": "Switch to {{theme}} theme"
+    "switchTheme": "Switch to {{theme}} theme",
+    "backendOnline": "Backend is online",
+    "backendOffline": "Backend is unreachable"
   },
   "language": {
     "en": "English",
@@ -190,6 +192,8 @@
     "moveFileCollision": "A file with this name already exists in the destination folder.",
     "expandFolder": "Expand folder",
     "collapseFolder": "Collapse folder",
+    "mediaInfoSectionTitle": "Technical info",
+    "mediaInfoRefresh": "Refresh file info",
     "mediaInfoSize": "Size",
     "mediaInfoResolution": "Resolution",
     "mediaInfoAspectRatio": "Aspect ratio",
@@ -652,5 +656,11 @@
     "ffmpeg": "ffmpeg",
     "ffmpegAvailable": "Available ({{version}})",
     "ffmpegMissing": "Not found on PATH"
+  },
+  "backendMeter": {
+    "toggleView": "Switch backend usage view",
+    "cpuValue": "CPU: {{value}}%",
+    "memoryValue": "Memory: {{value}}",
+    "networkValue": "Network (SMB): {{value}}/s"
   }
 }

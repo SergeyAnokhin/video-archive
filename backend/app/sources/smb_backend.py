@@ -28,6 +28,7 @@ import smbclient
 import smbclient.path
 from smbprotocol.exceptions import SMBException
 
+from app.sources import smb_stats
 from app.sources.entries import Entry, EntryStat
 
 _RETRYABLE = (SMBException, ConnectionError, TimeoutError, OSError)
@@ -170,7 +171,9 @@ class SMBBackend:
             with smbclient.open_file(self._unc(rel_path), mode="rb") as f:
                 return f.read()
 
-        return self._with_retry(_read)
+        data = self._with_retry(_read)
+        smb_stats.add_bytes_read(len(data))
+        return data
 
     def open_range(self, rel_path: str, start: int = 0, end: int | None = None) -> Iterator[bytes]:
         def _open():
@@ -187,6 +190,7 @@ class SMBBackend:
                 if not chunk:
                     break
                 remaining -= len(chunk)
+                smb_stats.add_bytes_read(len(chunk))
                 yield chunk
         finally:
             f.close()

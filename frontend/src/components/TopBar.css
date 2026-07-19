@@ -45,6 +45,16 @@
   flex-shrink: 0;
 }
 
+/* The resource widget is the least essential thing in the bar -- it gives up
+   its room to the search box well before anything else does (user request:
+   search matters more than the CPU/memory/network readout once space is
+   tight). Title still hides at the narrower breakpoint below. */
+@media (max-width: 640px) {
+  .backend-health-widget {
+    display: none;
+  }
+}
+
 /* Mobile: the title gives way to the search box, which needs the room more. */
 @media (max-width: 479px) {
   .top-bar__title {

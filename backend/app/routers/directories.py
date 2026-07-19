@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import directory_ops, preview_cache
+from app import directory_ops
 from app.db import get_engine
-from app.media import compute_variant_tags, file_row_to_dict, resolve_variant_preview_flags
+from app.media import compute_variant_tags, file_row_to_dict, folder_gif_relative_path, resolve_variant_preview_flags
 from app.source_access import get_active_source_or_404
+from app.sources import get_source_access
 from app.status import compute_directory_status
 from app.tags import list_top_tags_for_files, top_tags_for_directory_subtree
 
@@ -182,12 +183,13 @@ def get_directory_preview_gif(path: str = Query(default="")):
     with engine.connect() as conn:
         source = get_active_source_or_404(conn)
 
-    # Served from the local preview cache (`app/preview_cache.py`, user
-    # request) rather than the source itself.
-    folder_gif = preview_cache.folder_gif_path(source.id, path)
-    if not folder_gif.exists():
+    # Lives in the source's own technical folder, same as the collage
+    # (`app/media.py`'s `folder_gif_relative_path`).
+    access = get_source_access(source)
+    gif_rel = folder_gif_relative_path(path)
+    if not access.exists(gif_rel):
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No folder preview for this directory."}},
         )
-    return FileResponse(folder_gif, media_type="image/gif")
+    return Response(content=access.read_bytes(gif_rel), media_type="image/gif")

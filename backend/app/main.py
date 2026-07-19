@@ -30,6 +30,7 @@ from app.routers import (
     providers,
     source,
     sources,
+    system_stats,
     tag_lab,
     tagging_settings,
     tags,
@@ -68,6 +69,7 @@ app = FastAPI(title="Video Archive API", version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(health.router, prefix="/api")
+app.include_router(system_stats.router, prefix="/api")
 app.include_router(app_info.router, prefix="/api")
 app.include_router(source.router, prefix="/api")
 app.include_router(sources.router, prefix="/api")

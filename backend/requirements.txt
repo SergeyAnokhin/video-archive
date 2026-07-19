@@ -10,3 +10,4 @@ onnxruntime>=1.17,<2.0
 Pillow>=10.0,<13.0
 numpy>=1.26,<3.0
 smbprotocol>=1.16,<2.0
+psutil>=5.9,<7.0

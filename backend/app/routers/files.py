@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from math import gcd
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion, file_ops, preview_cache, similarity
+from app import conversion, file_ops, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
 from app.media import (
@@ -18,6 +18,7 @@ from app.media import (
     VARIANT_MARKER,
     compute_variant_tags,
     file_row_to_dict,
+    preview_gif_relative_path,
     resolve_variant_preview_flags,
     variant_base_stem,
 )
@@ -204,7 +205,16 @@ def get_file_media_info(file_id: str):
     """On-demand technical info (codec/resolution/bitrate/etc.) for the file
     info panel. Not persisted: ffprobe runs fresh on each request, mirroring
     how `conversion.probe_media()` is already used elsewhere (jobs/convert.py,
-    tagging.py, similarity.py) rather than adding a DB column + rescan."""
+    tagging.py, similarity.py) rather than adding a DB column + rescan.
+
+    Probes a `local_copy()` rather than `direct_path()`: ffprobe is an
+    external OS process, so for an SMB source a raw UNC `direct_path()`
+    string is only reachable through the app's own in-process `smbclient`
+    session, not by an external process using the OS's own SMB stack --
+    ffprobe would fail immediately and this endpoint would silently return
+    every field empty (bug report: file info panel showed size but nothing
+    else for a file whose preview had already been generated via
+    `local_copy()`, which does work)."""
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(
@@ -223,7 +233,8 @@ def get_file_media_info(file_id: str):
         profile = get_profile(engine, row.last_conversion_profile_id) if row.last_conversion_profile_id else None
 
     access = get_source_access(row)
-    info = conversion.probe_media(Path(access.direct_path(row.relative_path)))
+    with access.local_copy(row.relative_path) as local_path:
+        info = conversion.probe_media(local_path)
 
     aspect_ratio = None
     if info and info.get("width") and info.get("height"):
@@ -320,21 +331,22 @@ def get_file_preview_image(file_id: str):
 @router.get("/files/{file_id}/preview.gif")
 def get_file_preview_gif(file_id: str):
     """Animated GIF companion to the JPEG collage (user request), used for
-    grid/list-view hover previews. Served from the local preview cache
-    (`app/preview_cache.py`, user request) rather than the source itself."""
+    grid/list-view hover previews. Lives in the source's own technical
+    folder, same as the collage (`app/media.py`'s `preview_gif_relative_path`)."""
     with get_engine().connect() as conn:
         row = _preview_lookup(conn, file_id)
         if row is None:
             raise _file_not_found_error(file_id)
         source_row = _preview_source_row(conn, row)
 
-    gif_path = preview_cache.gif_path(row.id, source_row.relative_path)
-    if not gif_path.exists():
+    access = get_source_access(row)
+    gif_rel = preview_gif_relative_path(source_row.relative_path)
+    if not access.exists(gif_rel):
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No GIF preview for this file."}},
         )
-    return FileResponse(gif_path, media_type="image/gif")
+    return Response(content=access.read_bytes(gif_rel), media_type="image/gif")
 
 
 @router.get("/files/{file_id}/similar")

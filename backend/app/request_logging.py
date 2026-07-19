@@ -31,15 +31,16 @@ _METHOD_EMOJI = {
 
 # (method, route path template) pairs the frontend polls repeatedly -- every
 # 1-3s for live job/batch progress (`JobsContext.tsx`, `BatchSubmissionsModal.tsx`,
-# `FileTuneModal.tsx`), every 10s for backend status (`useBackendStatus.ts`) --
-# so logging every hit here is pure noise. Stays silent for these only while
-# they succeed; a failure still logs, since that's exactly the kind of thing
-# worth seeing.
+# `FileTuneModal.tsx`), every 5s for backend status/resource stats
+# (`useBackendHealth.ts`, `useBackendStats.ts`) -- so logging every hit here
+# is pure noise. Stays silent for these only while they succeed; a failure
+# still logs, since that's exactly the kind of thing worth seeing.
 _QUIET_ROUTES = {
     ("GET", "/api/jobs"),
     ("GET", "/api/jobs/{job_id}/items"),
     ("GET", "/api/jobs/batch-submissions"),
     ("GET", "/api/health"),
+    ("GET", "/api/system/stats"),
 }
 
 

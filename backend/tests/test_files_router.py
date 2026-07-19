@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app import preview_cache
 from app.main import app
+from app.media import preview_gif_relative_path
 
 
 def _now() -> str:
@@ -297,7 +297,7 @@ def test_variant_preview_falls_back_to_original_asset(engine, source):
     (source["root"] / "clip.mp4").write_bytes(b"data")
     collage_path = source["root"] / "clip.jpg"
     collage_path.write_bytes(b"jpg-bytes")
-    gif_path = preview_cache.gif_path(source["id"], "clip.mp4")
+    gif_path = source["root"] / preview_gif_relative_path("clip.mp4")
     gif_path.parent.mkdir(parents=True, exist_ok=True)
     gif_path.write_bytes(b"gif-bytes")
     _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
