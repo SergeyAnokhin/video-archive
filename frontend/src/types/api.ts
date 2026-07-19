@@ -6,7 +6,7 @@ export interface SystemStatsResponse {
   cpu_percent: number
   memory_rss_bytes: number
   memory_percent: number
-  smb_bytes_read_total: number
+  smb_bytes_transferred_total: number
   timestamp: number
 }
 
@@ -439,6 +439,12 @@ export interface BackupSettings {
 
 export interface PerformanceSettings {
   parallel_workers: number
+  updated_at: string
+}
+
+export interface BackendHealthSettings {
+  slow_timeout_seconds: number
+  offline_timeout_seconds: number
   updated_at: string
 }
 

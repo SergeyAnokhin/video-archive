@@ -35,6 +35,20 @@ _RETRYABLE = (SMBException, ConnectionError, TimeoutError, OSError)
 _CHUNK_SIZE = 512 * 1024
 
 
+def _copy_and_count(src, dst) -> None:
+    """`shutil.copyfileobj()` with each chunk also fed to `smb_stats` -- used
+    by `local_copy()`/`commit_new_file()` so the conversion/preview/tagging
+    download-and-upload round trip shows up in the network gauge too, not
+    just `read_bytes()`/`open_range()` (those alone left a whole conversion
+    job -- the most network-heavy job type -- invisible to it)."""
+    while True:
+        chunk = src.read(_CHUNK_SIZE)
+        if not chunk:
+            break
+        dst.write(chunk)
+        smb_stats.add_bytes_transferred(len(chunk))
+
+
 def _split_share(root_path: str) -> tuple[str, str]:
     """`root_path` stores the share name plus an optional nested subpath as
     one posix-style string, e.g. `videos` or `videos/archive/2024`
@@ -122,7 +136,7 @@ class SMBBackend:
         try:
             def _download() -> None:
                 with smbclient.open_file(self._unc(rel_path), mode="rb") as remote_f, open(local_path, "wb") as local_f:
-                    shutil.copyfileobj(remote_f, local_f)
+                    _copy_and_count(remote_f, local_f)
 
             self._with_retry(_download)
             yield local_path
@@ -148,7 +162,7 @@ class SMBBackend:
             if str(parent) not in ("", "."):
                 smbclient.makedirs(self._unc(str(parent)), exist_ok=True)
             with open(local_path, "rb") as local_f, smbclient.open_file(self._unc(dest_rel_path), mode="wb") as remote_f:
-                shutil.copyfileobj(local_f, remote_f)
+                _copy_and_count(local_f, remote_f)
 
         self._with_retry(_upload)
         if local_path.exists():
@@ -172,7 +186,7 @@ class SMBBackend:
                 return f.read()
 
         data = self._with_retry(_read)
-        smb_stats.add_bytes_read(len(data))
+        smb_stats.add_bytes_transferred(len(data))
         return data
 
     def open_range(self, rel_path: str, start: int = 0, end: int | None = None) -> Iterator[bytes]:
@@ -190,7 +204,7 @@ class SMBBackend:
                 if not chunk:
                     break
                 remaining -= len(chunk)
-                smb_stats.add_bytes_read(len(chunk))
+                smb_stats.add_bytes_transferred(len(chunk))
                 yield chunk
         finally:
             f.close()

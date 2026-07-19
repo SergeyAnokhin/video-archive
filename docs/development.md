@@ -44,7 +44,7 @@ Test conventions (per-suite details in [`code-map-tests.md`](code-map-tests.md))
 
 ## Recipe: adding a global settings singleton
 
-The repo has one recurring pattern for an app-wide setting (7 singletons already: preview, tagging, playback, backup, interface, performance, conversion). Copy an existing small one — [`backend/app/performance_settings.py`](../backend/app/performance_settings.py) / [`backend/app/conversion_settings.py`](../backend/app/conversion_settings.py) are the shortest — and touch these spots:
+The repo has one recurring pattern for an app-wide setting (8 singletons already: preview, tagging, playback, backup, interface, performance, conversion, backend health). Copy an existing small one — [`backend/app/performance_settings.py`](../backend/app/performance_settings.py) / [`backend/app/conversion_settings.py`](../backend/app/conversion_settings.py) are the shortest — and touch these spots:
 
 1. `backend/app/<name>_settings.py` — constants (default/min/max), `get_settings()`, `update_settings()` (clamp there), `seed_default_settings()`.
 2. `backend/app/db.py` — append a `CREATE TABLE IF NOT EXISTS <name>_settings (id INTEGER PRIMARY KEY CHECK (id = 1), ...)` migration **and** a matching `if current_version < N <= SCHEMA_VERSION:` seed call in `init_db()`.

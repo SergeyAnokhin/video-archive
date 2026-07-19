@@ -1,4 +1,5 @@
 import { useBackendHealth } from '../hooks/useBackendHealth'
+import { useBackendHealthSettings } from '../hooks/useBackendHealthSettings'
 import { useBackendStats } from '../hooks/useBackendStats'
 import { BackendStatusDot } from './BackendStatusDot'
 import { BackendResourceMeter } from './BackendResourceMeter'
@@ -8,7 +9,8 @@ import './BackendHealthWidget.css'
  * 2026-07-19) so they share a single health/stats polling pair instead of
  * each component polling independently. */
 export function BackendHealthWidget() {
-  const health = useBackendHealth()
+  const timeouts = useBackendHealthSettings()
+  const health = useBackendHealth(timeouts)
   const stats = useBackendStats(health)
 
   return (

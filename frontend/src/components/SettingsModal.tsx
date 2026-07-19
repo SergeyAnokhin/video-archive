@@ -13,6 +13,7 @@ import { BackupMaintenanceSection } from './BackupMaintenanceSection'
 import { InterfaceSection } from './InterfaceSection'
 import { PerformanceSettingsSection } from './PerformanceSettingsSection'
 import { NetworkAccessSection } from './NetworkAccessSection'
+import { BackendHealthSettingsSection } from './BackendHealthSettingsSection'
 import './SettingsModal.css'
 
 interface SettingsModalProps {
@@ -56,6 +57,15 @@ function BackupSettingsSection() {
   )
 }
 
+function NetworkSettingsSection() {
+  return (
+    <>
+      <NetworkAccessSection />
+      <BackendHealthSettingsSection />
+    </>
+  )
+}
+
 const TABS: TabDef[] = [
   { id: 'source', icon: HardDrive, labelKey: 'settings.sourceSection', Component: SourceSettingsSection },
   { id: 'profiles', icon: Wand2, labelKey: 'conversionProfiles.title', Component: ConversionProfilesSection },
@@ -65,7 +75,7 @@ const TABS: TabDef[] = [
   { id: 'providers', icon: Bot, labelKey: 'providerSettings.title', Component: ProviderSettingsSection },
   { id: 'backup', icon: Archive, labelKey: 'backupMaintenance.title', Component: BackupSettingsSection },
   { id: 'performance', icon: Cpu, labelKey: 'performanceSettings.title', Component: PerformanceSettingsSection },
-  { id: 'network', icon: Wifi, labelKey: 'networkAccess.title', Component: NetworkAccessSection },
+  { id: 'network', icon: Wifi, labelKey: 'networkAccess.title', Component: NetworkSettingsSection },
   { id: 'interface', icon: Palette, labelKey: 'settings.interfaceSection', Component: InterfaceSection },
 ]
 

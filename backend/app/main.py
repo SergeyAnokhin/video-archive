@@ -13,6 +13,7 @@ from app.request_logging import RequestLoggingMiddleware
 from app.routers import (
     app_info,
     app_settings,
+    backend_health_settings,
     backup_settings,
     backups,
     conversion_profiles,
@@ -77,6 +78,7 @@ app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(health.router, prefix="/api")
 app.include_router(system_stats.router, prefix="/api")
+app.include_router(backend_health_settings.router, prefix="/api")
 app.include_router(app_info.router, prefix="/api")
 app.include_router(source.router, prefix="/api")
 app.include_router(sources.router, prefix="/api")

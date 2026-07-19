@@ -33,7 +33,7 @@ export function useBackendStats(health: BackendHealth): BackendStats | null {
       const data = await tryApi<SystemStatsResponse>('/api/system/stats')
       if (!data || cancelled) return
 
-      const sample: ByteSample = { bytes: data.smb_bytes_read_total, timestampSeconds: data.timestamp }
+      const sample: ByteSample = { bytes: data.smb_bytes_transferred_total, timestampSeconds: data.timestamp }
       const networkBytesPerSec = computeNetworkRate(lastSample.current, sample)
       lastSample.current = sample
 

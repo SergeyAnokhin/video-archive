@@ -697,6 +697,21 @@ MIGRATIONS: dict[int, list[str]] = {
     33: [
         "ALTER TABLE job_items ADD COLUMN progress_pct REAL",
     ],
+    # Post-V1: backend-health-indicator timeout settings (chat request
+    # 2026-07-19 follow-up, user-configurable) -- how long the top-bar status
+    # dot waits for `/api/health` before turning amber ("slow"), and how much
+    # longer it then waits on retry before giving up and turning red
+    # ("offline"). Same singleton convention as performance_settings.
+    34: [
+        """
+        CREATE TABLE IF NOT EXISTS backend_health_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            slow_timeout_seconds INTEGER NOT NULL DEFAULT 5,
+            offline_timeout_seconds INTEGER NOT NULL DEFAULT 10,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -797,6 +812,11 @@ def init_db() -> int:
             from app.conversion_settings import seed_default_settings as seed_default_conversion_settings
 
             seed_default_conversion_settings(conn)
+
+        if current_version < 34 <= SCHEMA_VERSION:
+            from app.backend_health_settings import seed_default_settings as seed_default_backend_health_settings
+
+            seed_default_backend_health_settings(conn)
 
     return SCHEMA_VERSION
 

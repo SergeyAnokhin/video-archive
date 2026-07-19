@@ -10,6 +10,7 @@
     "jobsToggle": "Jobs",
     "switchTheme": "Switch to {{theme}} theme",
     "backendOnline": "Backend is online",
+    "backendSlow": "Backend is slow to respond (busy, not down)",
     "backendOffline": "Backend is unreachable"
   },
   "language": {
@@ -103,6 +104,12 @@
     "scenarioHotspotText": "Turn on the phone's mobile hotspot first, then connect this PC to that hotspot's Wi-Fi. Once connected, press Refresh above -- a new address on the hotspot's own subnet (usually 192.168.43.x or 172.20.10.x) will appear; open that one on the phone.",
     "firewallTitle": "Windows Firewall",
     "firewallText": "On the first connection attempt, Windows may prompt to allow Python/Node.js through the firewall -- allow it for Private networks only."
+  },
+  "backendHealthSettings": {
+    "title": "Backend status timing",
+    "hint": "How long the backend status dot (top bar) waits for a response before turning amber (\"slow\" -- probably just busy, e.g. converting a file) or, on the retry, red (\"offline\").",
+    "slowTimeout": "Turn amber after (seconds)",
+    "offlineTimeout": "Then turn red after (seconds)"
   },
   "conversionProfiles": {
     "title": "Conversion profiles",

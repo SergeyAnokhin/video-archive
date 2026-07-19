@@ -127,13 +127,34 @@ def test_read_bytes_and_open_range_add_to_smb_stats_counter(fake_smb):
     fake_smb.seed("clips/movie.mp4", b"x" * 40)
     backend = SMBBackend("testnas", 445, "testshare", "user", "pass")
 
-    before = smb_stats.get_total_bytes_read()
+    before = smb_stats.get_total_bytes_transferred()
     backend.read_bytes("clips/movie.mp4")
-    assert smb_stats.get_total_bytes_read() == before + 40
+    assert smb_stats.get_total_bytes_transferred() == before + 40
 
-    before = smb_stats.get_total_bytes_read()
+    before = smb_stats.get_total_bytes_transferred()
     total_from_range = sum(len(chunk) for chunk in backend.open_range("clips/movie.mp4", start=10, end=29))
-    assert smb_stats.get_total_bytes_read() == before + total_from_range
+    assert smb_stats.get_total_bytes_transferred() == before + total_from_range
+
+
+def test_local_copy_and_commit_new_file_add_to_smb_stats_counter(fake_smb, tmp_path):
+    # Regression: these two used a raw `shutil.copyfileobj()` that bypassed
+    # `smb_stats` entirely -- a whole conversion job's download-then-upload
+    # round trip (its only network activity) was invisible to the frontend's
+    # network gauge as a result (chat request 2026-07-19 follow-up, caught by
+    # comparing against a real Kubernetes deployment during an active job).
+    fake_smb.seed("clips/movie.mp4", b"r" * 40)
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass")
+
+    before = smb_stats.get_total_bytes_transferred()
+    with backend.local_copy("clips/movie.mp4"):
+        pass
+    assert smb_stats.get_total_bytes_transferred() == before + 40
+
+    local_file = tmp_path / "output.mp4"
+    local_file.write_bytes(b"u" * 25)
+    before = smb_stats.get_total_bytes_transferred()
+    backend.commit_new_file(local_file, "clips/output.mp4")
+    assert smb_stats.get_total_bytes_transferred() == before + 25
 
 
 def test_smb_test_connection(fake_smb):

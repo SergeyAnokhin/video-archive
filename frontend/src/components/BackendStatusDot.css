@@ -4,26 +4,34 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: var(--color-text-muted);
+  background: currentColor;
+  color: var(--color-text-muted);
 }
 
 .backend-status-dot--online {
-  background: var(--color-success);
+  color: var(--color-success);
   animation: backend-status-pulse 2s ease-out infinite;
 }
 
+/* Faster pulse than 'online' -- reads as "still trying", distinct urgency
+   from the steady-state green. */
+.backend-status-dot--slow {
+  color: var(--color-warning);
+  animation: backend-status-pulse 1s ease-out infinite;
+}
+
 .backend-status-dot--offline {
-  background: var(--color-danger);
+  color: var(--color-danger);
 }
 
 @keyframes backend-status-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-success) 0%, transparent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success) 0%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent);
   }
 }

@@ -23,4 +23,15 @@ describe('computeNetworkRate', () => {
     const curr = { bytes: 2000, timestampSeconds: 10 }
     expect(computeNetworkRate(prev, curr)).toBe(0)
   })
+
+  it('clamps to 0 instead of NaN when a sample is missing its byte count', () => {
+    // Regression: a stale backend answering with an older response shape
+    // (e.g. mid rolling-deploy) sends `undefined` for a renamed field --
+    // `undefined - number` is `NaN`, which used to poison the gauge's
+    // opacity/fill styles downstream.
+    const prev = { bytes: undefined as unknown as number, timestampSeconds: 10 }
+    const curr = { bytes: 2000, timestampSeconds: 15 }
+    expect(computeNetworkRate(prev, curr)).toBe(0)
+    expect(computeNetworkRate(curr, prev)).toBe(0)
+  })
 })
