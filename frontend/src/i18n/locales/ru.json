@@ -590,6 +590,7 @@
       "count": "{{done}} / {{total}}",
       "current": "Обработка: {{name}}",
       "eta": "Осталось: ~{{time}}",
+      "itemEta": "Осталось по файлу: ~{{time}}",
       "elapsed": "В процессе: {{time}}",
       "took": "Заняло: {{time}}",
       "finishedAt": "Завершено: {{time}}",

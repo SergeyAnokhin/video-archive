@@ -218,15 +218,16 @@ export function JobsModal({ onClose, onNavigate }: JobsModalProps) {
   )
 }
 
-/** Tracks (time, doneCount) samples for the last `ETA_WINDOW_MS` while a job
- * is running, so `estimateEtaSeconds()` can extrapolate from the recent
- * completion rate instead of the average over the job's whole lifetime. */
-function useEtaSeconds(jobId: string, isRunning: boolean, done: number, total: number | null): number | null {
+/** Tracks (time, done) samples for the last `ETA_WINDOW_MS` while running, so
+ * `estimateEtaSeconds()` can extrapolate from the recent completion rate
+ * instead of the average over the whole lifetime. `key` identifies what's
+ * being tracked (a job id, an item id, ...) -- history resets when it changes. */
+function useEtaSeconds(key: string, isRunning: boolean, done: number, total: number | null): number | null {
   const historyRef = useRef<ProgressSample[]>([])
-  const jobIdRef = useRef(jobId)
+  const keyRef = useRef(key)
 
-  if (jobIdRef.current !== jobId) {
-    jobIdRef.current = jobId
+  if (keyRef.current !== key) {
+    keyRef.current = key
     historyRef.current = []
   }
 
@@ -317,6 +318,12 @@ function JobRow({
   const progressPct = total && total > 0 ? Math.min(100, Math.round((done / total) * 100)) : null
 
   const etaSeconds = useEtaSeconds(job.id, isRunning, done, total)
+  const itemEtaSeconds = useEtaSeconds(
+    currentItem?.id ?? '',
+    isRunning && currentItem?.progress_pct != null,
+    currentItem?.progress_pct ?? 0,
+    100,
+  )
   const runningElapsedSeconds = useElapsedSeconds(job.started_at, isRunning)
 
   const finishedElapsedSeconds =
@@ -484,6 +491,14 @@ function JobRow({
             <div className="jobs-modal__progress-fill" style={{ width: `${currentItem.progress_pct}%` }} />
           </div>
           <span className="jobs-modal__progress-count">{Math.round(currentItem.progress_pct)}%</span>
+          {itemEtaSeconds !== null && (
+            <span
+              className="jobs-modal__progress-eta"
+              title={t('jobs.progress.itemEta', { time: formatElapsed(itemEtaSeconds, units) })}
+            >
+              <Hourglass size={12} /> {formatElapsedCompact(itemEtaSeconds, compactUnits)}
+            </span>
+          )}
         </div>
       )}
 

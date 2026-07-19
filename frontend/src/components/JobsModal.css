@@ -248,6 +248,16 @@
   color: var(--color-text-muted);
 }
 
+.jobs-modal__progress-eta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 .jobs-modal__progress--item {
   margin-top: 2px;
 }

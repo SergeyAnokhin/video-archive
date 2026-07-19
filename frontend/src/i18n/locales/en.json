@@ -590,6 +590,7 @@
       "count": "{{done}} / {{total}}",
       "current": "Processing: {{name}}",
       "eta": "Remaining: ~{{time}}",
+      "itemEta": "File remaining: ~{{time}}",
       "elapsed": "In progress: {{time}}",
       "took": "Took: {{time}}",
       "finishedAt": "Finished: {{time}}",
