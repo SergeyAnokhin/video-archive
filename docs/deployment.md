@@ -74,6 +74,16 @@ The agent cannot touch the cluster, GHCR visibility, or ArgoCD. Run top to botto
 5. **HTTPS:** devices that already trust the `home-ca` root need nothing. A new device: export and install the CA cert (platform spec §6.7).
 6. **In the app:** open `https://video-archive.192.168.1.97.nip.io`, go to Settings → Source, connect the NAS share as an `smb` source, re-enter provider API keys (state starts empty on the cluster — it is a separate instance from your local one).
 
+## Installing as a PWA on Android
+
+The frontend ships a manifest (`frontend/public/manifest.webmanifest`) and a minimal
+installability-only service worker (`frontend/public/sw.js`, no caching — the library,
+jobs, and log stream are live backend data). On a phone already trusting `home-ca`
+(checklist step 5 above), open `https://video-archive.192.168.1.97.nip.io` in Chrome →
+menu → "Install app" (or "Add to Home screen") to get a standalone-window icon instead
+of a browser tab. `npm run dev`'s plain-HTTP LAN address does not qualify — Chrome only
+offers the real install prompt over HTTPS or `localhost`.
+
 ## Follow-up: VAAPI hardware encoding in the k3s deployment (not implemented)
 
 The backend's conversion pipeline supports selecting `hardware_accel: "vaapi"` per conversion profile and probes for it at startup ([`backend/app/hardware_accel.py`](../backend/app/hardware_accel.py)), but the containerized deployment has no working path to it today — this is code-level groundwork only, verified so far against the local Windows/QSV path, not against this cluster:

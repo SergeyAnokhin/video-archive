@@ -85,7 +85,7 @@ Frontend and backend also remain independently runnable from their own directori
 
 ## Kubernetes Deployment
 
-The same repository also deploys onto the home k3s cluster through a GitOps loop: a push to `main` builds backend/frontend images into GHCR and ArgoCD rolls them out (namespace `video-archive`, `https://video-archive.192.168.1.97.nip.io`). The backend can be switched between the general-purpose node and the powerful `role=compute` node via one Helm value. The local dev loop above is unaffected. See [docs/deployment.md](docs/deployment.md).
+The same repository also deploys onto the home k3s cluster through a GitOps loop: a push to `main` builds backend/frontend images into GHCR and ArgoCD rolls them out (namespace `video-archive`, `https://video-archive.192.168.1.97.nip.io`). The backend can be switched between the general-purpose node and the powerful `role=compute` node via one Helm value. The local dev loop above is unaffected. The frontend is also installable as a PWA on Android from that HTTPS address — see [docs/deployment.md#installing-as-a-pwa-on-android](docs/deployment.md#installing-as-a-pwa-on-android). See [docs/deployment.md](docs/deployment.md).
 
 ## Project Structure
 

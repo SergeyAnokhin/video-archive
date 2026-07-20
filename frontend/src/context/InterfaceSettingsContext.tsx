@@ -36,6 +36,12 @@ function detectInitialPreviewProfiles(): Record<PreviewProfileKey, PreviewStyleP
 
 function applyTheme(theme: ThemePreset) {
   document.documentElement.dataset.theme = theme
+  // Keep the PWA/Android status-bar color (meta theme-color) matching
+  // whichever of the 8 presets is active, not just the manifest default.
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-bg').trim()
+  if (bg) {
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg)
+  }
 }
 
 function applyPreviewProfiles(profiles: Record<PreviewProfileKey, PreviewStyleProfile>) {
