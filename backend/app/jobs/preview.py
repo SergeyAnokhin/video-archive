@@ -29,7 +29,6 @@ from __future__ import annotations
 import tempfile
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,11 +102,18 @@ def _mark_folder_previewed(engine, directory_id: str) -> None:
         )
 
 
-def _try_store_similarity_signature(engine, job_id: str, file_id: str, video_path) -> None:
+def _try_store_similarity_signature(engine, job_id: str, file_id: str, images: list) -> None:
     """Similarity detection is optional and secondary (Specification §13): a
-    failure here must never fail the preview job item it piggybacks on."""
+    failure here must never fail the preview job item it piggybacks on.
+
+    `images` are the collage frames `generate_file_preview()` already
+    extracted for this same file (post-V1, user request) -- hashed directly
+    via `similarity.signature_from_images()` instead of the previous
+    `compute_signature(video_path)`, which re-probed and re-extracted the
+    file with its own separate ffmpeg calls despite sampling essentially the
+    same interior timestamps a second time."""
     try:
-        signature = similarity.compute_signature(video_path)
+        signature = similarity.signature_from_images(images)
         if signature is not None:
             similarity.store_signature(engine, file_id, signature, job_id=job_id)
     except Exception:  # noqa: BLE001 - best-effort only, see docstring
@@ -142,7 +148,7 @@ def _generate_one_file(
         local_dest = video_path.with_suffix(".jpg")
         with tempfile.TemporaryDirectory(prefix="va_preview_out_") as gif_stage_dir:
             local_gif = Path(gif_stage_dir) / f"{video_path.stem}.preview.gif"
-            info = preview.generate_file_preview(
+            info, images = preview.generate_file_preview(
                 video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
                 gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
                 animated_source_mode=settings["animated_source_mode"],
@@ -155,7 +161,7 @@ def _generate_one_file(
             access.commit_new_file(local_dest, dest_rel)
             if local_gif.exists():
                 access.commit_new_file(local_gif, preview_gif_relative_path(file_row.relative_path))
-        _try_store_similarity_signature(engine, job_id, file_row.id, video_path)
+        _try_store_similarity_signature(engine, job_id, file_row.id, images)
     return dest_rel, info
 
 
@@ -289,76 +295,55 @@ def _run_directory_scope(
 
     candidates = [row for row in rows if not is_test_artifact(row.file_name)]
 
-    processed = 0
     skipped = 0
-    failed = 0
     total = len(candidates)
-    stop_status: str | None = None
     service.set_job_total_items(engine, job["id"], total)
 
-    # Independent files are processed `worker_count` at a time (post-V1,
-    # user request -- a directory-scope job used to run one ffmpeg process
-    # at a time regardless of available CPU cores). A batch is flushed (run
-    # concurrently, then awaited) once it reaches `worker_count`, or at the
-    # end of the loop for a trailing partial batch; the cooperative
-    # cancel/pause check runs between batches, same checkpoint granularity
-    # idea as the old between-files check, just coarser by up to
-    # `worker_count - 1` in-flight files.
-    batch: list = []
+    # Independent files are processed `worker_count` at a time, submitting
+    # the next file as soon as a slot frees up rather than waiting for a
+    # whole batch to finish (post-V1, user request -- see
+    # `service.run_sliding_window()`'s docstring for why). `next_item()` also
+    # performs the skip-processed check inline: it runs on the calling
+    # thread, so a skipped file never consumes a worker slot.
+    candidates_iter = iter(candidates)
 
-    def flush(pending: list) -> None:
-        nonlocal processed, failed
-        if not pending:
-            return
-        with ThreadPoolExecutor(max_workers=len(pending)) as executor:
-            results = list(
-                executor.map(
-                    lambda r: _process_preview_file(
-                        engine, job["id"], access, r, layout, aspect_ratio, settings
-                    ),
-                    pending,
+    def next_item():
+        nonlocal skipped
+        for row in candidates_iter:
+            # Checks the collage file itself, not just the DB flag, in both
+            # directions: a missing on-source file makes regeneration
+            # self-healing instead of permanently skipping a file whose
+            # preview is actually gone (it can be deleted directly on the
+            # source, or a later-restored metadata snapshot may predate it),
+            # while a present on-source file that the DB doesn't know about
+            # yet (e.g. an interrupted prior run, or files copied in
+            # alongside their already generated previews) is adopted by
+            # backfilling the DB flag instead of paying to regenerate an
+            # asset that already exists (user report).
+            collage_rel = sibling_relative_path(row.relative_path, f"{Path(row.file_name).stem}.jpg")
+            if skip_processed and access.exists(collage_rel):
+                if not row.has_preview_asset:
+                    _mark_file_previewed(engine, row.id, None)
+                item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
+                service.skip_job_item(engine, item_id, "Already has a preview; skipped.")
+                service.log_event(
+                    engine, job["id"], row.id, "debug", "job_item_skipped",
+                    f"Skipped {row.relative_path} (already previewed).",
                 )
-            )
-        for ok in results:
-            if ok:
-                processed += 1
-            else:
-                failed += 1
+                skipped += 1
+                continue
+            return row
+        return None
 
-    for row in candidates:
-        stop = service.check_stop_requested(job["id"])
-        if stop:
-            stop_status = "cancelled" if stop == "cancel" else "paused"
-            break
-
-        # Checks the collage file itself, not just the DB flag, in both
-        # directions: a missing on-source file makes regeneration
-        # self-healing instead of permanently skipping a file whose preview
-        # is actually gone (it can be deleted directly on the source, or a
-        # later-restored metadata snapshot may predate it), while a present
-        # on-source file that the DB doesn't know about yet (e.g. an
-        # interrupted prior run, or files copied in alongside their already
-        # generated previews) is adopted by backfilling the DB flag instead
-        # of paying to regenerate an asset that already exists (user report).
-        collage_rel = sibling_relative_path(row.relative_path, f"{Path(row.file_name).stem}.jpg")
-        if skip_processed and access.exists(collage_rel):
-            if not row.has_preview_asset:
-                _mark_file_previewed(engine, row.id, None)
-            item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
-            service.skip_job_item(engine, item_id, "Already has a preview; skipped.")
-            service.log_event(
-                engine, job["id"], row.id, "debug", "job_item_skipped",
-                f"Skipped {row.relative_path} (already previewed).",
-            )
-            skipped += 1
-            continue
-
-        batch.append(row)
-        if len(batch) >= worker_count:
-            flush(batch)
-            batch = []
-
-    flush(batch)
+    results, stop = service.run_sliding_window(
+        job["id"],
+        worker_count,
+        next_item,
+        lambda row: _process_preview_file(engine, job["id"], access, row, layout, aspect_ratio, settings),
+    )
+    processed = sum(1 for ok in results if ok)
+    failed = sum(1 for ok in results if not ok)
+    stop_status = "cancelled" if stop == "cancel" else "paused" if stop == "pause" else None
 
     folder_count = 0
     if stop_status is None:
@@ -407,70 +392,93 @@ def _generate_folder_previews(
     animated_source_mode = settings["animated_source_mode"]
     animated_segment_seconds = settings["animated_segment_seconds"]
     animated_transition = settings["animated_transition"]
+    gif_max_width = settings["gif_max_width"]
     updated = 0
 
-    for directory in directories:
-        stop = service.check_stop_requested(job["id"])
-        if stop:
-            return updated, ("cancelled" if stop == "cancel" else "paused")
+    # A video nested several levels deep is a candidate for every ancestor
+    # directory's own folder-preview.gif, so materialized local copies and
+    # extracted segments are cached across the whole sweep (post-V1, user
+    # request) instead of being re-downloaded (SMB: a full network transfer
+    # per ancestor level) and re-decoded from scratch at every level. Cached
+    # frames are shrunk to the GIF's own target width before caching
+    # (`preview.shrink_frame()`) so the in-memory cache stays roughly
+    # GIF-sized per frame instead of holding full source-resolution frames
+    # for the whole sweep's duration. `job_stack` -- not a per-directory one
+    # -- keeps materialized local copies alive (SMB: on local disk) for the
+    # whole sweep too, the deliberate memory/disk-for-time trade-off here.
+    with ExitStack() as job_stack:
+        local_paths: dict[str, Path] = {}
+        segments_cache: dict[tuple[str, int], list] = {}
 
-        with engine.connect() as conn:
-            if directory.relative_path:
-                video_rows = conn.execute(
-                    text(
-                        "SELECT relative_path, file_name FROM files "
-                        "WHERE source_id = :sid AND is_video_supported = 1 AND relative_path LIKE :prefix "
-                        "ORDER BY relative_path"
-                    ),
-                    {"sid": source_id, "prefix": f"{directory.relative_path}/%"},
-                ).all()
-            else:
-                video_rows = conn.execute(
-                    text(
-                        "SELECT relative_path, file_name FROM files "
-                        "WHERE source_id = :sid AND is_video_supported = 1 ORDER BY relative_path"
-                    ),
-                    {"sid": source_id},
-                ).all()
+        def get_local_path(rel: str) -> Path:
+            if rel not in local_paths:
+                local_paths[rel] = job_stack.enter_context(access.local_copy(rel))
+            return local_paths[rel]
 
-        candidate_rels = [
-            row.relative_path for row in video_rows if not is_test_artifact(row.file_name)
-        ]
-        if not candidate_rels:
-            continue
+        def get_segments(rel: str, count: int) -> list:
+            key = (rel, count)
+            if key not in segments_cache:
+                raw_segments = preview.pick_representative_segments(
+                    get_local_path(rel), count, mode=animated_source_mode,
+                    segment_seconds=animated_segment_seconds,
+                )
+                segments_cache[key] = [
+                    [preview.shrink_frame(frame, gif_max_width) for frame in segment]
+                    for segment in raw_segments
+                ]
+            return segments_cache[key]
 
-        # Frame plan is computed on paths relative to *this* directory (not
-        # the source root) so `diverse_video_frame_plan()` groups by the
-        # directory's own immediate subfolders rather than collapsing every
-        # candidate into one "group" sharing the directory's own ancestry.
-        prefix = f"{directory.relative_path}/" if directory.relative_path else ""
-        local_rels = [rel[len(prefix):] for rel in candidate_rels]
-        plan = [f"{prefix}{rel}" for rel in preview.diverse_video_frame_plan(local_rels, frame_count)]
-        if not plan:
-            continue
+        for directory in directories:
+            stop = service.check_stop_requested(job["id"])
+            if stop:
+                return updated, ("cancelled" if stop == "cancel" else "paused")
 
-        # Only materialize the videos actually used by the GIF (Specification
-        # §9.1 "representative frames", default 4) — matters for SMB sources,
-        # where materializing means a network download per video.
-        path_counts = Counter(plan)
-        dest_name = "folder-preview.gif"
-        dir_label = directory.relative_path or "(root)"
+            with engine.connect() as conn:
+                if directory.relative_path:
+                    video_rows = conn.execute(
+                        text(
+                            "SELECT relative_path, file_name FROM files "
+                            "WHERE source_id = :sid AND is_video_supported = 1 AND relative_path LIKE :prefix "
+                            "ORDER BY relative_path"
+                        ),
+                        {"sid": source_id, "prefix": f"{directory.relative_path}/%"},
+                    ).all()
+                else:
+                    video_rows = conn.execute(
+                        text(
+                            "SELECT relative_path, file_name FROM files "
+                            "WHERE source_id = :sid AND is_video_supported = 1 ORDER BY relative_path"
+                        ),
+                        {"sid": source_id},
+                    ).all()
 
-        service.log_event(
-            engine, job["id"], None, "info", "job_item_progress",
-            f"Building folder preview for {dir_label}: {len(plan)} segment(s) from {len(path_counts)} video(s)",
-        )
-        try:
-            with ExitStack() as stack:
+            candidate_rels = [
+                row.relative_path for row in video_rows if not is_test_artifact(row.file_name)
+            ]
+            if not candidate_rels:
+                continue
+
+            # Frame plan is computed on paths relative to *this* directory (not
+            # the source root) so `diverse_video_frame_plan()` groups by the
+            # directory's own immediate subfolders rather than collapsing every
+            # candidate into one "group" sharing the directory's own ancestry.
+            prefix = f"{directory.relative_path}/" if directory.relative_path else ""
+            local_rels = [rel[len(prefix):] for rel in candidate_rels]
+            plan = [f"{prefix}{rel}" for rel in preview.diverse_video_frame_plan(local_rels, frame_count)]
+            if not plan:
+                continue
+
+            path_counts = Counter(plan)
+            dest_name = "folder-preview.gif"
+            dir_label = directory.relative_path or "(root)"
+
+            service.log_event(
+                engine, job["id"], None, "info", "job_item_progress",
+                f"Building folder preview for {dir_label}: {len(plan)} segment(s) from {len(path_counts)} video(s)",
+            )
+            try:
                 t0 = time.monotonic()
-                local_paths = {rel: stack.enter_context(access.local_copy(rel)) for rel in path_counts}
-                segments_by_rel = {
-                    rel: preview.pick_representative_segments(
-                        local_paths[rel], count, mode=animated_source_mode,
-                        segment_seconds=animated_segment_seconds,
-                    )
-                    for rel, count in path_counts.items()
-                }
+                segments_by_rel = {rel: get_segments(rel, count) for rel, count in path_counts.items()}
                 cursors: dict[str, int] = {rel: 0 for rel in path_counts}
                 images = []
                 segment_sizes = []
@@ -487,31 +495,31 @@ def _generate_folder_previews(
                 )
 
                 t0 = time.monotonic()
-                stage_dir = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="va_preview_out_")))
-                local_dest = stage_dir / dest_name
-                preview.render_gif(
-                    images, local_dest, aspect_ratio,
-                    max_width=settings["gif_max_width"], colors=settings["gif_colors"],
-                    segment_seconds=animated_segment_seconds, transition=animated_transition,
-                    segment_sizes=segment_sizes,
-                )
-                if not local_dest.exists():
-                    raise preview.PreviewError("Could not extract any frames for the folder preview.")
-                access.commit_new_file(local_dest, folder_gif_relative_path(directory.relative_path))
+                with tempfile.TemporaryDirectory(prefix="va_preview_out_") as gif_stage_dir:
+                    local_dest = Path(gif_stage_dir) / dest_name
+                    preview.render_gif(
+                        images, local_dest, aspect_ratio,
+                        max_width=gif_max_width, colors=settings["gif_colors"],
+                        segment_seconds=animated_segment_seconds, transition=animated_transition,
+                        segment_sizes=segment_sizes,
+                    )
+                    if not local_dest.exists():
+                        raise preview.PreviewError("Could not extract any frames for the folder preview.")
+                    access.commit_new_file(local_dest, folder_gif_relative_path(directory.relative_path))
+                    service.log_event(
+                        engine, job["id"], None, "info", "job_item_progress",
+                        f"Rendered folder preview GIF for {dir_label} in {time.monotonic() - t0:.2f}s",
+                    )
+                _mark_folder_previewed(engine, directory.id)
                 service.log_event(
-                    engine, job["id"], None, "info", "job_item_progress",
-                    f"Rendered folder preview GIF for {dir_label} in {time.monotonic() - t0:.2f}s",
+                    engine, job["id"], None, "info", "job_item_completed",
+                    f"Folder preview generated for {directory.relative_path or '(root)'}",
                 )
-            _mark_folder_previewed(engine, directory.id)
-            service.log_event(
-                engine, job["id"], None, "info", "job_item_completed",
-                f"Folder preview generated for {directory.relative_path or '(root)'}",
-            )
-            updated += 1
-        except Exception as exc:  # noqa: BLE001 - one folder's failure must not abort the pass
-            service.log_event(
-                engine, job["id"], None, "error", "job_item_failed",
-                f"Failed folder preview for {directory.relative_path or '(root)'}: {exc}",
-            )
+                updated += 1
+            except Exception as exc:  # noqa: BLE001 - one folder's failure must not abort the pass
+                service.log_event(
+                    engine, job["id"], None, "error", "job_item_failed",
+                    f"Failed folder preview for {directory.relative_path or '(root)'}: {exc}",
+                )
 
     return updated, None

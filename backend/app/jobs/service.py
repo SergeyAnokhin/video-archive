@@ -11,6 +11,8 @@ import json
 import logging
 import threading
 import uuid
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import bindparam, text
@@ -173,6 +175,80 @@ def check_stop_requested(job_id: str) -> str | None:
     if is_pause_requested(job_id):
         return "pause"
     return None
+
+
+# --- sliding-window concurrent item processing ------------------------------
+
+
+def run_sliding_window(
+    job_id: str,
+    worker_count: int,
+    next_item: Callable[[], object | None],
+    process_one: Callable[[object], object],
+) -> tuple[list, str | None]:
+    """Run `process_one(item)` for a stream of items on a thread pool capped
+    at `worker_count` concurrent in-flight tasks, submitting the next item as
+    soon as a slot frees up (post-V1, user request) instead of the previous
+    "collect a batch of `worker_count`, run it, wait for all of it to finish,
+    collect the next batch" approach used by `app/jobs/preview.py` and
+    `app/jobs/convert.py`'s directory-scope loops -- that left up to
+    `worker_count - 1` threads idle at the tail of every batch on a directory
+    with a mix of short and long files.
+
+    `next_item()` is called from the calling thread (never from a worker)
+    each time a submission slot is free, and returns the next item to submit
+    or `None` when there is nothing left to submit right now (permanently
+    ending the run -- there is no "try again later"). Since it always runs
+    synchronously between submissions rather than inside a worker thread, a
+    caller can fold "skip already-processed items" bookkeeping into it (log
+    the skip, then continue its own internal loop to the next candidate)
+    without consuming a worker slot for skipped items.
+
+    Cooperative cancel/pause (`check_stop_requested`) is checked before every
+    submission -- finer-grained than the old between-batches check, though
+    coarser than per-completion when several slots free up in a burst.
+    Items already in flight when a stop is requested are always allowed to
+    finish rather than being interrupted.
+
+    Returns `(results, stop_status)`: `results` holds every `process_one`
+    return value for items that were actually submitted, in completion order
+    (not submission order -- callers here only ever aggregate counts/bytes
+    from it, order doesn't matter); `stop_status` is `"cancel"`/`"pause"`/
+    `None`.
+    """
+    results: list = []
+    stop_status: str | None = None
+
+    with ThreadPoolExecutor(max_workers=max(1, worker_count)) as executor:
+        in_flight: set = set()
+
+        def try_submit() -> bool:
+            nonlocal stop_status
+            if stop_status is not None:
+                return False
+            stop = check_stop_requested(job_id)
+            if stop:
+                stop_status = stop
+                return False
+            item = next_item()
+            if item is None:
+                return False
+            in_flight.add(executor.submit(process_one, item))
+            return True
+
+        for _ in range(max(1, worker_count)):
+            if not try_submit():
+                break
+
+        while in_flight:
+            done, in_flight = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                results.append(future.result())
+            for _ in range(len(done)):
+                if not try_submit():
+                    break
+
+    return results, stop_status
 
 
 # --- row <-> dict mapping ----------------------------------------------------

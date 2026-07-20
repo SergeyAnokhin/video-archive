@@ -151,18 +151,44 @@ def build_ffmpeg_command(
     max_dimension: int | None = None,
     extra_encoder_args: list[str] | None = None,
     hardware_accel: str = "off",
+    decode_hw: bool = True,
 ) -> list[str]:
+    """`decode_hw=True` (the default, post-V1, user request) hardware-decodes
+    the source whenever available, same automatic-no-setting-needed
+    reasoning `app/preview.py`'s frame extraction already uses: unlike
+    `hardware_accel` (the ENCODER, gated behind a per-profile setting
+    because of a real quality/size trade-off), decode output is
+    bit-identical to software decode, so there's nothing to trade off.
+    `decode_hw=False` is for `app/jobs/convert.py::_encode_and_validate`'s
+    software-encoder retry after a hardware encode failure -- ruling out
+    hardware decode as a variable too on that second attempt."""
+    # Local import: `app.hardware_decode` imports `ffmpeg_path` from this
+    # module, so a module-level import here would be circular.
+    from app import hardware_decode as hw_decode
+
     encoder = resolve_encoder(video_codec, hardware_accel)
+    decode_backend = hw_decode.decode_backend() if decode_hw else None
 
-    args = [ffmpeg_path() or "ffmpeg", "-y", "-i", str(input_path), "-c:v", encoder, "-crf", str(crf)]
+    args = [ffmpeg_path() or "ffmpeg", "-y", *hw_decode.hwaccel_input_args(decode_backend)]
+    args += ["-i", str(input_path), "-c:v", encoder, "-crf", str(crf)]
 
+    filters = []
+    if decode_backend:
+        # Same "Impossible to convert between the formats" failure
+        # `app/preview.py`'s frame extraction hit for mjpeg output applies
+        # here too: a hw-decoded frame comes back in a GPU-specific surface
+        # format that no downstream filter or software encoder can consume
+        # directly without this download step first (verified there against
+        # a real file: identical pixel output to software decode).
+        filters.append("hwdownload,format=nv12")
     if max_dimension:
         # Shrink only the larger side, preserve aspect ratio, keep both
         # dimensions even (required by libx265/libx264 4:2:0 encoding).
-        args += [
-            "-vf",
-            f"scale='if(gt(iw,ih),min(iw,{max_dimension}),-2)':'if(gt(iw,ih),-2,min(ih,{max_dimension}))'",
-        ]
+        filters.append(
+            f"scale='if(gt(iw,ih),min(iw,{max_dimension}),-2)':'if(gt(iw,ih),-2,min(ih,{max_dimension}))'"
+        )
+    if filters:
+        args += ["-vf", ",".join(filters)]
 
     if drop_audio:
         args.append("-an")

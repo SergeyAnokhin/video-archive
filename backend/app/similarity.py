@@ -47,6 +47,22 @@ def _average_hash(image_bgr) -> str:
     return f"{int(bits, 2):0{HASH_SIZE * HASH_SIZE // 4}x}"
 
 
+def signature_from_images(images: list) -> dict | None:
+    """aHash signature computed directly from already-decoded BGR frames
+    (post-V1, user request): lets a caller that already extracted interior
+    frames for another purpose -- the preview job's own collage frames are
+    sampled from the same interior-timestamp strategy this module would
+    otherwise re-extract from scratch -- skip a redundant ffprobe + full
+    ffmpeg re-decode of the same file. `find_similar()`'s nearest-match
+    distance comparison tolerates a different frame count/timestamps than a
+    signature computed by `compute_signature()`, so reusing a preview's
+    tile count here instead of `SAMPLE_COUNT` is safe."""
+    hashes = [_average_hash(img) for img in images if img is not None]
+    if not hashes:
+        return None
+    return {"sample_count": len(hashes), "signature_type": SIGNATURE_TYPE, "hashes": hashes}
+
+
 def compute_signature(video_path: Path, sample_count: int = SAMPLE_COUNT) -> dict | None:
     """Returns `None` when the video can't be probed/sampled at all -- callers
     treat that as "no signature available" rather than an error."""
@@ -58,10 +74,7 @@ def compute_signature(video_path: Path, sample_count: int = SAMPLE_COUNT) -> dic
     if not timestamps:
         return None
     images = fill_missing_frames([extract_frame_image(video_path, ts) for ts in timestamps])
-    hashes = [_average_hash(img) for img in images if img is not None]
-    if not hashes:
-        return None
-    return {"sample_count": len(hashes), "signature_type": SIGNATURE_TYPE, "hashes": hashes}
+    return signature_from_images(images)
 
 
 def compute_image_signature(image_path: Path) -> dict | None:

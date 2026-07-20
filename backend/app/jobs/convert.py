@@ -33,7 +33,15 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles, conversion_settings, hardware_accel, performance_settings, tags
+from app import (
+    conversion,
+    conversion_profiles,
+    conversion_settings,
+    hardware_accel,
+    hardware_decode,
+    performance_settings,
+    tags,
+)
 from app.jobs import service
 from app.media import is_test_artifact, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -160,6 +168,16 @@ def _encode_and_validate(
             progress(f"{requested_hw} hardware encoding unavailable on this host; using software encoder.")
             effective_hw = "off"
 
+    # Whether the first attempt will also hardware-decode the source, on top
+    # of (or independent of) `effective_hw`'s encoder decision -- decode is
+    # attempted automatically whenever available (`conversion.build_ffmpeg_
+    # command()`'s `decode_hw=True` default), so a codec/container hw decode
+    # can't handle (real archives have plenty of non-h264 sources; the probe
+    # that determined `check_hardware_decode()` only verified a synthetic
+    # h264 clip) is just as much a reason for the runtime retry below as an
+    # encoder failure is.
+    decode_backend_used = hardware_decode.decode_backend() is not None
+
     args = conversion.build_ffmpeg_command(
         source_path,
         temp_path,
@@ -201,15 +219,17 @@ def _encode_and_validate(
     ok, error = conversion.run_ffmpeg(
         args, timeout=timeout, duration=duration, on_progress=on_progress, should_stop=should_stop
     )
-    # Runtime fallback: a hardware encode that fails at ffmpeg-run time (as
-    # opposed to being pre-emptively ruled out above) gets exactly one retry
-    # on the software encoder -- the original error is always logged in full
-    # first, so a genuine non-hardware ffmpeg failure is never hidden, only
-    # given a second, unambiguous chance to succeed or fail on its own terms.
-    if not ok and effective_hw != "off":
+    # Runtime fallback: a hardware encode and/or hardware decode that fails
+    # at ffmpeg-run time (as opposed to being pre-emptively ruled out above)
+    # gets exactly one retry fully in software -- the original error is
+    # always logged in full first, so a genuine non-hardware ffmpeg failure
+    # is never hidden, only given a second, unambiguous chance to succeed or
+    # fail on its own terms.
+    if not ok and (effective_hw != "off" or decode_backend_used):
+        reason = f"{effective_hw} hardware encode failed ({error})" if effective_hw != "off" else f"hardware decode failed ({error})"
         service.log_event(
             engine, job_id, file_id, "warning", "job_item_progress",
-            f"{effective_hw} hardware encode failed ({error}); retrying this file with the software encoder.",
+            f"{reason}; retrying this file with the software encoder.",
         )
         if temp_path.exists():
             temp_path.unlink()
@@ -222,6 +242,7 @@ def _encode_and_validate(
             max_dimension=max_dim,
             extra_encoder_args=params["extra_encoder_args"],
             hardware_accel="off",
+            decode_hw=False,
         )
         progress(f"ffmpeg command (software fallback): {shlex.join(args)}")
         ok, error = conversion.run_ffmpeg(
@@ -682,77 +703,65 @@ def _run_directory_scope(
 
     candidates = [row for row in rows if not is_test_artifact(row.file_name)]
 
-    processed = 0
     skipped = 0
-    failed = 0
     total_source_bytes = 0
     total_output_bytes = 0
     total = len(candidates)
     service.set_job_total_items(engine, job["id"], total)
 
-    # Independent files are converted `worker_count` at a time (post-V1,
-    # user request -- a single file's own ffmpeg encode already uses all
-    # available CPU cores on its own, so the previously-sequential
-    # one-file-at-a-time loop left most cores idle for the wall-clock
-    # duration of a directory job). A batch is flushed (run concurrently,
-    # then awaited) once it reaches `worker_count`, or at the end of the
-    # loop for a trailing partial batch; the cooperative cancel/pause check
-    # runs between batches, same checkpoint idea as the old between-files
-    # check, just coarser by up to `worker_count - 1` in-flight files.
-    batch: list = []
+    # Independent files are converted `worker_count` at a time, submitting
+    # the next file as soon as a slot frees up rather than waiting for a
+    # whole batch to finish first (post-V1, user request -- see
+    # `service.run_sliding_window()`'s docstring for why). `next_item()`
+    # also performs the skip-processed check inline: it runs on the calling
+    # thread, so a skipped file never consumes a worker slot.
+    candidates_iter = iter(candidates)
 
-    def flush(pending: list) -> None:
-        nonlocal processed, skipped, failed, total_source_bytes, total_output_bytes
-        if not pending:
-            return
-        with ThreadPoolExecutor(max_workers=len(pending)) as executor:
-            results = list(
-                executor.map(
-                    lambda r: _process_convert_file(
-                        engine, job["id"], access, r, profile, mode, profile_id, min_size_reduction_percent
-                    ),
-                    pending,
+    def next_item():
+        nonlocal skipped
+        for row in candidates_iter:
+            if skip_processed and row.converted_at:
+                item_id = service.create_job_item(
+                    engine, job["id"], file_id=row.id, item_key=row.relative_path, step_name="convert_file"
                 )
-            )
-        for status, source_size, output_size in results:
-            if status == "completed":
-                processed += 1
-                if source_size is not None and output_size is not None:
-                    total_source_bytes += source_size
-                    total_output_bytes += output_size
-            elif status == "skipped":
+                service.skip_job_item(engine, item_id, "Already converted; skipped.")
+                service.log_event(
+                    engine, job["id"], row.id, "debug", "job_item_skipped",
+                    f"Skipped {row.relative_path} (already converted).",
+                )
                 skipped += 1
-            else:
-                failed += 1
+                continue
+            return row
+        return None
 
-    for row in candidates:
-        stop = service.check_stop_requested(job["id"])
-        if stop:
-            flush(batch)
-            verb = "Cancelled" if stop == "cancel" else "Paused"
-            status = "cancelled" if stop == "cancel" else "paused"
-            message = f"{verb} after {processed} of {total} file(s)."
-            service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
-            return status, message
+    results, stop = service.run_sliding_window(
+        job["id"],
+        worker_count,
+        next_item,
+        lambda row: _process_convert_file(
+            engine, job["id"], access, row, profile, mode, profile_id, min_size_reduction_percent
+        ),
+    )
 
-        if skip_processed and row.converted_at:
-            item_id = service.create_job_item(
-                engine, job["id"], file_id=row.id, item_key=row.relative_path, step_name="convert_file"
-            )
-            service.skip_job_item(engine, item_id, "Already converted; skipped.")
-            service.log_event(
-                engine, job["id"], row.id, "debug", "job_item_skipped",
-                f"Skipped {row.relative_path} (already converted).",
-            )
+    processed = 0
+    failed = 0
+    for status, source_size, output_size in results:
+        if status == "completed":
+            processed += 1
+            if source_size is not None and output_size is not None:
+                total_source_bytes += source_size
+                total_output_bytes += output_size
+        elif status == "skipped":
             skipped += 1
-            continue
+        else:
+            failed += 1
 
-        batch.append(row)
-        if len(batch) >= worker_count:
-            flush(batch)
-            batch = []
-
-    flush(batch)
+    if stop:
+        verb = "Cancelled" if stop == "cancel" else "Paused"
+        status = "cancelled" if stop == "cancel" else "paused"
+        message = f"{verb} after {processed} of {total} file(s)."
+        service.log_event(engine, job["id"], None, "info", f"job_{stop}_honored", message)
+        return status, message
 
     summary = f"Converted {processed} of {total} file(s)"
     if skipped:

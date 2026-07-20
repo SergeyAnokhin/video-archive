@@ -27,8 +27,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from app import conversion, detection
-from app.hardware_decode import check_hardware_decode
+from app import conversion, detection, hardware_decode
 from app.preview_layouts import compute_layout_tiles
 from app.sampling import sample_interior_timestamps
 
@@ -68,28 +67,17 @@ class PreviewError(Exception):
 
 
 def _decode_hwaccel_backend() -> str | None:
-    """QSV preferred over VAAPI when (hypothetically) both probed available,
-    same order `app/hardware_accel.py` uses for encode. Unlike encode, decode
-    output is bit-identical to software decode (see `app/hardware_decode.py`),
-    so callers use this automatically -- no per-profile opt-in."""
-    status = check_hardware_decode()
-    if status.qsv:
-        return "qsv"
-    if status.vaapi:
-        return "vaapi"
-    return None
+    """Unlike encode, decode output is bit-identical to software decode (see
+    `app/hardware_decode.py`), so callers use this automatically -- no
+    per-profile opt-in. Thin wrapper kept here (post-V1, user request:
+    `app/conversion.py`'s encode input now uses the same hw-decode backend
+    selection, see `hardware_decode.decode_backend()`) so existing callers
+    and tests in this module don't need to change."""
+    return hardware_decode.decode_backend()
 
 
 def _hwaccel_input_args(backend: str | None) -> list[str]:
-    """`-hwaccel` flags go *before* `-i` (unlike encode's `-c:v`, which goes
-    after) -- they configure how the input is decoded, not how the output is
-    encoded."""
-    if backend is None:
-        return []
-    args = ["-hwaccel", backend]
-    if backend == "vaapi":
-        args += ["-hwaccel_device", "/dev/dri/renderD128"]
-    return args
+    return hardware_decode.hwaccel_input_args(backend)
 
 
 def _hwaccel_download_filter(backend: str | None) -> str | None:
@@ -329,6 +317,24 @@ def select_frames_for_tiles(
 # --- collage rendering ------------------------------------------------------
 
 
+def shrink_frame(image_bgr, max_width: int):
+    """Downscale a decoded BGR frame to at most `max_width` wide, preserving
+    aspect ratio (post-V1, user request): used when a frame is going to be
+    cached in memory across several downstream uses (folder-preview frame
+    reuse across ancestor directories, `app/jobs/preview.py`) instead of
+    consumed once and discarded, so the cache holds GIF-sized frames instead
+    of full source-resolution ones. A no-op (returns the same array) when
+    the frame is already at or below `max_width` -- never upscales."""
+    if image_bgr is None:
+        return None
+    height, width = image_bgr.shape[:2]
+    if width <= max_width:
+        return image_bgr
+    scale = max_width / width
+    new_size = (max_width, max(1, round(height * scale)))
+    return cv2.resize(image_bgr, new_size, interpolation=cv2.INTER_AREA)
+
+
 def _cover_resize(image: Image.Image, target_w: int, target_h: int) -> Image.Image:
     """Resize+center-crop to fill the target box without distortion (like
     CSS `object-fit: cover`)."""
@@ -494,10 +500,16 @@ def generate_file_preview(
     animated_transition: str = "cut",
     max_workers: int = 1,
     on_stage: Callable[[str], None] | None = None,
-) -> dict:
-    """Returns the source's `conversion.probe_media()` dict (duration,
-    width/height, codec, container, bitrate), so callers can persist the
-    technical-data cache columns on `files` without a second probe.
+) -> tuple[dict, list]:
+    """Returns `(info, images)`: `info` is the source's
+    `conversion.probe_media()` dict (duration, width/height, codec,
+    container, bitrate), so callers can persist the technical-data cache
+    columns on `files` without a second probe; `images` is the list of
+    already-decoded interior BGR frames sampled for the collage (post-V1,
+    user request), so a caller that also needs a similarity signature for
+    this file (`app/jobs/preview.py`) can hash them directly instead of
+    re-probing and re-extracting the same file from scratch via
+    `app/similarity.py::compute_signature()`.
 
     `max_workers` (post-V1, user request, default 1 = sequential, unchanged
     prior behavior) spreads this one file's independent per-timestamp ffmpeg
@@ -585,7 +597,7 @@ def generate_file_preview(
     )
     stage(f"Rendered collage image in {time.monotonic() - t0:.2f}s")
 
-    return info
+    return info, images
 
 
 # --- folder preview (animated GIF, diverse across videos/subfolders) ------

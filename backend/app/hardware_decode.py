@@ -113,3 +113,31 @@ def reset_cache() -> None:
     global _cached
     with _lock:
         _cached = None
+
+
+def decode_backend() -> str | None:
+    """QSV preferred over VAAPI when (hypothetically) both probed available,
+    same order `app/hardware_accel.py` uses for encode (post-V1, user
+    request: shared by `app/preview.py`'s frame extraction and
+    `app/conversion.py`'s encode input, both of which use hardware decode
+    automatically whenever available -- unlike encode, decode output is
+    bit-identical to software decode, so there's no quality trade-off gating
+    it behind a setting)."""
+    status = check_hardware_decode()
+    if status.qsv:
+        return "qsv"
+    if status.vaapi:
+        return "vaapi"
+    return None
+
+
+def hwaccel_input_args(backend: str | None) -> list[str]:
+    """`-hwaccel` flags go *before* `-i` (unlike an encoder's `-c:v`, which
+    goes after) -- they configure how the input is decoded, not how the
+    output is encoded."""
+    if backend is None:
+        return []
+    args = ["-hwaccel", backend]
+    if backend == "vaapi":
+        args += ["-hwaccel_device", "/dev/dri/renderD128"]
+    return args
