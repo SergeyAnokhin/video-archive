@@ -80,12 +80,12 @@
 @keyframes top-bar-jobs-glow {
   0%,
   100% {
-    opacity: 0.75;
+    opacity: 0.4;
     filter: drop-shadow(0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent));
   }
   50% {
     opacity: 1;
-    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 70%, transparent));
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--color-accent) 85%, transparent));
   }
 }
 
