@@ -13,6 +13,14 @@ ffmpeg and PIL need a real local file to operate on, not a Python file
 object, so `local_copy()` downloads the source video to a throwaway temp
 directory and `commit_new_file()` uploads a locally produced file back —
 conversion/preview/tagging code is otherwise unaware it's talking to SMB.
+
+`local_copy()` has an opt-in fast path (`direct_access_enabled`, per-source
+setting, Windows-only): when `app.sources.windows_unc.available()` says the
+OS itself can already reach this host directly, it yields the real UNC path
+instead of downloading -- see `windows_unc.py` for why this is a separate
+session from the one `smbclient`/`register_session()` manages here, and why
+it's a best-effort fast path with automatic fallback rather than a hard
+requirement.
 """
 
 from __future__ import annotations
@@ -29,7 +37,7 @@ import smbclient
 import smbclient.path
 from smbprotocol.exceptions import SMBException
 
-from app.sources import smb_stats
+from app.sources import smb_stats, windows_unc
 from app.sources.entries import Entry, EntryStat
 
 _RETRYABLE = (SMBException, ConnectionError, TimeoutError, OSError)
@@ -61,6 +69,18 @@ def _copy_and_count(src, dst) -> None:
         smb_stats.add_bytes_transferred(len(chunk))
 
 
+def _unc_readable(unc_path: Path) -> bool:
+    """Cheap open+close via the OS's own filesystem layer -- proves the OS
+    can really read this UNC path right now, separate from (and a stronger
+    signal than) `windows_unc.available()`'s own `net use` check. A plain
+    function rather than inlined so tests can monkeypatch it directly."""
+    try:
+        with open(unc_path, "rb"):
+            return True
+    except OSError:
+        return False
+
+
 def _split_share(root_path: str) -> tuple[str, str]:
     """`root_path` stores the share name plus an optional nested subpath as
     one posix-style string, e.g. `videos` or `videos/archive/2024`
@@ -71,12 +91,21 @@ def _split_share(root_path: str) -> tuple[str, str]:
 
 
 class SMBBackend:
-    def __init__(self, host: str, port: int | None, root_path: str, username: str | None, password: str | None):
+    def __init__(
+        self,
+        host: str,
+        port: int | None,
+        root_path: str,
+        username: str | None,
+        password: str | None,
+        direct_access_enabled: bool = False,
+    ):
         self.host = host
         self.port = port or 445
         self.share, self.share_subpath = _split_share(root_path)
         self.username = username
         self.password = password
+        self.direct_access_enabled = direct_access_enabled
         # Must go through the same lock as `_with_retry()`: `smbclient`
         # caches one connection per host process-wide, so an unsynchronized
         # `register_session()` here can race a concurrent request's SMB
@@ -149,6 +178,13 @@ class SMBBackend:
 
     @contextmanager
     def local_copy(self, rel_path: str) -> Iterator[Path]:
+        if self.direct_access_enabled and windows_unc.available(self.host, self.share, self.username, self.password):
+            unc_path = Path(self._unc(rel_path))
+            if _unc_readable(unc_path):
+                yield unc_path
+                return
+            windows_unc.report_failure(self.host, self.username)
+
         tmp_dir = Path(tempfile.mkdtemp(prefix="va_smb_"))
         local_path = tmp_dir / PureWindowsPath(rel_path).name
         try:
@@ -232,6 +268,15 @@ class SMBBackend:
 
     def direct_path(self, rel_path: str) -> str:
         return self._unc(rel_path)
+
+    def direct_access_status(self) -> bool | None:
+        """`None` when the fast path isn't even enabled for this source;
+        otherwise the same cached `windows_unc.available()` probe
+        `local_copy()` itself checks, so callers (the `/source/status`
+        endpoint) see exactly what the next file read would actually use."""
+        if not self.direct_access_enabled:
+            return None
+        return windows_unc.available(self.host, self.share, self.username, self.password)
 
     def close(self) -> None:
         pass

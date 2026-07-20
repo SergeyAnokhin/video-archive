@@ -3,13 +3,16 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
 import { useSource } from '../context/SourceContext'
-import { api, rawApi } from '../api/client'
-import type { BackupSummary, SourceConfig, SourceProtocol, TestConnectionResult } from '../types/api'
+import { api, rawApi, tryApi } from '../api/client'
+import { useBackendStatus } from '../hooks/useBackendStatus'
+import type { BackupSummary, SourceConfig, SourceProtocol, SourceStatus, TestConnectionResult } from '../types/api'
 
 export function SourceSection() {
   const { t } = useTranslation()
   const { source, loading: sourceLoading, setSource } = useSource()
   const { refresh: refreshJobs } = useJobs()
+  const backendStatus = useBackendStatus()
+  const isWindows = backendStatus.phase === 'ready' ? (backendStatus.appInfo.platform?.windows ?? false) : false
   const [protocol, setProtocol] = useState<SourceProtocol>('local')
   const [name, setName] = useState('')
   const [rootPath, setRootPath] = useState('')
@@ -17,13 +20,15 @@ export function SourceSection() {
   const [port, setPort] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [directAccessEnabled, setDirectAccessEnabled] = useState(false)
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null)
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [confirmingReplace, setConfirmingReplace] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
-  const [reconnectResult, setReconnectResult] = useState<TestConnectionResult | null>(null)
+  const [reconnectResult, setReconnectResult] = useState<SourceStatus | null>(null)
+  const [status, setStatus] = useState<SourceStatus | null>(null)
   const [detectedBackups, setDetectedBackups] = useState<BackupSummary[]>([])
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
@@ -35,8 +40,28 @@ export function SourceSection() {
       setRootPath(source.root_path)
       setHost(source.host ?? '')
       setPort(source.port ? String(source.port) : '')
+      setDirectAccessEnabled(source.direct_access_enabled)
     }
   }, [source])
+
+  // Passive connection status (real-time, not just the saved
+  // `direct_access_enabled` flag) -- re-fetched whenever the active source
+  // itself changes; `handleSave`/`handleReconnect` additionally push a fresh
+  // result after they touch the connection (e.g. an in-place host/port edit
+  // keeps the same source id, so it wouldn't otherwise re-trigger this).
+  useEffect(() => {
+    let cancelled = false
+    if (source?.protocol === 'smb') {
+      void tryApi<SourceStatus>('/api/source/status').then((json) => {
+        if (!cancelled) setStatus(json)
+      })
+    } else {
+      setStatus(null)
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [source?.id, source?.protocol])
 
   function buildPayload() {
     return {
@@ -49,6 +74,7 @@ export function SourceSection() {
             port: port ? Number(port) : undefined,
             username: username || undefined,
             password: password || undefined,
+            direct_access_enabled: directAccessEnabled,
           }
         : {}),
     }
@@ -69,7 +95,7 @@ export function SourceSection() {
   }
 
   async function handleSave() {
-    if (source && !confirmingReplace) {
+    if (source && !confirmingReplace && !isConnectionOnlyEdit) {
       setConfirmingReplace(true)
       return
     }
@@ -88,6 +114,9 @@ export function SourceSection() {
       setDetectedBackups(json.detected_backups)
       setRestoreMessage(null)
       await refreshJobs()
+      if (json.protocol === 'smb') {
+        setStatus(await tryApi<SourceStatus>('/api/source/status'))
+      }
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -118,10 +147,16 @@ export function SourceSection() {
     setReconnectResult(null)
     try {
       const res = await rawApi('/api/source/reconnect', { method: 'POST' })
-      const json: TestConnectionResult = await res.json()
+      const json: SourceStatus = await res.json()
       setReconnectResult(json)
+      setStatus(json)
     } catch (err) {
-      setReconnectResult({ ok: false, message: err instanceof Error ? err.message : String(err) })
+      setReconnectResult({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+        direct_access_enabled: false,
+        direct_access_active: null,
+      })
     } finally {
       setReconnecting(false)
     }
@@ -129,6 +164,27 @@ export function SourceSection() {
 
   const isSmb = protocol === 'smb'
   const canSubmit = isSmb ? Boolean(name && host && rootPath) : Boolean(name && rootPath)
+  // Reconnecting the active source with different connection parameters
+  // (host/port/credentials/direct access/name) rather than switching to a
+  // different one -- same underlying data (protocol + root_path unchanged),
+  // so no replace confirmation and no backup/rescan (mirrors the backend's
+  // own `is_reconnect` check in `put_source()`).
+  const isConnectionOnlyEdit =
+    source !== null &&
+    source.protocol === 'smb' &&
+    isSmb &&
+    rootPath.replace(/^[/\\]+/, '').replace(/[/\\]+$/, '') === source.root_path
+
+  let statusHint: { text: string; variant: 'error' | 'warning' | null } | null = null
+  if (source?.protocol === 'smb' && status) {
+    if (!status.ok) {
+      statusHint = { text: t('settings.sourceStatusFail', { message: status.message }), variant: 'error' }
+    } else if (status.direct_access_enabled) {
+      statusHint = status.direct_access_active
+        ? { text: t('settings.sourceStatusDirectActive'), variant: null }
+        : { text: t('settings.sourceStatusDirectFallback'), variant: 'warning' }
+    }
+  }
 
   return (
     <section className="settings-modal__section">
@@ -145,6 +201,13 @@ export function SourceSection() {
       )}
       {!sourceLoading && !source && (
         <p className="settings-modal__hint">{t('settings.noSourceYet')}</p>
+      )}
+      {statusHint && (
+        <p
+          className={`settings-modal__hint${statusHint.variant ? ` settings-modal__hint--${statusHint.variant}` : ''}`}
+        >
+          {statusHint.text}
+        </p>
       )}
 
       <label className="settings-modal__label">
@@ -224,6 +287,16 @@ export function SourceSection() {
               autoComplete="current-password"
             />
           </label>
+          {isWindows && (
+            <label className="settings-modal__field">
+              <span className="settings-modal__field-label">{t('settings.sourceDirectAccess')}</span>
+              <input
+                type="checkbox"
+                checked={directAccessEnabled}
+                onChange={(event) => setDirectAccessEnabled(event.target.checked)}
+              />
+            </label>
+          )}
         </>
       )}
 

@@ -754,6 +754,14 @@ MIGRATIONS: dict[int, list[str]] = {
     38: [
         "ALTER TABLE jobs ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0",
     ],
+    # Opt-in, Windows-only fast path for an SMB source: read files straight
+    # off a `\\host\share\...` UNC path (when the OS already has -- or can
+    # establish -- its own authenticated SMB session to that host) instead of
+    # `local_copy()`'s default full-file download to a temp dir. Off by
+    # default; existing rows default to 0/false, matching today's behavior.
+    39: [
+        "ALTER TABLE sources ADD COLUMN direct_access_enabled INTEGER NOT NULL DEFAULT 0",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

@@ -30,7 +30,7 @@ from app import (
 from app.jobs import convert, preview as preview_job, service, tag as tag_job
 from app.media import preview_gif_relative_path
 from app.scan import scan_source_access
-from app.sources import get_source_access, smb_stats
+from app.sources import get_source_access, smb_backend, smb_stats
 from app.sources.smb_backend import SMBBackend, test_connection as smb_test_connection
 
 from .conftest import make_video
@@ -121,6 +121,60 @@ def test_local_copy_downloads_and_cleans_up(fake_smb):
         assert local_path.read_bytes() == b"remote-bytes"
         captured_path = local_path
     assert not captured_path.exists()
+
+
+def test_local_copy_ignores_direct_access_when_disabled(fake_smb, monkeypatch):
+    # Regression: `direct_access_enabled` defaults to False, so today's
+    # download-based behavior must stay byte-for-byte unchanged even if the
+    # OS-level UNC path would in principle be usable.
+    fake_smb.seed("clips/movie.mp4", b"remote-bytes")
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend, "_unc_readable", lambda p: True)
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=False)
+
+    with backend.local_copy("clips/movie.mp4") as local_path:
+        # A real local temp file, not the UNC path -- proves the download
+        # path ran rather than the direct-access one.
+        assert local_path.exists()
+        assert local_path.read_bytes() == b"remote-bytes"
+
+
+def test_local_copy_uses_unc_path_when_direct_access_available(fake_smb, monkeypatch):
+    fake_smb.seed("clips/movie.mp4", b"remote-bytes")
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend, "_unc_readable", lambda p: True)
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+
+    with backend.local_copy("clips/movie.mp4") as path:
+        assert str(path) == backend._unc("clips/movie.mp4")
+
+
+def test_local_copy_falls_back_when_unc_path_not_actually_readable(fake_smb, monkeypatch):
+    # `windows_unc.available()` says yes (OS has a session to the host) but
+    # the specific path can't actually be opened right now -- must fall back
+    # to the download path instead of yielding a dead path to the caller,
+    # and must report the failure so the next check re-probes.
+    fake_smb.seed("clips/movie.mp4", b"remote-bytes")
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend, "_unc_readable", lambda p: False)
+    reported = []
+    monkeypatch.setattr(smb_backend.windows_unc, "report_failure", lambda host, user: reported.append((host, user)))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+
+    with backend.local_copy("clips/movie.mp4") as local_path:
+        assert local_path.exists()
+        assert local_path.read_bytes() == b"remote-bytes"
+    assert reported == [("testnas", "user")]
+
+
+def test_local_copy_falls_back_when_direct_access_unavailable(fake_smb, monkeypatch):
+    fake_smb.seed("clips/movie.mp4", b"remote-bytes")
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: False)
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+
+    with backend.local_copy("clips/movie.mp4") as local_path:
+        assert local_path.exists()
+        assert local_path.read_bytes() == b"remote-bytes"
 
 
 def test_read_bytes_and_open_range_add_to_smb_stats_counter(fake_smb):

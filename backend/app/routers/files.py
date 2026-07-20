@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 from math import gcd
@@ -12,7 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion, file_ops, similarity
+from app import conversion, file_ops, mp4_probe, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
 from app.media import (
@@ -34,6 +35,8 @@ from app.tags import (
     remove_file_tag,
     resolve_tag_color,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -251,7 +254,7 @@ def get_file_media_info(file_id: str):
             text(
                 """
                 SELECT f.relative_path, f.last_conversion_profile_id,
-                       f.size_bytes, f.modified_at,
+                       f.extension, f.size_bytes, f.modified_at,
                        f.width, f.height, f.video_codec, f.format_name,
                        f.bit_rate, f.duration_seconds, f.media_probed_at,
                        s.*
@@ -280,10 +283,30 @@ def get_file_media_info(file_id: str):
         }
 
     access = get_source_access(row)
-    with access.local_copy(row.relative_path) as local_path:
-        info = conversion.probe_media(local_path)
+
+    info = None
+    if row.extension in ("mp4", "mov", "m4v"):
+        # Cross-platform fast path (works for `local` and `smb` alike, no
+        # Windows/net-use dependency): reads only the container's `moov`
+        # box via seek+range reads instead of downloading/opening the whole
+        # file. `None` on any doubt -- falls straight through to the
+        # existing local_copy()+ffprobe path below, exactly as if this
+        # block weren't here.
+        info = mp4_probe.probe_media(access, row.relative_path, row.size_bytes)
+
+    if info is None:
+        # Slow fallback: local_copy() downloads the whole file (SMB) or opens
+        # it in place (local) before ffprobe can even start, so this can take
+        # seconds to minutes on a large file over a slow link. Logged before
+        # starting rather than only after finishing, so a request that's
+        # blocking the UI is visible in the console/log file while it's still
+        # in flight, not just once it's done.
+        logger.info("media-info: fast probe unavailable, falling back to local_copy()+ffprobe for %s", row.relative_path)
+        with access.local_copy(row.relative_path) as local_path:
+            info = conversion.probe_media(local_path)
     if info is None:
         time.sleep(0.4)
+        logger.info("media-info: retrying local_copy()+ffprobe for %s", row.relative_path)
         with access.local_copy(row.relative_path) as local_path:
             info = conversion.probe_media(local_path)
 

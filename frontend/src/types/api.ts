@@ -90,8 +90,13 @@ export interface SourceSummary {
   last_scan_at: string | null
 }
 
+export interface PlatformInfo {
+  windows: boolean
+}
+
 export interface AppInfoResponse {
   app_version: string
+  platform: PlatformInfo
   source: SourceSummary | null
   database: DatabaseInfo
   queue: QueueInfo
@@ -109,6 +114,7 @@ export interface SourceConfig {
   host: string | null
   port: number | null
   root_path: string
+  direct_access_enabled: boolean
   is_active: boolean
   created_at: string
   updated_at: string
@@ -119,6 +125,13 @@ export interface SourceConfig {
 export interface TestConnectionResult {
   ok: boolean
   message: string | null
+}
+
+export interface SourceStatus {
+  ok: boolean
+  message: string | null
+  direct_access_enabled: boolean
+  direct_access_active: boolean | null
 }
 
 export interface PreviewCacheStats {

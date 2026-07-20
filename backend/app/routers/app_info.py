@@ -33,6 +33,11 @@ def get_app_info(request: Request) -> dict:
 
     return {
         "app_version": request.app.state.app_version,
+        # Lets the frontend gate the SMB source's "direct access" checkbox
+        # (Windows-only: relies on the OS's own UNC/net-use session, see
+        # app.sources.windows_unc) without hardcoding platform assumptions
+        # client-side.
+        "platform": {"windows": os.name == "nt"},
         "source": _active_source_summary(),
         "database": {
             "status": "ok",

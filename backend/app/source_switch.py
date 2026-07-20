@@ -81,9 +81,17 @@ def switch_active_source(engine, new_row) -> dict:
     # frontend live per-item progress (top-bar activity indicator, Jobs
     # modal) instead of a request that blocks with no feedback until the
     # whole tree has been walked.
-    scan_job = service.create_job(
-        engine, job_type="rescan", scope_type="source", scope_ref=None, parameters={"path": ""}
-    )
+    #
+    # Skipped when `already_active`: that means `new_row` has the same
+    # (protocol, root_path) as what was already active -- e.g. a user request
+    # to reconnect the same source with new connection parameters (host,
+    # credentials, direct-access toggle) -- so the data on disk hasn't
+    # changed and there's nothing to reconcile.
+    scan_job = None
+    if not already_active:
+        scan_job = service.create_job(
+            engine, job_type="rescan", scope_type="source", scope_ref=None, parameters={"path": ""}
+        )
 
     with engine.connect() as conn:
         row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": new_row.id}).fetchone()

@@ -7,9 +7,11 @@ Video Archive is a local-first, Windows-targeted web application for browsing a 
 What the application does today (implementation details and file locations are in [docs/code-map.md](docs/code-map.md)):
 
 - **Sources** — several saved sources (`local` folders or `smb` shares) at once, switchable from Settings → Source (configure/connect) and Settings → Saved sources (list, switch, forget) without losing each one's own data.
+  - Settings → Source shows the active source's live connection status (reachable or not, and for `smb`, whether "direct access" is actually in effect right now) and doubles as its edit form: changing connection parameters (host/port/credentials/direct access/name) while the source itself stays the same reconnects in place — no backup, no rescan.
   - Switching away from a source backs it up automatically onto its own disk before wiping the local working copy; switching back auto-restores from that backup if one exists.
   - App-wide settings (tagging, preview, playback, etc.) are shared across every source and are never touched by a switch.
   - All file access (scan, convert, preview, tag, playback, backup) goes through the uniform [`backend/app/sources/`](backend/app/sources/) layer, so every feature behaves identically for both protocols.
+  - An `smb` source can opt into "direct access" (Settings → Source, Windows-only) to read files straight off their UNC path instead of downloading each one first, whenever the OS itself already has (or can establish) its own SMB session to that host — falls back automatically otherwise. Media-info lookups for `.mp4`/`.mov`/`.m4v` files also get a separate, protocol-independent fast path ([`backend/app/mp4_probe.py`](backend/app/mp4_probe.py)) that reads just the container header instead of the whole file.
 - **Library UI** — directory tree, card grid, search, and a per-file info panel.
   - Collapsible directory tree (closed by default) showing only the active source's own folders (no source-name row at the top), with a name filter and expand-all/collapse-all buttons.
   - Card grid with animated GIF thumbnails; tag/name search with prefix autocomplete in the top bar.

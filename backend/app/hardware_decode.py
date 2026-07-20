@@ -39,6 +39,7 @@ class HardwareDecodeStatus:
 
 _lock = threading.Lock()
 _cached: HardwareDecodeStatus | None = None
+_runtime_broken = False
 
 
 def _make_probe_source(ffmpeg_bin: str, out_path: Path) -> bool:
@@ -108,11 +109,30 @@ def log_status(status: HardwareDecodeStatus) -> None:
 
 
 def reset_cache() -> None:
-    """Test-only: clears the module-level cache so a test can force a fresh
-    probe (or monkeypatch `_probe_backend`/`check_hardware_decode` beforehand)."""
-    global _cached
+    """Test-only: clears the module-level cache (and the runtime-broken
+    flag below) so a test can force a fresh probe (or monkeypatch
+    `_probe_backend`/`check_hardware_decode` beforehand)."""
+    global _cached, _runtime_broken
     with _lock:
         _cached = None
+        _runtime_broken = False
+
+
+def mark_runtime_broken() -> None:
+    """Called by `app/jobs/convert.py` when a hardware-decode attempt
+    crashes the ffmpeg process outright (`conversion.is_crash_exit_code()`)
+    rather than failing cleanly -- user report: on that driver/host, a
+    crashed QSV decode session (Windows `STATUS_DLL_INIT_FAILED`,
+    0xC0000142) left the very next ffmpeg process crashing the same way even
+    with hardware decode no longer requested, i.e. the crash isn't specific
+    to that one file. Once this fires, `decode_backend()` stops offering
+    hardware decode for the rest of this process's lifetime -- cheaper and
+    safer than re-crashing (and re-triggering the same fallback dance) on
+    every subsequent file. Deliberately not reset between jobs; only
+    `reset_cache()` (test-only) or a process restart clears it."""
+    global _runtime_broken
+    with _lock:
+        _runtime_broken = True
 
 
 def decode_backend() -> str | None:
@@ -122,7 +142,11 @@ def decode_backend() -> str | None:
     `app/conversion.py`'s encode input, both of which use hardware decode
     automatically whenever available -- unlike encode, decode output is
     bit-identical to software decode, so there's no quality trade-off gating
-    it behind a setting)."""
+    it behind a setting). Returns `None` once `mark_runtime_broken()` has
+    fired, regardless of what the startup probe found."""
+    with _lock:
+        if _runtime_broken:
+            return None
     status = check_hardware_decode()
     if status.qsv:
         return "qsv"
@@ -134,10 +158,21 @@ def decode_backend() -> str | None:
 def hwaccel_input_args(backend: str | None) -> list[str]:
     """`-hwaccel` flags go *before* `-i` (unlike an encoder's `-c:v`, which
     goes after) -- they configure how the input is decoded, not how the
-    output is encoded."""
+    output is encoded.
+
+    `-hwaccel_output_format <backend>` (user report, confirmed by a manual
+    repro: their own working `-hwaccel qsv -hwaccel_output_format qsv`
+    command converted a file the app's `-hwaccel qsv` alone could not)
+    forces ffmpeg to keep the decoded frame in its hardware surface format
+    instead of auto-negotiating one -- without it, decode can pick a format
+    the downstream `hwdownload` filter (`conversion.build_ffmpeg_command()`)
+    doesn't get a real hardware frame from, failing with "Error
+    reinitializing filters!" / "Function not implemented" (or, seen on one
+    host, crashing ffmpeg outright instead of failing cleanly -- see
+    `mark_runtime_broken()`)."""
     if backend is None:
         return []
-    args = ["-hwaccel", backend]
+    args = ["-hwaccel", backend, "-hwaccel_output_format", backend]
     if backend == "vaapi":
         args += ["-hwaccel_device", "/dev/dri/renderD128"]
     return args

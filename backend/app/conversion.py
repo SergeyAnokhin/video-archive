@@ -219,6 +219,19 @@ def _parse_ffmpeg_out_time(value: str) -> float | None:
         return None
 
 
+def is_crash_exit_code(returncode: int | None) -> bool:
+    """True when `returncode` indicates ffmpeg was killed by an unhandled
+    exception/signal rather than exiting on its own -- Windows unhandled SEH
+    exceptions (e.g. `STATUS_DLL_INIT_FAILED`, 0xC0000142, seen crashing a
+    QSV hardware-decode attempt) come back as NTSTATUS values with the top
+    bit set (>= 0x80000000, since `Popen.returncode` reports the raw
+    `GetExitCodeProcess` DWORD unsigned); POSIX reports death-by-signal as a
+    negative returncode. Ordinary ffmpeg exit codes (0, 1, 69, ...) never
+    reach either range, so this can't misfire on a normal ffmpeg-level
+    failure -- only a real process crash."""
+    return returncode is not None and (returncode < 0 or returncode >= 0x80000000)
+
+
 def run_ffmpeg(
     args: list[str],
     timeout: int = 3600,
@@ -226,6 +239,7 @@ def run_ffmpeg(
     duration: float | None = None,
     on_progress: Callable[[float], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    on_exit_code: Callable[[int | None], None] | None = None,
 ) -> tuple[bool, str]:
     """Run an ffmpeg command; returns (success, stderr tail for diagnostics).
 
@@ -238,7 +252,12 @@ def run_ffmpeg(
     lines, lets a cooperative cancel/pause request kill an in-flight encode
     right away instead of only being noticed once ffmpeg finishes on its own
     (previously the only way out of a stuck encode was the force-cancel path
-    in `app/jobs/service.py::cancel_job`)."""
+    in `app/jobs/service.py::cancel_job`). `on_exit_code(returncode)`, called
+    only for a genuine non-zero ffmpeg exit (never on cancel/timeout, which
+    aren't ffmpeg's own doing), lets a caller distinguish a real process
+    crash (see `is_crash_exit_code()`) from an ordinary ffmpeg-level
+    failure -- `app/jobs/convert.py` uses it to stop offering hardware
+    decode for the rest of the run after it crashes the process outright."""
     # `-progress pipe:1` is a global option -- inserted right after the
     # binary so it applies regardless of where the caller's own args end.
     popen_args = [args[0], "-progress", "pipe:1", "-nostats", *args[1:]]
@@ -300,6 +319,8 @@ def run_ffmpeg(
     if timed_out:
         return False, f"ffmpeg timed out after {timeout}s"
     if process.returncode != 0:
+        if on_exit_code is not None:
+            on_exit_code(process.returncode)
         tail = "\n".join(stderr_tail[-10:])
         return False, tail or f"ffmpeg exited with code {process.returncode}"
     if on_progress:

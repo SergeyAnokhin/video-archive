@@ -241,7 +241,167 @@ def test_resubmitting_the_active_source_is_a_noop(tmp_path, monkeypatch):
         r = client.put("/api/source", json={"name": "L (renamed)", "protocol": "local", "root_path": str(root)})
         assert r.status_code == 200
         assert r.json()["name"] == "L (renamed)"
+        assert r.json()["scan_job"] is None
         assert client.get("/api/jobs").json()["jobs"]
+
+
+def test_active_smb_source_reconnect_updates_connection_params_without_rescan(tmp_path, monkeypatch, fake_smb):
+    """User request: editing the active SMB source's connection parameters
+    (port, username, password, name) while the underlying data is unchanged
+    (same protocol + root_path) is a reconnect, not a switch -- same source
+    id, no backup/wipe, no rescan job, and job history survives. Contrast
+    with `test_switching_sources_backs_up_and_auto_restores_from_saved_backup`,
+    where root_path actually changes."""
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    fake_smb.seed("clips/movie.mp4", b"0" * 42)
+
+    with TestClient(app) as client:
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "smb", "host": fake_smb.host, "port": 445,
+                "root_path": fake_smb.share, "username": "user", "password": "pass",
+            },
+        )
+        assert r.status_code == 200
+        source_id = r.json()["id"]
+        _wait_for_job(client, r.json()["scan_job"]["id"])
+
+        r = client.post("/api/jobs/cleanup-stale-records")
+        _wait_for_job(client, r.json()["id"])
+        jobs_before = [j["id"] for j in client.get("/api/jobs").json()["jobs"]]
+        assert jobs_before
+
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS (renamed)", "protocol": "smb", "host": fake_smb.host, "port": 4450,
+                "root_path": fake_smb.share, "username": "user2", "password": "pass2",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["id"] == source_id
+        assert body["name"] == "NAS (renamed)"
+        assert body["port"] == 4450
+        assert body["scan_job"] is None
+        assert body["detected_backups"] == []
+
+        assert [j["id"] for j in client.get("/api/jobs").json()["jobs"]] == jobs_before
+
+        r = client.get("/api/source")
+        assert r.json()["port"] == 4450
+
+        engine = db_module.get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": source_id}).fetchone()
+        assert secrets_store.get_source_credentials_for(row.username_ref, row.secret_ref) == ("user2", "pass2")
+
+
+def test_active_smb_source_reconnect_rejects_bad_connection(tmp_path, monkeypatch, fake_smb):
+    """A pre-flight `smb_test_connection()` check runs before an in-place
+    reconnect is committed, so a bad host/password surfaces as a clean 400
+    instead of an unhandled exception deeper in `switch_active_source()` --
+    and the active source's row is left untouched."""
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "smb", "host": fake_smb.host, "port": 445,
+                "root_path": fake_smb.share, "username": "user", "password": "pass",
+            },
+        )
+        assert r.status_code == 200
+        source_id = r.json()["id"]
+
+        fake_smb.fail_next.append(RuntimeError("boom"))
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "smb", "host": fake_smb.host, "port": 445,
+                "root_path": fake_smb.share, "username": "user2", "password": "pass2",
+            },
+        )
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"]["code"] == "connection_failed"
+
+        engine = db_module.get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": source_id}).fetchone()
+        assert secrets_store.get_source_credentials_for(row.username_ref, row.secret_ref) == ("user", "pass")
+
+
+def test_source_status_local(tmp_path, monkeypatch):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    root = tmp_path / "library"
+    root.mkdir()
+
+    with TestClient(app) as client:
+        r = client.get("/api/source/status")
+        assert r.status_code == 404
+
+        r = client.put("/api/source", json={"name": "L", "protocol": "local", "root_path": str(root)})
+        assert r.status_code == 200
+
+        r = client.get("/api/source/status")
+        assert r.status_code == 200
+        body = r.json()
+        assert body == {"ok": True, "message": None, "direct_access_enabled": False, "direct_access_active": None}
+
+
+def test_source_status_smb_direct_access(tmp_path, monkeypatch, fake_smb):
+    from app.sources import smb_backend
+
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "smb", "host": fake_smb.host, "port": 445,
+                "root_path": fake_smb.share, "username": "user", "password": "pass",
+                "direct_access_enabled": False,
+            },
+        )
+        assert r.status_code == 200
+
+        # Direct access disabled on the source: reachable, but the flag
+        # itself says the fast path never applies.
+        r = client.get("/api/source/status")
+        body = r.json()
+        assert body["ok"] is True
+        assert body["direct_access_enabled"] is False
+        assert body["direct_access_active"] is None
+
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "smb", "host": fake_smb.host, "port": 445,
+                "root_path": fake_smb.share, "username": "user", "password": "pass",
+                "direct_access_enabled": True,
+            },
+        )
+        assert r.status_code == 200
+
+        monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+        r = client.get("/api/source/status")
+        body = r.json()
+        assert body["ok"] is True
+        assert body["direct_access_enabled"] is True
+        assert body["direct_access_active"] is True
+
+        monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: False)
+        r = client.get("/api/source/status")
+        body = r.json()
+        assert body["direct_access_active"] is False
 
 
 def test_unsupported_protocol_rejected(tmp_path, monkeypatch):

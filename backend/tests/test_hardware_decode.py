@@ -68,6 +68,36 @@ def test_check_hardware_decode_vaapi_short_circuits_without_dev_dri(monkeypatch)
     assert hardware_decode._probe_backend("ffmpeg", "vaapi", hardware_decode.Path("source.mp4")) is False
 
 
+# --- mark_runtime_broken ---------------------------------------------------------
+
+
+def test_mark_runtime_broken_disables_decode_backend(monkeypatch):
+    monkeypatch.setattr(
+        hardware_decode, "check_hardware_decode", lambda: hardware_decode.HardwareDecodeStatus(qsv=True, vaapi=False)
+    )
+    assert hardware_decode.decode_backend() == "qsv"
+
+    hardware_decode.mark_runtime_broken()
+
+    # A crashed hw-decode attempt (user report: a QSV crash on one file left
+    # the very next ffmpeg process crashing the same way) means the probe
+    # result is no longer trustworthy for the rest of this run, even though
+    # `check_hardware_decode()` itself would still report qsv=True.
+    assert hardware_decode.decode_backend() is None
+
+
+def test_reset_cache_clears_runtime_broken_flag(monkeypatch):
+    monkeypatch.setattr(
+        hardware_decode, "check_hardware_decode", lambda: hardware_decode.HardwareDecodeStatus(qsv=True, vaapi=False)
+    )
+    hardware_decode.mark_runtime_broken()
+    assert hardware_decode.decode_backend() is None
+
+    hardware_decode.reset_cache()
+
+    assert hardware_decode.decode_backend() == "qsv"
+
+
 # --- log_status ----------------------------------------------------------------
 
 

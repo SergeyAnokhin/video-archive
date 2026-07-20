@@ -32,6 +32,7 @@ class SourceRequest(BaseModel):
     port: int | None = None
     username: str | None = None
     password: str | None = None
+    direct_access_enabled: bool = False
 
 
 def _resolve_local_path(root_path: str) -> Path:
@@ -49,6 +50,7 @@ def _source_row_to_dict(row) -> dict:
         "host": row.host,
         "port": row.port,
         "root_path": row.root_path,
+        "direct_access_enabled": bool(getattr(row, "direct_access_enabled", False)),
         "is_active": bool(row.is_active),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -98,13 +100,20 @@ def test_source_connection(body: SourceRequest):
 
 @router.put("/source")
 def put_source(body: SourceRequest):
-    """Configure a source and switch to it. If `(protocol, host, port,
-    root_path)` already matches a previously saved source, that saved row is
-    reused (and its credentials/name updated) instead of creating a
-    duplicate -- resubmitting the same connection is how a saved source is
-    renamed or has its credentials refreshed. Switching itself (backup of
-    whatever was active, wipe, auto-restore of the new source's own data,
-    enqueuing the reconciling rescan job) is handled by
+    """Configure a source and switch to it. If the currently active source
+    has the same `(protocol, root_path)` -- the same underlying data -- this
+    is a reconnect: `host`/`port`/credentials/`direct_access_enabled`/`name`
+    are updated on that same row in place, no backup/wipe/rescan (see
+    `switch_active_source()`'s `already_active` handling). A pre-flight
+    connection check runs first so a bad host/password surfaces as a clean
+    400 instead of an unhandled exception from deeper in the switch.
+    Otherwise, if `(protocol, host, port, root_path)` matches a previously
+    saved (but inactive) source, that saved row is reused (and its
+    credentials/name updated) instead of creating a duplicate -- resubmitting
+    the same connection is how a saved source is renamed or has its
+    credentials refreshed. Switching itself (backup of whatever was active,
+    wipe, auto-restore of the new source's own data, enqueuing the
+    reconciling rescan job when it's a genuine switch) is handled by
     `switch_active_source()`, shared with `POST /sources/{id}/activate`."""
     if body.protocol not in SUPPORTED_PROTOCOLS:
         raise _unsupported_protocol_error()
@@ -135,17 +144,42 @@ def put_source(body: SourceRequest):
         root_path = (body.root_path or "").strip("/\\")
         host, port = body.host, body.port
 
+    # Only meaningful for smb: ignored (always stored off) for local, which
+    # has no UNC/OS-session concept in the first place.
+    direct_access_enabled = bool(body.direct_access_enabled) if body.protocol == "smb" else False
+
     with engine.connect() as conn:
-        existing = conn.execute(
-            text(
-                """
-                SELECT * FROM sources
-                WHERE protocol = :protocol AND root_path = :root_path
-                  AND COALESCE(host, '') = COALESCE(:host, '') AND COALESCE(port, -1) = COALESCE(:port, -1)
-                """
-            ),
-            {"protocol": body.protocol, "root_path": root_path, "host": host, "port": port},
-        ).fetchone()
+        active_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
+        is_reconnect = (
+            active_row is not None and active_row.protocol == body.protocol and active_row.root_path == root_path
+        )
+        if is_reconnect:
+            existing = active_row
+        else:
+            existing = conn.execute(
+                text(
+                    """
+                    SELECT * FROM sources
+                    WHERE protocol = :protocol AND root_path = :root_path
+                      AND COALESCE(host, '') = COALESCE(:host, '') AND COALESCE(port, -1) = COALESCE(:port, -1)
+                    """
+                ),
+                {"protocol": body.protocol, "root_path": root_path, "host": host, "port": port},
+            ).fetchone()
+
+    if is_reconnect and body.protocol == "smb":
+        test_username = body.username or None
+        test_password = body.password or None
+        if not test_username and not test_password:
+            test_username, test_password = secrets_store.get_source_credentials_for(
+                existing.username_ref, existing.secret_ref
+            )
+        ok, message = smb_test_connection(host, port, root_path, test_username, test_password)
+        if not ok:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"code": "connection_failed", "message": message}},
+            )
 
     if existing is not None:
         source_id = existing.id
@@ -157,13 +191,18 @@ def put_source(body: SourceRequest):
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    "UPDATE sources SET name = :name, username_ref = :username_ref, "
-                    "secret_ref = :secret_ref, updated_at = :now WHERE id = :id"
+                    "UPDATE sources SET name = :name, host = :host, port = :port, "
+                    "username_ref = :username_ref, secret_ref = :secret_ref, "
+                    "direct_access_enabled = :direct_access_enabled, "
+                    "updated_at = :now WHERE id = :id"
                 ),
                 {
                     "name": body.name,
+                    "host": host,
+                    "port": port,
                     "username_ref": username_ref,
                     "secret_ref": secret_ref,
+                    "direct_access_enabled": direct_access_enabled,
                     "now": now,
                     "id": source_id,
                 },
@@ -181,9 +220,9 @@ def put_source(body: SourceRequest):
                     """
                     INSERT INTO sources
                         (id, name, protocol, host, port, root_path, username_ref, secret_ref,
-                         is_active, created_at, updated_at, last_connected_at)
+                         direct_access_enabled, is_active, created_at, updated_at, last_connected_at)
                     VALUES (:id, :name, :protocol, :host, :port, :root_path, :username_ref, :secret_ref,
-                            0, :now, :now, :now)
+                            :direct_access_enabled, 0, :now, :now, :now)
                     """
                 ),
                 {
@@ -195,6 +234,7 @@ def put_source(body: SourceRequest):
                     "root_path": root_path,
                     "username_ref": username_ref,
                     "secret_ref": secret_ref,
+                    "direct_access_enabled": direct_access_enabled,
                     "now": now,
                 },
             )
@@ -211,27 +251,64 @@ def put_source(body: SourceRequest):
     }
 
 
-@router.post("/source/reconnect")
-def reconnect_source():
-    engine = get_engine()
-    with engine.connect() as conn:
-        row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
+def _get_active_source_row(conn):
+    row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
     if row is None:
         raise HTTPException(
             status_code=404,
             detail={"error": {"code": "no_source_configured", "message": "No active source is configured."}},
         )
+    return row
 
+
+def _check_connection_status(row) -> dict:
+    """Shared by `GET /source/status` and `POST /source/reconnect`: whether
+    the source is currently reachable and, for `smb`, whether the
+    direct-access fast path is actually in effect right now (as opposed to
+    just enabled)."""
     if row.protocol == "local":
-        # Local sources need no reconnect/network-refresh behavior
-        # (Specification §5); a rescan is sufficient to detect changes.
-        return {"ok": True, "message": None}
+        return {"ok": True, "message": None, "direct_access_enabled": False, "direct_access_active": None}
 
     access = get_source_access(row)
     try:
         access.is_dir("")
     except Exception as exc:  # noqa: BLE001 - surfaced to the user as a plain message
-        return {"ok": False, "message": str(exc)}
+        return {
+            "ok": False,
+            "message": str(exc),
+            "direct_access_enabled": bool(row.direct_access_enabled),
+            "direct_access_active": None,
+        }
+
+    return {
+        "ok": True,
+        "message": None,
+        "direct_access_enabled": bool(row.direct_access_enabled),
+        "direct_access_active": access.direct_access_status(),
+    }
+
+
+@router.get("/source/status")
+def get_source_status():
+    """Read-only connection status for the active source -- unlike
+    `POST /source/reconnect`, this never writes to the database, so it's
+    safe to call passively (e.g. every time Settings opens) rather than only
+    on an explicit user action."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = _get_active_source_row(conn)
+    return _check_connection_status(row)
+
+
+@router.post("/source/reconnect")
+def reconnect_source():
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = _get_active_source_row(conn)
+
+    status = _check_connection_status(row)
+    if row.protocol == "local" or not status["ok"]:
+        return status
 
     now = datetime.now(timezone.utc).isoformat()
     with engine.begin() as conn:
@@ -239,4 +316,4 @@ def reconnect_source():
             text("UPDATE sources SET last_connected_at = :now, updated_at = :now WHERE id = :id"),
             {"now": now, "id": row.id},
         )
-    return {"ok": True, "message": None}
+    return status

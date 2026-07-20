@@ -24,7 +24,9 @@ directly on the remote source without re-uploading their bytes.
 
 from __future__ import annotations
 
+import os
 import shlex
+import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -82,6 +84,20 @@ def _format_resolution(info: dict | None) -> str:
     if not info or not info.get("width") or not info.get("height"):
         return "unknown resolution"
     return f"{info['width']}x{info['height']}"
+
+
+def _format_command_for_log(args: list[str]) -> str:
+    """Windows and POSIX shells quote arguments differently -- using the
+    wrong one means a command copied out of the job log can't actually be
+    pasted into a terminal to reproduce it (user report: filenames with an
+    apostrophe came out as `'s'"'"'` in the log, which is `shlex.join`'s
+    POSIX quoting and isn't valid syntax in cmd.exe, forcing a hand-rewrite
+    to repro locally). `subprocess.list2cmdline` is the same quoting `Popen`
+    itself uses to build the real Windows command line, so it always matches
+    what actually ran there."""
+    if os.name == "nt":
+        return subprocess.list2cmdline(args)
+    return shlex.join(args)
 
 
 def _effective_params(profile: dict, overrides: dict | None) -> dict:
@@ -194,7 +210,7 @@ def _encode_and_validate(
     # what file was picked up and its starting parameters before the encode
     # even runs, not just the end result.
     progress(f"Source: {_format_resolution(source_info)}, {_format_size(source_size)}")
-    progress(f"ffmpeg command: {shlex.join(args)}")
+    progress(f"ffmpeg command: {_format_command_for_log(args)}")
 
     # Live within-file progress (post-V1, user request): throttled to at
     # most once a second (or a >=1% jump) so a fast-moving encode doesn't
@@ -229,8 +245,21 @@ def _encode_and_validate(
     progress(f"Encoding with ffmpeg (codec={params['video_codec']}, crf={params['crf']})")
     duration = source_info.get("duration") if source_info else None
     timeout = conversion_settings.get_settings(engine)["ffmpeg_timeout_seconds"]
+    # Tripped only if this attempt's hardware decode crashes ffmpeg outright
+    # (vs. failing cleanly) -- flagged via a mutable cell instead of reading
+    # `hardware_decode.decode_backend()` again after the fact, since
+    # `mark_runtime_broken()` below would make that immediately report
+    # `None` regardless of what actually crashed just now.
+    crash_detected = {"value": False}
+
+    def _guard_decode_crash(returncode: int | None) -> None:
+        if decode_backend_used and conversion.is_crash_exit_code(returncode):
+            crash_detected["value"] = True
+            hardware_decode.mark_runtime_broken()
+
     ok, error = conversion.run_ffmpeg(
-        args, timeout=timeout, duration=duration, on_progress=on_progress, should_stop=should_stop
+        args, timeout=timeout, duration=duration, on_progress=on_progress, should_stop=should_stop,
+        on_exit_code=_guard_decode_crash,
     )
     # Runtime fallback: a hardware encode and/or hardware decode that fails
     # at ffmpeg-run time (as opposed to being pre-emptively ruled out above)
@@ -244,9 +273,10 @@ def _encode_and_validate(
             if effective_hw != "off"
             else f"hardware decode failed ({error})"
         )
+        note = " Hardware decode crashed ffmpeg -- disabled for the rest of this run." if crash_detected["value"] else ""
         service.log_event(
             engine, job_id, file_id, "warning", "job_item_progress",
-            f"⚠️ {reason}; retrying this file with the software encoder.",
+            f"⚠️ {reason}; retrying this file with the software encoder.{note}",
         )
         if temp_path.exists():
             temp_path.unlink()
@@ -261,14 +291,17 @@ def _encode_and_validate(
             hardware_accel="off",
             decode_hw=False,
         )
-        progress(f"ffmpeg command (software fallback): {shlex.join(args)}")
+        progress(f"ffmpeg command (software fallback): {_format_command_for_log(args)}")
         ok, error = conversion.run_ffmpeg(
             args, timeout=timeout, duration=duration, on_progress=on_progress, should_stop=should_stop
         )
     if not ok:
         if temp_path.exists():
             temp_path.unlink()
-        raise ConversionError(f"ffmpeg failed: {error}")
+        # Elapsed time included even on failure (user report: a failed
+        # conversion's log gave no sense of how long it ran before dying --
+        # the success-only "Encoded in Xs" line below never fires here).
+        raise ConversionError(f"ffmpeg failed after {time.monotonic() - t0:.2f}s: {error}")
     progress(f"Encoded in {time.monotonic() - t0:.2f}s")
 
     t0 = time.monotonic()

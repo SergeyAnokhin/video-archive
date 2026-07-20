@@ -98,6 +98,9 @@ class SourceAccess:
     def direct_path(self, rel_path: str) -> str:
         return self._backend.direct_path(rel_path)
 
+    def direct_access_status(self) -> bool | None:
+        return self._backend.direct_access_status()
+
     def close(self) -> None:
         self._backend.close()
 
@@ -110,7 +113,14 @@ def get_source_access(source_row) -> SourceAccess:
         username, password = secrets_store.get_source_credentials_for(
             source_row.username_ref, source_row.secret_ref
         )
-        backend = SMBBackend(source_row.host, source_row.port, source_row.root_path, username, password)
+        # `getattr` rather than a direct attribute access: not every caller's
+        # SELECT is guaranteed to include this column (most use `s.*`, but a
+        # narrower query shouldn't hard-fail just because this opt-in fast
+        # path can't be evaluated -- it just stays off, same as the default).
+        direct_access_enabled = bool(getattr(source_row, "direct_access_enabled", False))
+        backend = SMBBackend(
+            source_row.host, source_row.port, source_row.root_path, username, password, direct_access_enabled
+        )
         return SourceAccess(backend, "smb")
 
     return SourceAccess(LocalBackend(Path(source_row.root_path)), "local")

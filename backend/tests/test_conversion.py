@@ -14,7 +14,14 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles, conversion_settings, hardware_accel, performance_settings
+from app import (
+    conversion,
+    conversion_profiles,
+    conversion_settings,
+    hardware_accel,
+    hardware_decode,
+    performance_settings,
+)
 from app.jobs import convert, service
 from app.scan import scan_source
 
@@ -261,6 +268,49 @@ def test_run_ffmpeg_reports_progress(source):
     assert progress_values
     assert all(0.0 <= value <= 100.0 for value in progress_values)
     assert progress_values[-1] == 100.0
+
+
+@pytest.mark.parametrize(
+    "returncode,expected",
+    [
+        (0, False),
+        (1, False),
+        (69, False),
+        (None, False),
+        (-11, True),  # POSIX: killed by SIGSEGV
+        (3221225794, True),  # Windows: STATUS_DLL_INIT_FAILED (0xC0000142)
+        (0x80000003, True),  # Windows: STATUS_BREAKPOINT
+    ],
+)
+def test_is_crash_exit_code(returncode, expected):
+    assert conversion.is_crash_exit_code(returncode) is expected
+
+
+def test_run_ffmpeg_calls_on_exit_code_only_for_genuine_ffmpeg_failure(source):
+    """`on_exit_code` (used by `app/jobs/convert.py` to detect a hardware
+    decode crash and disable it for the rest of the run) must fire for an
+    ordinary ffmpeg failure but never for a cooperative cancel -- a cancel's
+    negative POSIX returncode would otherwise look exactly like a process
+    crash to `is_crash_exit_code()`."""
+    src = source["root"] / "clip.mp4"
+    make_video(src, duration=1)
+
+    seen: list[int | None] = []
+    ok, err = conversion.run_ffmpeg(
+        [conversion.ffmpeg_path(), "-y", "-i", str(src), "-c:v", "does-not-exist", str(source["root"] / "out.mp4")],
+        on_exit_code=seen.append,
+    )
+    assert ok is False
+    assert len(seen) == 1
+    assert seen[0] not in (0, None)
+
+    seen.clear()
+    out = source["root"] / "out2.mp4"
+    args = conversion.build_ffmpeg_command(src, out, video_codec="h265", crf=30, drop_audio=True)
+    ok, err = conversion.run_ffmpeg(args, should_stop=lambda: True, on_exit_code=seen.append)
+    assert ok is False
+    assert err == "Cancelled."
+    assert seen == []
 
 
 def test_run_ffmpeg_should_stop_kills_the_process(source):
@@ -549,6 +599,79 @@ def test_convert_job_retries_with_software_after_hw_runtime_failure(engine, sour
         ]
     assert any("simulated qsv failure" in message for message in messages)
     assert any("retrying this file with the software encoder" in message for message in messages)
+
+
+# --- hardware decode crash guard (app/hardware_decode.py) ----------------------
+
+
+def test_convert_job_disables_hw_decode_after_crash_and_keeps_converting(engine, source, monkeypatch):
+    """User report: on one Windows/QSV host, a crashed hardware-decode
+    attempt (ffmpeg killed outright by an unhandled exception, e.g. Windows
+    `STATUS_DLL_INIT_FAILED`) left the very next ffmpeg process -- even a
+    purely software one -- crashing the same way. Once a crash like that is
+    detected, the job must stop offering hardware decode for the rest of the
+    run (`hardware_decode.mark_runtime_broken()`) rather than re-triggering
+    the same crash-then-retry dance on every subsequent file."""
+    make_video(source["root"] / "clips" / "a.mp4", size="480x360", duration=1.0)
+    make_video(source["root"] / "clips" / "b.mp4", size="480x360", duration=1.0)
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    # Sequential processing: a fake hw-decode probe that always reports
+    # available makes the assertions below deterministic only if file b's
+    # attempt is guaranteed to start after file a's crash has already
+    # flipped the runtime-broken flag.
+    performance_settings.update_settings(engine, {"parallel_workers": 1})
+
+    monkeypatch.setattr(
+        hardware_decode, "check_hardware_decode",
+        lambda **kwargs: hardware_decode.HardwareDecodeStatus(qsv=True, vaapi=False),
+    )
+    hardware_decode.reset_cache()
+
+    real_run_ffmpeg = conversion.run_ffmpeg
+    calls = {"n": 0}
+
+    def crashy_run_ffmpeg(args, timeout=3600, on_exit_code=None, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            if on_exit_code is not None:
+                on_exit_code(3221225794)  # Windows STATUS_DLL_INIT_FAILED (0xC0000142)
+            return False, "ffmpeg exited with code 3221225794"
+        return real_run_ffmpeg(args, timeout=timeout, on_exit_code=on_exit_code, **kwargs)
+
+    monkeypatch.setattr(conversion, "run_ffmpeg", crashy_run_ffmpeg)
+
+    try:
+        job = _run_job(
+            engine, "directory", "clips",
+            {"path": "clips", "profile_id": profile["id"], "mode": "production"},
+        )
+
+        assert job["status"] == "completed"
+        # file a: crashed hw attempt + software retry (2 calls); file b: hw
+        # decode already disabled by then, so a single software-only attempt.
+        assert calls["n"] == 3
+        assert (source["root"] / "clips" / "a.mp4").exists()
+        assert (source["root"] / "clips" / "b.mp4").exists()
+        # The flag persists past the job -- it's a process-lifetime guard,
+        # not a per-job one -- so the probe (still monkeypatched to say QSV
+        # is available) is no longer consulted at all.
+        assert hardware_decode.decode_backend() is None
+
+        with engine.connect() as conn:
+            messages = [
+                row.message
+                for row in conn.execute(
+                    text("SELECT message FROM app_events WHERE job_id = :id ORDER BY rowid"), {"id": job["id"]}
+                ).all()
+            ]
+        assert any("disabled for the rest of this run" in message for message in messages)
+        # "Hardware acceleration active" only ever printed for file a's
+        # (crashed) attempt -- file b never reaches it since decode is
+        # already disabled by the time its encode starts.
+        assert sum("Hardware acceleration active" in message for message in messages) == 1
+    finally:
+        hardware_decode.reset_cache()
 
 
 def test_convert_job_no_hw_mapping_falls_back_silently_logged(engine, source):
