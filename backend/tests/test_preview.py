@@ -11,6 +11,7 @@ PATH), same as `test_conversion.py`.
 from __future__ import annotations
 
 import shutil
+import subprocess
 
 import pytest
 from PIL import Image
@@ -63,6 +64,58 @@ def test_extract_frame_image_handles_non_ascii_path(tmp_path):
     image = preview.extract_frame_image(video_path, 1.0)
     assert image is not None
     assert image.shape[:2] == (240, 320)
+
+
+def test_extract_frame_image_falls_back_to_software_when_hw_decode_fails(tmp_path, monkeypatch):
+    """Hardware decode is tried first when available (app/hardware_decode.py)
+    but must never lose a frame -- a failed hw attempt (bad driver, GPU
+    contention, unsupported codec) has to fall through to software silently."""
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+
+    monkeypatch.setattr(preview, "_decode_hwaccel_backend", lambda: "qsv")
+
+    real_run = subprocess.run
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if "-hwaccel" in args:
+            return subprocess.CompletedProcess(args, returncode=1, stdout=b"", stderr=b"simulated hw failure")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(preview.subprocess, "run", fake_run)
+
+    image = preview.extract_frame_image(video_path, 1.0)
+    assert image is not None
+    assert image.shape[:2] == (240, 320)
+    assert len(calls) == 2
+    assert "-hwaccel" in calls[0]
+    assert "-hwaccel" not in calls[1]
+
+
+def test_extract_clip_frames_falls_back_to_software_when_hw_decode_fails(tmp_path, monkeypatch):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    monkeypatch.setattr(preview, "_decode_hwaccel_backend", lambda: "qsv")
+
+    real_run = subprocess.run
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        if "-hwaccel" in args:
+            return subprocess.CompletedProcess(args, returncode=1, stdout=b"", stderr=b"simulated hw failure")
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(preview.subprocess, "run", fake_run)
+
+    frames = preview.extract_clip_frames(video_path, 1.0, 0.5, fps=8.0)
+    assert len(frames) >= 2
+    assert len(calls) == 2
+    assert "-hwaccel" in calls[0]
+    assert "-hwaccel" not in calls[1]
 
 
 # --- layout geometry ------------------------------------------------------

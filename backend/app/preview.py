@@ -5,7 +5,9 @@ folder previews. Also renders a lightweight animated GIF loop from the same
 sampled frames (`render_gif()`) for grid/list-view hover previews.
 
 Frame extraction shells out to ffmpeg per sampled timestamp (small frame
-counts per video, so this stays cheap); detection is always best-effort via
+counts per video, so this stays cheap), automatically using hardware decode
+when `app/hardware_decode.py` finds it available and silently falling back
+to software per call otherwise; detection is always best-effort via
 `app/detection.py` and never blocks a preview from being produced — a frame
 is picked by blur score alone when no face/person model is available.
 """
@@ -26,6 +28,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from app import conversion, detection
+from app.hardware_decode import check_hardware_decode
 from app.preview_layouts import compute_layout_tiles
 from app.sampling import sample_interior_timestamps
 
@@ -64,31 +67,79 @@ class PreviewError(Exception):
 # --- frame extraction -----------------------------------------------------
 
 
+def _decode_hwaccel_backend() -> str | None:
+    """QSV preferred over VAAPI when (hypothetically) both probed available,
+    same order `app/hardware_accel.py` uses for encode. Unlike encode, decode
+    output is bit-identical to software decode (see `app/hardware_decode.py`),
+    so callers use this automatically -- no per-profile opt-in."""
+    status = check_hardware_decode()
+    if status.qsv:
+        return "qsv"
+    if status.vaapi:
+        return "vaapi"
+    return None
+
+
+def _hwaccel_input_args(backend: str | None) -> list[str]:
+    """`-hwaccel` flags go *before* `-i` (unlike encode's `-c:v`, which goes
+    after) -- they configure how the input is decoded, not how the output is
+    encoded."""
+    if backend is None:
+        return []
+    args = ["-hwaccel", backend]
+    if backend == "vaapi":
+        args += ["-hwaccel_device", "/dev/dri/renderD128"]
+    return args
+
+
+def _hwaccel_download_filter(backend: str | None) -> str | None:
+    """Hardware decode hands back frames in a GPU-specific surface format
+    (`qsv`/`vaapi` pixel format) that the mjpeg encoder can't consume
+    directly -- without this, ffmpeg fails with "Impossible to convert
+    between the formats" and writes nothing. `hwdownload,format=nv12` copies
+    the decoded frame into normal system memory first (verified against a
+    real file: identical pixel output to software decode, just faster)."""
+    if backend is None:
+        return None
+    return "hwdownload,format=nv12"
+
+
 def extract_frame_image(video_path: Path, timestamp: float):
     ffmpeg_bin = conversion.ffmpeg_path()
     if not ffmpeg_bin:
         return None
 
+    hw_backend = _decode_hwaccel_backend()
+    backends_to_try = [hw_backend, None] if hw_backend else [None]
+
     tmp_path = video_path.parent / f".{video_path.stem}.preview-frame-{uuid.uuid4().hex[:8]}.jpg"
-    args = [
-        ffmpeg_bin, "-y",
-        "-ss", f"{timestamp:.3f}",
-        "-i", str(video_path),
-        "-frames:v", "1", "-q:v", "2",
-        str(tmp_path),
-    ]
     try:
-        result = subprocess.run(args, capture_output=True, timeout=30, check=False)
-        if result.returncode != 0 or not tmp_path.exists():
-            return None
-        # cv2.imread() silently fails (returns None) on Windows when the path
-        # contains non-ASCII characters (e.g. Cyrillic folder names) -- it
-        # shells out to an fopen()-style API that mangles them. Reading the
-        # bytes via Python's own (Unicode-safe) file I/O and decoding them in
-        # memory sidesteps that.
-        data = np.fromfile(str(tmp_path), dtype=np.uint8)
-        return cv2.imdecode(data, cv2.IMREAD_COLOR)
-    except (OSError, subprocess.SubprocessError):
+        for backend in backends_to_try:
+            args = [ffmpeg_bin, "-y", *_hwaccel_input_args(backend)]
+            args += ["-ss", f"{timestamp:.3f}", "-i", str(video_path)]
+            download_filter = _hwaccel_download_filter(backend)
+            if download_filter:
+                args += ["-vf", download_filter]
+            args += ["-frames:v", "1", "-q:v", "2", str(tmp_path)]
+            # A hardware-decode attempt failing (unsupported codec, driver
+            # hiccup, GPU contention) falls through to software silently --
+            # no log per call, see `app/hardware_decode.py`'s module docstring
+            # for why this needs no per-profile setting like encode has.
+            try:
+                result = subprocess.run(args, capture_output=True, timeout=30, check=False)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if result.returncode != 0 or not tmp_path.exists():
+                continue
+            # cv2.imread() silently fails (returns None) on Windows when the
+            # path contains non-ASCII characters (e.g. Cyrillic folder
+            # names) -- it shells out to an fopen()-style API that mangles
+            # them. Reading the bytes via Python's own (Unicode-safe) file
+            # I/O and decoding them in memory sidesteps that.
+            data = np.fromfile(str(tmp_path), dtype=np.uint8)
+            image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+            if image is not None:
+                return image
         return None
     finally:
         if tmp_path.exists():
@@ -115,31 +166,39 @@ def extract_clip_frames(
     if not ffmpeg_bin:
         return []
 
+    hw_backend = _decode_hwaccel_backend()
+    backends_to_try = [hw_backend, None] if hw_backend else [None]
+
     tmp_dir = video_path.parent / f".{video_path.stem}.preview-clip-{uuid.uuid4().hex[:8]}"
     tmp_dir.mkdir(exist_ok=True)
     try:
-        args = [
-            ffmpeg_bin, "-y",
-            "-ss", f"{max(0.0, start_timestamp):.3f}",
-            "-i", str(video_path),
-            "-t", f"{max(0.05, duration_seconds):.3f}",
-            "-vf", f"fps={fps}",
-            "-frames:v", str(max_frames),
-            "-q:v", "2",
-            str(tmp_dir / "f%04d.jpg"),
-        ]
-        result = subprocess.run(args, capture_output=True, timeout=30, check=False)
-        if result.returncode != 0:
-            return []
-        frames = []
-        # Unicode-safe read, same reasoning as `extract_frame_image()`.
-        for frame_path in sorted(tmp_dir.glob("f*.jpg")):
-            data = np.fromfile(str(frame_path), dtype=np.uint8)
-            image = cv2.imdecode(data, cv2.IMREAD_COLOR)
-            if image is not None:
-                frames.append(image)
-        return frames
-    except (OSError, subprocess.SubprocessError):
+        for backend in backends_to_try:
+            args = [ffmpeg_bin, "-y", *_hwaccel_input_args(backend)]
+            args += ["-ss", f"{max(0.0, start_timestamp):.3f}", "-i", str(video_path)]
+            args += ["-t", f"{max(0.05, duration_seconds):.3f}"]
+            download_filter = _hwaccel_download_filter(backend)
+            vf = f"{download_filter},fps={fps}" if download_filter else f"fps={fps}"
+            args += ["-vf", vf, "-frames:v", str(max_frames), "-q:v", "2", str(tmp_dir / "f%04d.jpg")]
+            try:
+                result = subprocess.run(args, capture_output=True, timeout=30, check=False)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if result.returncode != 0:
+                continue
+            frames = []
+            # Unicode-safe read, same reasoning as `extract_frame_image()`.
+            for frame_path in sorted(tmp_dir.glob("f*.jpg")):
+                data = np.fromfile(str(frame_path), dtype=np.uint8)
+                image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+                if image is not None:
+                    frames.append(image)
+            if frames:
+                return frames
+            # Hardware attempt produced no usable frames -- clear any stray
+            # output before falling back to software so a partial failure
+            # can't get mixed into the next attempt's results.
+            for frame_path in tmp_dir.glob("f*.jpg"):
+                frame_path.unlink()
         return []
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
