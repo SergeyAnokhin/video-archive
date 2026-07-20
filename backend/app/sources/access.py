@@ -69,14 +69,14 @@ class SourceAccess:
         with self._backend.stage_output_dir(rel_dir) as path:
             yield path
 
-    def commit_new_file(self, local_path: Path, dest_rel_path: str) -> None:
-        self._backend.commit_new_file(local_path, dest_rel_path)
+    def commit_new_file(self, local_path: Path, dest_rel_path: str, *, allow_direct: bool = False) -> None:
+        self._backend.commit_new_file(local_path, dest_rel_path, allow_direct=allow_direct)
 
-    def remote_rename(self, rel_path: str, new_rel_path: str) -> None:
-        self._backend.remote_rename(rel_path, new_rel_path)
+    def remote_rename(self, rel_path: str, new_rel_path: str, *, allow_direct: bool = False) -> None:
+        self._backend.remote_rename(rel_path, new_rel_path, allow_direct=allow_direct)
 
-    def remote_remove(self, rel_path: str) -> None:
-        self._backend.remote_remove(rel_path)
+    def remote_remove(self, rel_path: str, *, allow_direct: bool = False) -> None:
+        self._backend.remote_remove(rel_path, allow_direct=allow_direct)
 
     def remote_mkdir(self, rel_path: str) -> None:
         self._backend.remote_mkdir(rel_path)

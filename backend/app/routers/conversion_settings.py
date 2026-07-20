@@ -22,6 +22,7 @@ class ConversionSettingsRequest(BaseModel):
         ge=service.MIN_FFMPEG_TIMEOUT_SECONDS,
         le=service.MAX_FFMPEG_TIMEOUT_SECONDS,
     )
+    direct_write_enabled: bool = Field(default=service.DEFAULT_DIRECT_WRITE_ENABLED)
 
 
 @router.get("/conversion-settings")

@@ -762,6 +762,14 @@ MIGRATIONS: dict[int, list[str]] = {
     39: [
         "ALTER TABLE sources ADD COLUMN direct_access_enabled INTEGER NOT NULL DEFAULT 0",
     ],
+    # Global counterpart to migration 39's per-source read-side setting: opt-in
+    # write-side fast path for conversion against a direct-access SMB source
+    # (commit/rename/remove via a raw UNC filesystem call instead of
+    # smbclient upload). Off by default -- conversion's write side keeps
+    # today's copy-based behavior until explicitly enabled and tested.
+    40: [
+        "ALTER TABLE conversion_settings ADD COLUMN direct_write_enabled INTEGER NOT NULL DEFAULT 0",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

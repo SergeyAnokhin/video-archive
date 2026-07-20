@@ -13,6 +13,7 @@ aren't on PATH, same as the local-source equivalents in
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 import pytest
 from smbprotocol.exceptions import SMBException
@@ -209,6 +210,149 @@ def test_local_copy_and_commit_new_file_add_to_smb_stats_counter(fake_smb, tmp_p
     before = smb_stats.get_total_bytes_transferred()
     backend.commit_new_file(local_file, "clips/output.mp4")
     assert smb_stats.get_total_bytes_transferred() == before + 25
+
+
+# --- write-side direct-access fast path (commit/rename/remove) --------------
+
+
+def test_commit_new_file_uses_raw_replace_when_allow_direct_and_available(fake_smb, monkeypatch, tmp_path):
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    calls = []
+    monkeypatch.setattr(smb_backend.os, "replace", lambda src, dst: calls.append((src, dst)))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+    local_file = tmp_path / "output.mp4"
+    local_file.write_bytes(b"encoded-bytes")
+
+    backend.commit_new_file(local_file, "clips/output.mp4", allow_direct=True)
+
+    assert calls == [(local_file, backend._unc("clips/output.mp4"))]
+    # The raw rename "succeeded" (mocked), so the smbclient upload path never
+    # ran -- the fake share was never touched.
+    assert not fake_smb.exists("clips/output.mp4")
+
+
+def test_commit_new_file_falls_back_to_upload_when_raw_replace_fails(fake_smb, monkeypatch, tmp_path):
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend.os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("cross-device")))
+    reported = []
+    monkeypatch.setattr(smb_backend.windows_unc, "report_failure", lambda host, user: reported.append((host, user)))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+    local_file = tmp_path / "output.mp4"
+    local_file.write_bytes(b"encoded-bytes")
+
+    backend.commit_new_file(local_file, "clips/output.mp4", allow_direct=True)
+
+    assert fake_smb.read("clips/output.mp4") == b"encoded-bytes"
+    assert not local_file.exists()
+    assert reported == [("testnas", "user")]
+
+
+def test_commit_new_file_ignores_allow_direct_when_direct_access_disabled(fake_smb, monkeypatch, tmp_path):
+    # Per-source `direct_access_enabled` still gates the fast path even when
+    # a caller passes `allow_direct=True` -- a source that never opted in to
+    # direct access must keep uploading via smbclient regardless.
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend.os, "replace", lambda src, dst: pytest.fail("raw replace should not run"))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=False)
+    local_file = tmp_path / "output.mp4"
+    local_file.write_bytes(b"encoded-bytes")
+
+    backend.commit_new_file(local_file, "clips/output.mp4", allow_direct=True)
+
+    assert fake_smb.read("clips/output.mp4") == b"encoded-bytes"
+
+
+def test_remote_rename_uses_raw_replace_when_allow_direct_and_available(fake_smb, monkeypatch):
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    calls = []
+    monkeypatch.setattr(smb_backend.os, "replace", lambda src, dst: calls.append((src, dst)))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+    fake_smb.seed("clips/movie.mp4", b"data")
+
+    backend.remote_rename("clips/movie.mp4", "clips/movie.original.mp4", allow_direct=True)
+
+    assert calls == [(backend._unc("clips/movie.mp4"), backend._unc("clips/movie.original.mp4"))]
+    # smbclient.rename() never ran -- the fake share still has the old name.
+    assert fake_smb.exists("clips/movie.mp4")
+    assert not fake_smb.exists("clips/movie.original.mp4")
+
+
+def test_remote_rename_falls_back_to_smbclient_when_raw_replace_fails(fake_smb, monkeypatch):
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend.os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("busy")))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+    fake_smb.seed("clips/movie.mp4", b"data")
+
+    backend.remote_rename("clips/movie.mp4", "clips/movie.original.mp4", allow_direct=True)
+
+    assert not fake_smb.exists("clips/movie.mp4")
+    assert fake_smb.read("clips/movie.original.mp4") == b"data"
+
+
+def test_remote_remove_uses_raw_remove_when_allow_direct_and_available(fake_smb, monkeypatch):
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    calls = []
+    monkeypatch.setattr(smb_backend.os, "remove", lambda path: calls.append(path))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+    fake_smb.seed("clips/movie.mp4", b"data")
+
+    backend.remote_remove("clips/movie.mp4", allow_direct=True)
+
+    assert calls == [backend._unc("clips/movie.mp4")]
+    # smbclient.remove() never ran -- the fake share still has the file.
+    assert fake_smb.exists("clips/movie.mp4")
+
+
+def test_remote_remove_falls_back_to_smbclient_when_raw_remove_fails(fake_smb, monkeypatch):
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend.os, "remove", lambda path: (_ for _ in ()).throw(OSError("busy")))
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+    fake_smb.seed("clips/movie.mp4", b"data")
+
+    backend.remote_remove("clips/movie.mp4", allow_direct=True)
+
+    assert not fake_smb.exists("clips/movie.mp4")
+
+
+# --- _resolve_output_directory (app/jobs/convert.py) -------------------------
+
+
+def test_resolve_output_directory_uses_share_dir_when_direct_write_enabled(fake_smb, engine, smb_source):
+    access = get_source_access(_source_row(engine, smb_source["id"]))
+    old_path = Path(access.direct_path("clips/movie.mp4"))
+    assert str(old_path).startswith("\\\\")
+
+    with convert._resolve_output_directory(access, old_path, True) as (directory, allow_direct):
+        assert directory == old_path.parent
+        assert allow_direct is True
+
+
+def test_resolve_output_directory_uses_local_scratch_when_direct_write_disabled(fake_smb, engine, smb_source):
+    # Regression: without this, a temp encode output would land straight on
+    # the network share by accident whenever a direct-access source's read
+    # happened to take the UNC fast path.
+    access = get_source_access(_source_row(engine, smb_source["id"]))
+    old_path = Path(access.direct_path("clips/movie.mp4"))
+
+    with convert._resolve_output_directory(access, old_path, False) as (directory, allow_direct):
+        assert directory != old_path.parent
+        assert directory.exists()
+        assert allow_direct is False
+        captured = directory
+    assert not captured.exists()
+
+
+def test_resolve_output_directory_unaffected_for_non_unc_path(fake_smb, engine, smb_source, tmp_path):
+    # A genuine local temp copy (the download-fallback case) is unaffected by
+    # `direct_write_enabled` either way -- it already lives in its own
+    # throwaway directory.
+    access = get_source_access(_source_row(engine, smb_source["id"]))
+    old_path = tmp_path / "downloaded.mp4"
+    old_path.write_bytes(b"x")
+
+    with convert._resolve_output_directory(access, old_path, True) as (directory, allow_direct):
+        assert directory == old_path.parent
+        assert allow_direct is False
 
 
 def test_smb_test_connection(fake_smb):

@@ -21,10 +21,21 @@ instead of downloading -- see `windows_unc.py` for why this is a separate
 session from the one `smbclient`/`register_session()` manages here, and why
 it's a best-effort fast path with automatic fallback rather than a hard
 requirement.
+
+`commit_new_file()`/`remote_rename()`/`remote_remove()` have a matching
+opt-in fast path, gated by both the same per-source setting/UNC probe *and*
+an explicit `allow_direct` argument each caller passes (conversion is the
+only caller that ever sets it `True`, driven by the global
+`conversion_settings.direct_write_enabled` switch -- everyone else keeps
+today's smbclient upload/rename/remove behavior unconditionally). When
+active, these do a raw filesystem rename/remove against the UNC path
+instead of smbclient traffic; any `OSError` falls back to the smbclient
+path exactly like `local_copy()` falls back to downloading.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 import threading
@@ -176,9 +187,12 @@ class SMBBackend:
         st = self._with_retry(smbclient.stat, self._unc(rel_path))
         return EntryStat(size=st.st_size, modified_at=datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat())
 
+    def _direct_available(self) -> bool:
+        return self.direct_access_enabled and windows_unc.available(self.host, self.share, self.username, self.password)
+
     @contextmanager
     def local_copy(self, rel_path: str) -> Iterator[Path]:
-        if self.direct_access_enabled and windows_unc.available(self.host, self.share, self.username, self.password):
+        if self._direct_available():
             unc_path = Path(self._unc(rel_path))
             if _unc_readable(unc_path):
                 yield unc_path
@@ -207,7 +221,14 @@ class SMBBackend:
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    def commit_new_file(self, local_path: Path, dest_rel_path: str) -> None:
+    def commit_new_file(self, local_path: Path, dest_rel_path: str, *, allow_direct: bool = False) -> None:
+        if allow_direct and self._direct_available():
+            try:
+                os.replace(local_path, self._unc(dest_rel_path))
+                return
+            except OSError:
+                windows_unc.report_failure(self.host, self.username)
+
         def _upload() -> None:
             # Unlike a same-volume local move, the destination's parent
             # directory chain (e.g. `.video-archive/backups/`) may not exist
@@ -222,10 +243,22 @@ class SMBBackend:
         if local_path.exists():
             local_path.unlink()
 
-    def remote_rename(self, rel_path: str, new_rel_path: str) -> None:
+    def remote_rename(self, rel_path: str, new_rel_path: str, *, allow_direct: bool = False) -> None:
+        if allow_direct and self._direct_available():
+            try:
+                os.replace(self._unc(rel_path), self._unc(new_rel_path))
+                return
+            except OSError:
+                windows_unc.report_failure(self.host, self.username)
         self._with_retry(smbclient.rename, self._unc(rel_path), self._unc(new_rel_path))
 
-    def remote_remove(self, rel_path: str) -> None:
+    def remote_remove(self, rel_path: str, *, allow_direct: bool = False) -> None:
+        if allow_direct and self._direct_available():
+            try:
+                os.remove(self._unc(rel_path))
+                return
+            except OSError:
+                windows_unc.report_failure(self.host, self.username)
         self._with_retry(smbclient.remove, self._unc(rel_path))
 
     def remote_mkdir(self, rel_path: str) -> None:

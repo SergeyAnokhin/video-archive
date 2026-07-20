@@ -15,11 +15,23 @@ deletes the source (Specification §8.2-8.3).
 
 All file access goes through `app.sources.SourceAccess` (Stage 7) instead of
 raw `pathlib`: for a `local` source this is a zero-cost passthrough (same
-behavior as before Stage 7); for an `smb` source, the file being converted is
-downloaded once to a throwaway local temp directory, encoded there exactly as
-before, and the result is uploaded back — renames/removals of files that were
-never re-encoded (marking an original, deleting a superseded original) happen
-directly on the remote source without re-uploading their bytes.
+behavior as before Stage 7); for an `smb` source without direct write access,
+the file being converted is downloaded once to a throwaway local temp
+directory, encoded there exactly as before, and the result is uploaded back —
+renames/removals of files that were never re-encoded (marking an original,
+deleting a superseded original) happen directly on the remote source without
+re-uploading their bytes.
+
+For an SMB source with per-source direct access enabled
+(`app/sources/windows_unc.py`), `local_copy()` already reads straight off the
+UNC path with no download. The global `conversion_settings.direct_write_enabled`
+switch opts the *write* side into the matching fast path too:
+`_resolve_output_directory()` then writes the encode's temp output directly
+onto the share (instead of a local scratch dir) and
+`commit_new_file()`/`remote_rename()`/`remote_remove()` are called with
+`allow_direct=True` so the eventual move is a same-share raw filesystem
+rename instead of a download-then-reupload round trip. Off (the default), or
+when the source isn't UNC-reachable, behavior is exactly the paragraph above.
 """
 
 from __future__ import annotations
@@ -30,8 +42,10 @@ import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 from sqlalchemy import text
 
@@ -115,6 +129,32 @@ def _effective_params(profile: dict, overrides: dict | None) -> dict:
 
 def _temp_output_path(directory: Path, stem: str, container: str) -> Path:
     return directory / f".{stem}.convert-{uuid.uuid4().hex[:8]}.{container}"
+
+
+@contextmanager
+def _resolve_output_directory(
+    access: SourceAccess, old_path: Path, direct_write_enabled: bool
+) -> Iterator[tuple[Path, bool]]:
+    """Where to put the ffmpeg temp output for a replace, and whether the
+    subsequent `commit_new_file()`/`remote_rename()`/`remote_remove()` calls
+    may use the raw-UNC fast path (the `bool` half of the yielded pair,
+    passed straight through as their `allow_direct`).
+
+    `old_path` is a UNC path exactly when `access.local_copy()` took its own
+    direct-access fast path. Writing the temp file into that same directory
+    only makes sense -- instead of it accidentally landing on the network
+    share -- when `direct_write_enabled` also opts in; otherwise fall back to
+    a real local scratch dir (`stage_output_dir()`, the same helper
+    `app/backup.py` uses) so the encode never touches the share until the
+    deliberate commit step."""
+    if str(old_path).startswith("\\\\"):
+        if direct_write_enabled:
+            yield old_path.parent, True
+            return
+        with access.stage_output_dir("") as scratch_dir:
+            yield scratch_dir, False
+        return
+    yield old_path.parent, False
 
 
 def _probe_params(probe: dict | None) -> dict:
@@ -352,27 +392,27 @@ def _has_preview(access: SourceAccess, rel_path: str, stem: str) -> bool:
 
 def _replace_production(
     engine, job_id: str, item_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict,
-    profile_id: str, *, min_size_reduction_percent: float,
+    profile_id: str, *, min_size_reduction_percent: float, direct_write_enabled: bool = False,
 ) -> dict:
-    directory = old_path.parent
     stem = old_path.stem
     params = _effective_params(profile, None)
 
-    temp_path = _temp_output_path(directory, stem, params["container"])
-    encode_result = _encode_and_validate(
-        engine, job_id, file_row.id, item_id, old_path, temp_path, params,
-        min_size_reduction_percent=min_size_reduction_percent,
-    )
-    duration_seconds = encode_result["duration"]
+    with _resolve_output_directory(access, old_path, direct_write_enabled) as (directory, allow_direct):
+        temp_path = _temp_output_path(directory, stem, params["container"])
+        encode_result = _encode_and_validate(
+            engine, job_id, file_row.id, item_id, old_path, temp_path, params,
+            min_size_reduction_percent=min_size_reduction_percent,
+        )
+        duration_seconds = encode_result["duration"]
 
-    final_name = f"{stem}.{params['container']}"
-    final_rel = sibling_relative_path(file_row.relative_path, final_name)
-    access.commit_new_file(temp_path, final_rel)
-    if final_rel != file_row.relative_path:
-        access.remote_remove(file_row.relative_path)
-    service.log_event(
-        engine, job_id, file_row.id, "info", "job_item_progress", f"Replaced source with {final_name}"
-    )
+        final_name = f"{stem}.{params['container']}"
+        final_rel = sibling_relative_path(file_row.relative_path, final_name)
+        access.commit_new_file(temp_path, final_rel, allow_direct=allow_direct)
+        if final_rel != file_row.relative_path:
+            access.remote_remove(file_row.relative_path, allow_direct=allow_direct)
+        service.log_event(
+            engine, job_id, file_row.id, "info", "job_item_progress", f"Replaced source with {final_name}"
+        )
 
     final_stat = access.stat_rel(final_rel)
     now = _now()
@@ -417,33 +457,34 @@ def _replace_production(
 
 def _replace_test_mode(
     engine, job_id: str, item_id: str, access: SourceAccess, old_path: Path, file_row, profile: dict,
-    profile_id: str, *, min_size_reduction_percent: float,
+    profile_id: str, *, min_size_reduction_percent: float, direct_write_enabled: bool = False,
 ) -> dict:
-    directory = old_path.parent
     stem = old_path.stem
     original_ext = file_row.extension
     params = _effective_params(profile, None)
 
-    temp_path = _temp_output_path(directory, stem, params["container"])
-    encode_result = _encode_and_validate(
-        engine, job_id, file_row.id, item_id, old_path, temp_path, params,
-        min_size_reduction_percent=min_size_reduction_percent,
-    )
-    duration_seconds = encode_result["duration"]
+    with _resolve_output_directory(access, old_path, direct_write_enabled) as (directory, allow_direct):
+        temp_path = _temp_output_path(directory, stem, params["container"])
+        encode_result = _encode_and_validate(
+            engine, job_id, file_row.id, item_id, old_path, temp_path, params,
+            min_size_reduction_percent=min_size_reduction_percent,
+        )
+        duration_seconds = encode_result["duration"]
 
-    # Original is always renamed, even without a name collision, so preserved
-    # originals stay uniformly recognizable (Specification §8.2). Renaming
-    # happens directly on the source: the original's bytes never changed, so
-    # there is nothing to re-upload for an SMB source.
-    original_marked_rel = sibling_relative_path(file_row.relative_path, f"{stem}.original.{original_ext}")
-    access.remote_rename(file_row.relative_path, original_marked_rel)
-    new_output_name = f"{stem}.{params['container']}"
-    new_output_rel = sibling_relative_path(file_row.relative_path, new_output_name)
-    access.commit_new_file(temp_path, new_output_rel)
-    service.log_event(
-        engine, job_id, file_row.id, "info", "job_item_progress",
-        f"Kept original as {stem}.original.{original_ext}, wrote {new_output_name}",
-    )
+        # Original is always renamed, even without a name collision, so
+        # preserved originals stay uniformly recognizable (Specification
+        # §8.2). Renaming happens directly on the source: the original's
+        # bytes never changed, so there is nothing to re-upload for an SMB
+        # source.
+        original_marked_rel = sibling_relative_path(file_row.relative_path, f"{stem}.original.{original_ext}")
+        access.remote_rename(file_row.relative_path, original_marked_rel, allow_direct=allow_direct)
+        new_output_name = f"{stem}.{params['container']}"
+        new_output_rel = sibling_relative_path(file_row.relative_path, new_output_name)
+        access.commit_new_file(temp_path, new_output_rel, allow_direct=allow_direct)
+        service.log_event(
+            engine, job_id, file_row.id, "info", "job_item_progress",
+            f"Kept original as {stem}.original.{original_ext}, wrote {new_output_name}",
+        )
 
     now = _now()
     has_preview = _has_preview(access, file_row.relative_path, stem)
@@ -638,7 +679,7 @@ def _create_variant(
 
 def _convert_one_file(
     engine, job_id: str, item_id: str, access: SourceAccess, file_row, profile: dict, mode: str, profile_id: str,
-    *, min_size_reduction_percent: float,
+    *, min_size_reduction_percent: float, direct_write_enabled: bool = False,
 ) -> dict:
     if not access.exists(file_row.relative_path):
         raise ConversionError("Source file no longer exists on the source.")
@@ -647,11 +688,11 @@ def _convert_one_file(
         if mode == "test":
             return _replace_test_mode(
                 engine, job_id, item_id, access, old_path, file_row, profile, profile_id,
-                min_size_reduction_percent=min_size_reduction_percent,
+                min_size_reduction_percent=min_size_reduction_percent, direct_write_enabled=direct_write_enabled,
             )
         return _replace_production(
             engine, job_id, item_id, access, old_path, file_row, profile, profile_id,
-            min_size_reduction_percent=min_size_reduction_percent,
+            min_size_reduction_percent=min_size_reduction_percent, direct_write_enabled=direct_write_enabled,
         )
 
 
@@ -670,7 +711,9 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
 
     mode = params.get("mode", "production")
     worker_count = max(1, performance_settings.get_settings(engine)["parallel_workers"])
-    min_size_reduction_percent = conversion_settings.get_settings(engine)["min_size_reduction_percent"]
+    conv_settings = conversion_settings.get_settings(engine)
+    min_size_reduction_percent = conv_settings["min_size_reduction_percent"]
+    direct_write_enabled = conv_settings["direct_write_enabled"]
 
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -679,13 +722,18 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
     access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, access, params, profile, mode, worker_count, min_size_reduction_percent)
-    return _run_directory_scope(engine, job, access, params, profile, mode, worker_count, min_size_reduction_percent)
+        return _run_file_scope(
+            engine, job, access, params, profile, mode, worker_count, min_size_reduction_percent,
+            direct_write_enabled,
+        )
+    return _run_directory_scope(
+        engine, job, access, params, profile, mode, worker_count, min_size_reduction_percent, direct_write_enabled
+    )
 
 
 def _process_convert_file(
     engine, job_id: str, access: SourceAccess, row, profile: dict, mode: str, profile_id: str,
-    min_size_reduction_percent: float,
+    min_size_reduction_percent: float, direct_write_enabled: bool,
 ) -> tuple[str, int | None, int | None]:
     """One directory-scope file, run from inside a batch's thread pool.
     Returns `(status, source_size, output_size)` -- status is
@@ -702,7 +750,7 @@ def _process_convert_file(
     try:
         outcome = _convert_one_file(
             engine, job_id, item_id, access, row, profile, mode, profile_id,
-            min_size_reduction_percent=min_size_reduction_percent,
+            min_size_reduction_percent=min_size_reduction_percent, direct_write_enabled=direct_write_enabled,
         )
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job_id, row.id, "info", "job_item_completed", f"Converted {row.relative_path}")
@@ -723,7 +771,7 @@ def _process_convert_file(
 
 def _run_directory_scope(
     engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str, worker_count: int,
-    min_size_reduction_percent: float,
+    min_size_reduction_percent: float, direct_write_enabled: bool,
 ) -> tuple[str, str]:
     relative_path = params.get("path", "") or ""
     skip_processed = params.get("skip_processed", True)
@@ -789,7 +837,8 @@ def _run_directory_scope(
         worker_count,
         next_item,
         lambda row: _process_convert_file(
-            engine, job["id"], access, row, profile, mode, profile_id, min_size_reduction_percent
+            engine, job["id"], access, row, profile, mode, profile_id, min_size_reduction_percent,
+            direct_write_enabled,
         ),
     )
 
@@ -829,7 +878,7 @@ def _run_directory_scope(
 
 def _run_file_scope(
     engine, job: dict, access: SourceAccess, params: dict, profile: dict, mode: str, worker_count: int,
-    min_size_reduction_percent: float,
+    min_size_reduction_percent: float, direct_write_enabled: bool,
 ) -> tuple[str, str]:
     file_id = params.get("file_id")
     variants = params.get("variants")
@@ -860,7 +909,7 @@ def _run_file_scope(
     try:
         outcome = _convert_one_file(
             engine, job["id"], item_id, access, row, profile, mode, profile_id,
-            min_size_reduction_percent=min_size_reduction_percent,
+            min_size_reduction_percent=min_size_reduction_percent, direct_write_enabled=direct_write_enabled,
         )
         service.complete_job_item(engine, item_id, output_ref=outcome["output_ref"], message="Converted.")
         service.log_event(engine, job["id"], row.id, "info", "job_item_completed", f"Converted {row.relative_path}")

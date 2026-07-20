@@ -71,17 +71,20 @@ class LocalBackend:
         directory.mkdir(parents=True, exist_ok=True)
         yield directory
 
-    def commit_new_file(self, local_path: Path, dest_rel_path: str) -> None:
+    def commit_new_file(self, local_path: Path, dest_rel_path: str, *, allow_direct: bool = False) -> None:
+        # `allow_direct` only distinguishes SMB's fast path from its
+        # smbclient-upload fallback -- a local source is already a direct
+        # filesystem move either way, so the flag has nothing to switch on.
         dest = self._abs(dest_rel_path)
         if local_path == dest:
             return
         dest.parent.mkdir(parents=True, exist_ok=True)
         os.replace(local_path, dest)
 
-    def remote_rename(self, rel_path: str, new_rel_path: str) -> None:
+    def remote_rename(self, rel_path: str, new_rel_path: str, *, allow_direct: bool = False) -> None:
         os.replace(self._abs(rel_path), self._abs(new_rel_path))
 
-    def remote_remove(self, rel_path: str) -> None:
+    def remote_remove(self, rel_path: str, *, allow_direct: bool = False) -> None:
         self._abs(rel_path).unlink()
 
     def remote_mkdir(self, rel_path: str) -> None:

@@ -23,22 +23,31 @@ function ConversionSettingsFields() {
     })()
   }, [])
 
-  // Both fields always ship together in one PUT (same gotcha as
+  // All fields always ship together in one PUT (same gotcha as
   // BackendHealthSettingsSection) -- sending just the changed one would let
-  // the backend's per-field `Field(default=...)` silently reset the other
-  // back to its default on an omitted key.
-  async function handleChange(field: ConversionSettingsField, value: number) {
-    if (!settings) return
-    const next = { ...settings, [field]: value }
+  // the backend's per-field `Field(default=...)` silently reset the others
+  // back to their default on an omitted key.
+  async function save(next: ConversionSettings) {
     setSettings(next)
     const saved = await tryApi<ConversionSettings>('/api/conversion-settings', {
       method: 'PUT',
       body: {
         min_size_reduction_percent: next.min_size_reduction_percent,
         ffmpeg_timeout_seconds: next.ffmpeg_timeout_seconds,
+        direct_write_enabled: next.direct_write_enabled,
       },
     })
     if (saved) setSettings(saved)
+  }
+
+  async function handleChange(field: ConversionSettingsField, value: number) {
+    if (!settings) return
+    await save({ ...settings, [field]: value })
+  }
+
+  async function handleDirectWriteChange(value: boolean) {
+    if (!settings) return
+    await save({ ...settings, direct_write_enabled: value })
   }
 
   if (!settings) return null
@@ -69,6 +78,15 @@ function ConversionSettingsFields() {
         />
         <span className="settings-modal__hint">{t('conversionProfiles.ffmpegTimeoutHint')}</span>
       </label>
+      <label className="settings-modal__field">
+        <span className="settings-modal__field-label">{t('conversionProfiles.directWrite')}</span>
+        <input
+          type="checkbox"
+          checked={settings.direct_write_enabled}
+          onChange={(event) => void handleDirectWriteChange(event.target.checked)}
+        />
+      </label>
+      <p className="settings-modal__hint">{t('conversionProfiles.directWriteHint')}</p>
     </>
   )
 }
