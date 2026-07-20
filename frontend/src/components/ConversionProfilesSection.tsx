@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConversionProfiles } from '../context/ConversionProfilesContext'
 import { api, tryApi } from '../api/client'
+import { useBackendStatus } from '../hooks/useBackendStatus'
 import type { ConversionProfile, ConversionSettings } from '../types/api'
 
 type ProfileFormValue = ConversionProfile | 'new' | null
@@ -215,9 +216,13 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
   const [maxDimension, setMaxDimension] = useState(initial?.max_dimension?.toString() ?? '')
   const [crf, setCrf] = useState(initial?.crf?.toString() ?? '26')
   const [dropAudio, setDropAudio] = useState(initial?.drop_audio ?? true)
+  const [hardwareAccel, setHardwareAccel] = useState(initial?.hardware_accel ?? 'off')
   const [isDefault, setIsDefault] = useState(initial?.is_default ?? false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const backendStatus = useBackendStatus()
+  const hardwareAccelInfo = backendStatus.phase === 'ready' ? backendStatus.appInfo.hardware_accel : null
 
   async function handleSave() {
     setSaving(true)
@@ -230,6 +235,7 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
         max_dimension: maxDimension ? Number(maxDimension) : null,
         crf: Number(crf),
         drop_audio: dropAudio,
+        hardware_accel: hardwareAccel,
         is_default: isDefault,
       }
       const editingExisting = Boolean(initial && initial.id)
@@ -271,6 +277,26 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
           <option value="vp9">VP9</option>
           <option value="av1">AV1</option>
         </select>
+      </label>
+
+      <label className="settings-modal__label">
+        {t('conversionProfiles.hardwareAccel')}
+        <select
+          className="settings-modal__input"
+          value={hardwareAccel}
+          onChange={(event) => setHardwareAccel(event.target.value)}
+        >
+          <option value="off">{t('conversionProfiles.hardwareAccelOff')}</option>
+          <option value="qsv">
+            {t('conversionProfiles.hardwareAccelQsv')}
+            {hardwareAccelInfo && !hardwareAccelInfo.qsv ? ` (${t('conversionProfiles.hardwareAccelUnavailable')})` : ''}
+          </option>
+          <option value="vaapi">
+            {t('conversionProfiles.hardwareAccelVaapi')}
+            {hardwareAccelInfo && !hardwareAccelInfo.vaapi ? ` (${t('conversionProfiles.hardwareAccelUnavailable')})` : ''}
+          </option>
+        </select>
+        <span className="settings-modal__hint">{t('conversionProfiles.hardwareAccelHint')}</span>
       </label>
 
       <div className="settings-modal__row">

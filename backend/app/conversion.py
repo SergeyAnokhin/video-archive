@@ -24,6 +24,21 @@ _CODEC_INFO = {
     "av1": ("libaom-av1", "av1"),
 }
 
+# (video_codec, hardware_accel) -> ffmpeg hw encoder name. Only pairs with a
+# real, reasonably reliable hw encoder are listed; any pair absent here (e.g.
+# ("av1", "vaapi") -- av1_vaapi support is inconsistent across Intel
+# media-driver versions) falls back to the software encoder in
+# resolve_encoder() below.
+_HW_CODEC_INFO: dict[tuple[str, str], str] = {
+    ("h264", "qsv"): "h264_qsv",
+    ("h265", "qsv"): "hevc_qsv",
+    ("vp9", "qsv"): "vp9_qsv",
+    ("av1", "qsv"): "av1_qsv",
+    ("h264", "vaapi"): "h264_vaapi",
+    ("h265", "vaapi"): "hevc_vaapi",
+    ("vp9", "vaapi"): "vp9_vaapi",
+}
+
 
 def ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
@@ -108,6 +123,24 @@ def effective_max_dimension(source_info: dict | None, configured_max: int | None
     return configured_max
 
 
+def has_hw_mapping(video_codec: str, hardware_accel: str) -> bool:
+    return (video_codec, hardware_accel) in _HW_CODEC_INFO
+
+
+def resolve_encoder(video_codec: str, hardware_accel: str = "off") -> str:
+    """Resolve the actual ffmpeg encoder name for a (codec, backend) pair.
+    Callers are responsible for only passing a hardware_accel value that a
+    prior availability probe (app/hardware_accel.py) confirmed works on this
+    host -- this function does no I/O and never fails, it just falls back to
+    the software encoder for any (codec, backend) pair with no hw mapping."""
+    if hardware_accel and hardware_accel != "off":
+        hw_encoder = _HW_CODEC_INFO.get((video_codec, hardware_accel))
+        if hw_encoder:
+            return hw_encoder
+    encoder, _ = _CODEC_INFO.get(video_codec, (video_codec, video_codec))
+    return encoder
+
+
 def build_ffmpeg_command(
     input_path: Path,
     output_path: Path,
@@ -117,8 +150,9 @@ def build_ffmpeg_command(
     drop_audio: bool,
     max_dimension: int | None = None,
     extra_encoder_args: list[str] | None = None,
+    hardware_accel: str = "off",
 ) -> list[str]:
-    encoder, _ = _CODEC_INFO.get(video_codec, (video_codec, video_codec))
+    encoder = resolve_encoder(video_codec, hardware_accel)
 
     args = [ffmpeg_path() or "ffmpeg", "-y", "-i", str(input_path), "-c:v", encoder, "-crf", str(crf)]
 

@@ -28,6 +28,7 @@ def _active_source_summary() -> dict | None:
 @router.get("/app/info")
 def get_app_info(request: Request) -> dict:
     ffmpeg_status = request.app.state.ffmpeg_status
+    hardware_accel_status = request.app.state.hardware_accel_status
 
     return {
         "app_version": request.app.state.app_version,
@@ -41,6 +42,10 @@ def get_app_info(request: Request) -> dict:
             "available": ffmpeg_status.available,
             "version": ffmpeg_status.version,
             "path": ffmpeg_status.path,
+        },
+        "hardware_accel": {
+            "qsv": hardware_accel_status.qsv,
+            "vaapi": hardware_accel_status.vaapi,
         },
     }
 

@@ -19,6 +19,7 @@ class ProfileRequest(BaseModel):
     max_dimension: int | None = None
     crf: int = service.DEFAULT_CRF
     drop_audio: bool = True
+    hardware_accel: str = service.DEFAULT_HARDWARE_ACCEL
     extra_encoder_args: dict | None = None
 
 

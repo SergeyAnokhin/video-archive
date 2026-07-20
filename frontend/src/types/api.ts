@@ -16,6 +16,11 @@ export interface FfmpegInfo {
   path: string | null
 }
 
+export interface HardwareAccelInfo {
+  qsv: boolean
+  vaapi: boolean
+}
+
 export interface DatabaseInfo {
   status: string
   schema_version: number | null
@@ -85,6 +90,7 @@ export interface AppInfoResponse {
   database: DatabaseInfo
   queue: QueueInfo
   ffmpeg: FfmpegInfo
+  hardware_accel: HardwareAccelInfo
 }
 
 export type SourceProtocol = 'local' | 'smb'
@@ -205,6 +211,7 @@ export interface ConversionProfile {
   max_dimension: number | null
   crf: number
   drop_audio: boolean
+  hardware_accel: string
   extra_encoder_args: Record<string, unknown> | null
   created_at: string
   updated_at: string

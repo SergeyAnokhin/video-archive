@@ -33,7 +33,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles, conversion_settings, performance_settings, tags
+from app import conversion, conversion_profiles, conversion_settings, hardware_accel, performance_settings, tags
 from app.jobs import service
 from app.media import is_test_artifact, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -85,6 +85,7 @@ def _effective_params(profile: dict, overrides: dict | None) -> dict:
         "drop_audio": profile["drop_audio"],
         "max_dimension": overrides.get("max_dimension", profile.get("max_dimension")),
         "extra_encoder_args": profile.get("extra_encoder_args"),
+        "hardware_accel": profile.get("hardware_accel", "off"),
     }
 
 
@@ -125,6 +126,21 @@ def _encode_and_validate(
     source_info = conversion.probe_media(source_path)
     source_size = source_path.stat().st_size
     max_dim = conversion.effective_max_dimension(source_info, params["max_dimension"])
+
+    # Upfront availability gate (user's requested hardware_accel may not have
+    # a mapping for this codec, or the cached startup probe -- app/hardware_accel.py
+    # -- may have found it unusable on this host): resolved before the first
+    # ffmpeg command is even built, so a doomed hw attempt never runs.
+    requested_hw = params["hardware_accel"]
+    effective_hw = requested_hw
+    if requested_hw and requested_hw != "off":
+        if not conversion.has_hw_mapping(params["video_codec"], requested_hw):
+            progress(f"No {requested_hw} encoder for codec {params['video_codec']}; using software encoder.")
+            effective_hw = "off"
+        elif not getattr(hardware_accel.check_hardware_accel(), requested_hw, False):
+            progress(f"{requested_hw} hardware encoding unavailable on this host; using software encoder.")
+            effective_hw = "off"
+
     args = conversion.build_ffmpeg_command(
         source_path,
         temp_path,
@@ -133,6 +149,7 @@ def _encode_and_validate(
         drop_audio=params["drop_audio"],
         max_dimension=max_dim,
         extra_encoder_args=params["extra_encoder_args"],
+        hardware_accel=effective_hw,
     )
     progress(f"Probed source in {time.monotonic() - t0:.2f}s")
     # Source resolution/size up front (user request): so the log identifies
@@ -165,6 +182,32 @@ def _encode_and_validate(
     ok, error = conversion.run_ffmpeg(
         args, timeout=timeout, duration=duration, on_progress=on_progress, should_stop=should_stop
     )
+    # Runtime fallback: a hardware encode that fails at ffmpeg-run time (as
+    # opposed to being pre-emptively ruled out above) gets exactly one retry
+    # on the software encoder -- the original error is always logged in full
+    # first, so a genuine non-hardware ffmpeg failure is never hidden, only
+    # given a second, unambiguous chance to succeed or fail on its own terms.
+    if not ok and effective_hw != "off":
+        service.log_event(
+            engine, job_id, file_id, "warning", "job_item_progress",
+            f"{effective_hw} hardware encode failed ({error}); retrying this file with the software encoder.",
+        )
+        if temp_path.exists():
+            temp_path.unlink()
+        args = conversion.build_ffmpeg_command(
+            source_path,
+            temp_path,
+            video_codec=params["video_codec"],
+            crf=params["crf"],
+            drop_audio=params["drop_audio"],
+            max_dimension=max_dim,
+            extra_encoder_args=params["extra_encoder_args"],
+            hardware_accel="off",
+        )
+        progress(f"ffmpeg command (software fallback): {shlex.join(args)}")
+        ok, error = conversion.run_ffmpeg(
+            args, timeout=timeout, duration=duration, on_progress=on_progress, should_stop=should_stop
+        )
     if not ok:
         if temp_path.exists():
             temp_path.unlink()
@@ -499,6 +542,13 @@ def _convert_one_file(
 
 
 def run_convert_job(engine, job: dict) -> tuple[str, str]:
+    # Known limitation, not addressed by this pass: `worker_count` below can
+    # run several ffmpeg processes concurrently, but a single Intel iGPU only
+    # supports a handful of simultaneous QSV/VAAPI encode sessions -- a
+    # profile with hardware_accel set and a high parallel_workers count may
+    # see some concurrent files' hardware encodes fail and fall back to
+    # software (see the runtime retry in _encode_and_validate) rather than
+    # all running in hardware at once.
     params = job["parameters"] or {}
     profile = conversion_profiles.get_profile(engine, params.get("profile_id", ""))
     if profile is None:

@@ -77,7 +77,12 @@ class SMBBackend:
         self.share, self.share_subpath = _split_share(root_path)
         self.username = username
         self.password = password
-        self._register_session()
+        # Must go through the same lock as `_with_retry()`: `smbclient`
+        # caches one connection per host process-wide, so an unsynchronized
+        # `register_session()` here can race a concurrent request's SMB
+        # traffic on that shared socket (see `_smb_lock` above).
+        with _smb_lock:
+            self._register_session()
 
     def _register_session(self) -> None:
         smbclient.register_session(self.host, username=self.username, password=self.password, port=self.port)

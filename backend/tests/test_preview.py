@@ -410,6 +410,35 @@ def test_preview_job_skip_processed_rule(engine, source):
     assert collage.stat().st_mtime == first_mtime
 
 
+def test_preview_job_skip_processed_adopts_untracked_existing_collage(engine, source):
+    """User report: a collage already sitting on the source (e.g. a prior
+    run interrupted after writing the file but before recording it in the
+    DB) must be adopted -- flag backfilled -- instead of paid for again."""
+    video_path = source["root"] / "clips" / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+    scan_source(engine, source["id"], source["root"])
+
+    collage = source["root"] / "clips" / "movie.jpg"
+    collage.write_bytes(b"not a real jpeg, just needs to exist")
+    stray_mtime = collage.stat().st_mtime
+
+    with engine.connect() as conn:
+        file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clips/movie.mp4'")).fetchone()
+    assert file_row.has_preview_asset == 0
+
+    job = service.create_job(engine, "preview", "source", None, {"path": "", "skip_processed": True})
+    service.start_job(engine, job["id"])
+    status, message = preview_job.run_preview_job(engine, job)
+
+    assert status == "completed"
+    assert "1 skipped" in message
+    assert collage.stat().st_mtime == stray_mtime
+
+    with engine.connect() as conn:
+        updated = conn.execute(text("SELECT * FROM files WHERE id = :id"), {"id": file_row.id}).fetchone()
+    assert updated.has_preview_asset == 1
+
+
 def test_preview_job_excludes_test_artifacts(engine, source):
     make_video(source["root"] / "clips" / "movie.mp4", duration=2.0, size="320x240")
     make_video(source["root"] / "clips" / "movie.original.mov", duration=2.0, size="320x240")

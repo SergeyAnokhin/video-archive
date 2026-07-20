@@ -721,6 +721,14 @@ MIGRATIONS: dict[int, list[str]] = {
     35: [
         "ALTER TABLE conversion_settings ADD COLUMN ffmpeg_timeout_seconds INTEGER NOT NULL DEFAULT 3600",
     ],
+    # Optional Intel hardware-accelerated encoding (QSV on Windows, VAAPI
+    # groundwork for the k3s/Linux deployment) -- per-profile, not a global
+    # singleton, since different saved profiles may reasonably want different
+    # encode backends on the same host (see app/hardware_accel.py). Existing
+    # rows default to 'off' so behavior is unchanged until a user opts in.
+    36: [
+        "ALTER TABLE conversion_profiles ADD COLUMN hardware_accel TEXT NOT NULL DEFAULT 'off'",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

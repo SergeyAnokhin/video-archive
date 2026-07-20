@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from app import conversion, conversion_profiles, conversion_settings, performance_settings
+from app import conversion, conversion_profiles, conversion_settings, hardware_accel, performance_settings
 from app.jobs import convert, service
 from app.scan import scan_source
 
@@ -114,6 +114,17 @@ def test_profile_crud_and_default_exclusivity(engine, source):
 
     assert conversion_profiles.delete_profile(engine, p1["id"]) is True
     assert conversion_profiles.get_profile(engine, p1["id"]) is None
+
+
+def test_profile_crud_round_trips_hardware_accel(engine, source):
+    default_profile = conversion_profiles.create_profile(engine, {"name": "Default HW"})
+    assert default_profile["hardware_accel"] == "off"
+
+    qsv_profile = conversion_profiles.create_profile(engine, {"name": "QSV", "hardware_accel": "qsv"})
+    assert qsv_profile["hardware_accel"] == "qsv"
+
+    updated = conversion_profiles.update_profile(engine, qsv_profile["id"], {**qsv_profile, "hardware_accel": "vaapi"})
+    assert updated["hardware_accel"] == "vaapi"
 
 
 # --- production mode ----------------------------------------------------------
@@ -453,6 +464,119 @@ def test_production_mode_replaces_when_reduction_meets_configured_threshold(engi
 
     row = _file_row(engine, "clips/clip.mp4")
     assert row.converted_at is not None
+
+
+# --- hardware-accelerated encoding fallback (app/hardware_accel.py) ------------
+
+
+def test_convert_job_falls_back_to_software_when_hw_unavailable(engine, source, monkeypatch):
+    """A profile requesting `hardware_accel="qsv"` on a host where the
+    startup probe found QSV unusable must still convert successfully, via
+    the software encoder, with the reason logged rather than the job simply
+    failing or silently ignoring the requested setting."""
+    make_video(source["root"] / "clips" / "clip.mp4", size="480x360", duration=1.0)
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine, hardware_accel="qsv")
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    monkeypatch.setattr(
+        hardware_accel, "check_hardware_accel",
+        lambda **kwargs: hardware_accel.HardwareAccelStatus(qsv=False, vaapi=False),
+    )
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+
+    assert job["status"] == "completed"
+    converted_path = source["root"] / "clips" / "clip.mp4"
+    assert converted_path.exists()
+    assert conversion.probe_media(converted_path)["video_codec_name"] == "hevc"
+
+    with engine.connect() as conn:
+        messages = [
+            row.message
+            for row in conn.execute(
+                text("SELECT message FROM app_events WHERE job_id = :id ORDER BY rowid"), {"id": job["id"]}
+            ).all()
+        ]
+    assert any("qsv hardware encoding unavailable on this host" in message for message in messages)
+
+
+def test_convert_job_retries_with_software_after_hw_runtime_failure(engine, source, monkeypatch):
+    """The upfront probe may say QSV is available, but the actual encode can
+    still fail at runtime -- the job must retry once with the software
+    encoder rather than failing the file outright, and the log must show
+    both the original failure and the retry, never hiding one for the
+    other."""
+    make_video(source["root"] / "clips" / "clip.mp4", size="480x360", duration=1.0)
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine, hardware_accel="qsv")
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    monkeypatch.setattr(
+        hardware_accel, "check_hardware_accel",
+        lambda **kwargs: hardware_accel.HardwareAccelStatus(qsv=True, vaapi=False),
+    )
+
+    real_run_ffmpeg = conversion.run_ffmpeg
+    calls = {"n": 0}
+
+    def flaky_run_ffmpeg(args, timeout=3600, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return False, "simulated qsv failure"
+        return real_run_ffmpeg(args, timeout=timeout, **kwargs)
+
+    monkeypatch.setattr(conversion, "run_ffmpeg", flaky_run_ffmpeg)
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+
+    assert job["status"] == "completed"
+    assert calls["n"] == 2
+    assert (source["root"] / "clips" / "clip.mp4").exists()
+
+    with engine.connect() as conn:
+        messages = [
+            row.message
+            for row in conn.execute(
+                text("SELECT message FROM app_events WHERE job_id = :id ORDER BY rowid"), {"id": job["id"]}
+            ).all()
+        ]
+    assert any("simulated qsv failure" in message for message in messages)
+    assert any("retrying this file with the software encoder" in message for message in messages)
+
+
+def test_convert_job_no_hw_mapping_falls_back_silently_logged(engine, source):
+    """A `hardware_accel` value with no registered ffmpeg encoder mapping for
+    the profile's codec (e.g. a value with no `(codec, backend)` entry in
+    `conversion._HW_CODEC_INFO`) must fall back to software before ever
+    consulting the availability probe, and say why in the job log."""
+    make_video(source["root"] / "clips" / "clip.mp4", size="480x360", duration=1.0)
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine, hardware_accel="nvenc")
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+
+    assert job["status"] == "completed"
+    assert (source["root"] / "clips" / "clip.mp4").exists()
+
+    with engine.connect() as conn:
+        messages = [
+            row.message
+            for row in conn.execute(
+                text("SELECT message FROM app_events WHERE job_id = :id ORDER BY rowid"), {"id": job["id"]}
+            ).all()
+        ]
+    assert any("No nvenc encoder for codec h265; using software encoder." in message for message in messages)
 
 
 # --- test mode -----------------------------------------------------------------

@@ -306,13 +306,19 @@ def _run_directory_scope(
             stop_status = "cancelled" if stop == "cancel" else "paused"
             break
 
-        # Also checks the collage file itself, not just the DB flag: it can
-        # be deleted directly on the source (or a later-restored metadata
-        # snapshot may predate it), which this makes regeneration
-        # self-healing instead of permanently skipping a file whose on-source
-        # preview is actually gone.
+        # Checks the collage file itself, not just the DB flag, in both
+        # directions: a missing on-source file makes regeneration
+        # self-healing instead of permanently skipping a file whose preview
+        # is actually gone (it can be deleted directly on the source, or a
+        # later-restored metadata snapshot may predate it), while a present
+        # on-source file that the DB doesn't know about yet (e.g. an
+        # interrupted prior run, or files copied in alongside their already
+        # generated previews) is adopted by backfilling the DB flag instead
+        # of paying to regenerate an asset that already exists (user report).
         collage_rel = sibling_relative_path(row.relative_path, f"{Path(row.file_name).stem}.jpg")
-        if skip_processed and row.has_preview_asset and access.exists(collage_rel):
+        if skip_processed and access.exists(collage_rel):
+            if not row.has_preview_asset:
+                _mark_file_previewed(engine, row.id, None)
             item_id = service.create_job_item(engine, job["id"], file_id=row.id, step_name="preview_file")
             service.skip_job_item(engine, item_id, "Already has a preview; skipped.")
             service.log_event(

@@ -16,6 +16,7 @@ from sqlalchemy import text
 DEFAULT_VIDEO_CODEC = "h265"
 DEFAULT_CONTAINER = "mp4"
 DEFAULT_CRF = 26
+DEFAULT_HARDWARE_ACCEL = "off"
 
 
 def _now() -> str:
@@ -32,6 +33,7 @@ def _row_to_dict(row) -> dict:
         "max_dimension": row.max_dimension,
         "crf": row.crf,
         "drop_audio": bool(row.drop_audio),
+        "hardware_accel": row.hardware_accel,
         "extra_encoder_args": json.loads(row.extra_encoder_args) if row.extra_encoder_args else None,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -67,10 +69,10 @@ def create_profile(engine, data: dict) -> dict:
                 """
                 INSERT INTO conversion_profiles
                     (id, name, is_default, video_codec, container, max_dimension,
-                     crf, drop_audio, extra_encoder_args, created_at, updated_at)
+                     crf, drop_audio, hardware_accel, extra_encoder_args, created_at, updated_at)
                 VALUES
                     (:id, :name, :is_default, :video_codec, :container, :max_dimension,
-                     :crf, :drop_audio, :extra_encoder_args, :now, :now)
+                     :crf, :drop_audio, :hardware_accel, :extra_encoder_args, :now, :now)
                 """
             ),
             {
@@ -82,6 +84,7 @@ def create_profile(engine, data: dict) -> dict:
                 "max_dimension": data.get("max_dimension"),
                 "crf": data.get("crf", DEFAULT_CRF),
                 "drop_audio": bool(data.get("drop_audio", True)),
+                "hardware_accel": data.get("hardware_accel", DEFAULT_HARDWARE_ACCEL),
                 "extra_encoder_args": json.dumps(data["extra_encoder_args"])
                 if data.get("extra_encoder_args") is not None
                 else None,
@@ -112,7 +115,8 @@ def update_profile(engine, profile_id: str, data: dict) -> dict | None:
                 UPDATE conversion_profiles
                 SET name = :name, is_default = :is_default, video_codec = :video_codec,
                     container = :container, max_dimension = :max_dimension, crf = :crf,
-                    drop_audio = :drop_audio, extra_encoder_args = :extra_encoder_args,
+                    drop_audio = :drop_audio, hardware_accel = :hardware_accel,
+                    extra_encoder_args = :extra_encoder_args,
                     updated_at = :now
                 WHERE id = :id
                 """
@@ -126,6 +130,7 @@ def update_profile(engine, profile_id: str, data: dict) -> dict | None:
                 "max_dimension": merged["max_dimension"],
                 "crf": merged["crf"],
                 "drop_audio": bool(merged["drop_audio"]),
+                "hardware_accel": merged.get("hardware_accel", DEFAULT_HARDWARE_ACCEL),
                 "extra_encoder_args": json.dumps(merged["extra_encoder_args"])
                 if merged.get("extra_encoder_args") is not None
                 else None,

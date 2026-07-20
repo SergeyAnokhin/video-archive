@@ -6,6 +6,7 @@ from app import batch_submissions
 from app.config import APP_VERSION
 from app.db import get_engine, init_db
 from app.ffmpeg import check_ffmpeg
+from app.hardware_accel import check_hardware_accel
 from app.jobs import service as jobs_service
 from app.jobs.worker import JobWorker
 from app.logging_config import configure_logging
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     init_db()
     app.state.app_version = APP_VERSION
     app.state.ffmpeg_status = check_ffmpeg()
+    app.state.hardware_accel_status = check_hardware_accel()
     # A `tag` job stuck `running` with an unresolved batch submission was
     # mid-poll when this process last stopped -- nothing else will ever pick
     # it back up (post-V1, user request "the batch task should survive a
