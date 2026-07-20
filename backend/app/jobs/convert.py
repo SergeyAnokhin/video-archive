@@ -115,15 +115,21 @@ def _format_command_for_log(args: list[str]) -> str:
 
 
 def _effective_params(profile: dict, overrides: dict | None) -> dict:
+    """`overrides` is a partial dict of any of these same keys -- the variant
+    sweep (`_process_variant`) only ever overrides `video_codec`/`crf`/
+    `max_dimension`, but every field is override-able here so the "generate
+    conversion script" feature (`app/conversion_script.py`) can reuse this
+    same merge logic for its own, fuller settings modal."""
     overrides = overrides or {}
     return {
         "video_codec": overrides.get("video_codec", profile["video_codec"]),
         "container": profile["container"],
         "crf": overrides.get("crf", profile["crf"]),
-        "drop_audio": profile["drop_audio"],
+        "drop_audio": overrides.get("drop_audio", profile["drop_audio"]),
         "max_dimension": overrides.get("max_dimension", profile.get("max_dimension")),
-        "extra_encoder_args": profile.get("extra_encoder_args"),
-        "hardware_accel": profile.get("hardware_accel", "off"),
+        "extra_encoder_args": overrides.get("extra_encoder_args", profile.get("extra_encoder_args")),
+        "hardware_accel": overrides.get("hardware_accel", profile.get("hardware_accel", "off")),
+        "preset": overrides.get("preset", profile.get("preset", "medium")),
     }
 
 
@@ -244,6 +250,7 @@ def _encode_and_validate(
         max_dimension=max_dim,
         extra_encoder_args=params["extra_encoder_args"],
         hardware_accel=effective_hw,
+        preset=params["preset"],
     )
     progress(f"Probed source in {time.monotonic() - t0:.2f}s")
     # Source resolution/size up front (user request): so the log identifies
@@ -330,6 +337,7 @@ def _encode_and_validate(
             extra_encoder_args=params["extra_encoder_args"],
             hardware_accel="off",
             decode_hw=False,
+            preset=params["preset"],
         )
         progress(f"ffmpeg command (software fallback): {_format_command_for_log(args)}")
         ok, error = conversion.run_ffmpeg(

@@ -291,3 +291,54 @@ def test_directory_children_variant_borrows_original_has_preview_asset(engine, s
 
     assert by_id[original_id]["has_preview_asset"] is True
     assert by_id[variant_id]["has_preview_asset"] is True
+
+
+def _insert_root_dir(engine, source_id: str) -> str:
+    dir_id = str(uuid.uuid4())
+    now = _now()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO directories (id, source_id, relative_path, name, parent_relative_path, "
+                "has_folder_preview, last_scanned_at, created_at, updated_at) "
+                "VALUES (:id, :sid, '', 'Root', NULL, 0, :now, :now, :now)"
+            ),
+            {"id": dir_id, "sid": source_id, "now": now},
+        )
+    return dir_id
+
+
+def test_orphaned_previews_dry_run_reports_count_and_sample(engine, source):
+    dir_id = _insert_root_dir(engine, source["id"])
+    _insert_video_file(engine, source["id"], dir_id, "clip.mp4")
+    (source["root"] / "clip.jpg").write_bytes(b"collage")
+    (source["root"] / "orphan.jpg").write_bytes(b"stray")
+
+    with TestClient(app) as client:
+        res = client.get("/api/directories/orphaned-previews", params={"path": ""})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["count"] == 1
+    assert body["sample"] == ["orphan.jpg"]
+
+
+def test_orphaned_previews_delete_removes_only_orphans(engine, source):
+    dir_id = _insert_root_dir(engine, source["id"])
+    _insert_video_file(engine, source["id"], dir_id, "clip.mp4")
+    (source["root"] / "clip.jpg").write_bytes(b"collage")
+    (source["root"] / "orphan.jpg").write_bytes(b"stray")
+
+    with TestClient(app) as client:
+        res = client.post("/api/directories/orphaned-previews/delete", json={"path": ""})
+
+    assert res.status_code == 200
+    assert res.json()["deleted_count"] == 1
+    assert (source["root"] / "clip.jpg").exists()
+    assert not (source["root"] / "orphan.jpg").exists()
+
+
+def test_orphaned_previews_unknown_directory_is_404(source):
+    with TestClient(app) as client:
+        res = client.get("/api/directories/orphaned-previews", params={"path": "does-not-exist"})
+    assert res.status_code == 404

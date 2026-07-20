@@ -6,7 +6,8 @@ single sequential worker (poll for the oldest queued job among its own set
 of job types, run it to completion, repeat) so at most one CPU-bound job and
 one network-bound job run at the same time:
 
-- the CPU lane: rescan/convert/preview/cleanup/optimize_db/backup/restore --
+- the CPU lane: rescan/rescan_with_media_info/convert/preview/cleanup/
+  optimize_db/backup/restore --
   all local ffmpeg/PIL/disk work, so running two of these at once would just
   contend for the same CPU/disk instead of going faster.
 - the network lane: tag -- calls out to an external AI provider API, so it
@@ -55,6 +56,7 @@ _ABANDON_CHECK_SECONDS = 0.5
 
 _HANDLERS = {
     "rescan": run_rescan_job,
+    "rescan_with_media_info": run_rescan_job,
     "convert": run_convert_job,
     "preview": run_preview_job,
     "tag": run_tag_job,

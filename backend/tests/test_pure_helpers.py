@@ -204,6 +204,23 @@ def test_build_ffmpeg_command_scale_audio_and_extra_args():
     assert passthrough[passthrough.index("-c:v") + 1] == "mycodec"
 
 
+def test_build_ffmpeg_command_applies_preset_for_software_encoder():
+    args = build_ffmpeg_command(
+        Path("in.mp4"), Path("out.mp4"), video_codec="h265", crf=26, drop_audio=True, preset="veryfast",
+    )
+    assert args[args.index("-preset") + 1] == "veryfast"
+
+
+def test_build_ffmpeg_command_omits_preset_for_hardware_encoder():
+    """qsv/vaapi encoders don't share x264/x265's `-preset` vocabulary, so it
+    must be dropped once a hardware mapping is in effect."""
+    args = build_ffmpeg_command(
+        Path("in.mp4"), Path("out.mp4"), video_codec="h264", crf=26, drop_audio=True,
+        hardware_accel="qsv", preset="veryfast",
+    )
+    assert "-preset" not in args
+
+
 def test_build_ffmpeg_command_faststart_for_mp4_only():
     """User report: a converted mp4's moov atom otherwise lands at the end
     of the file, forcing the embedded player to stall on a Range-streamed

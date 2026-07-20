@@ -2,15 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowDownAZ,
+  FileSearch2,
   FolderPlus,
   HardDrive,
   History,
   Home,
   Images,
+  MoreHorizontal,
   MoreVertical,
   RefreshCw,
+  ScrollText,
   Tag,
   Tags,
+  Trash2,
   Wand2,
   X,
 } from 'lucide-react'
@@ -20,10 +24,12 @@ import { CreateFolderDialog } from './CreateFolderDialog'
 import { FileConvertModal } from './FileConvertModal'
 import { FileInfoPanel } from './FileInfoPanel'
 import { FileTuneModal } from './FileTuneModal'
+import { GenerateScriptDialog } from './GenerateScriptDialog'
 import { HistoryFolderMenu } from './HistoryFolderMenu'
 import { ImageViewerModal } from './ImageViewerModal'
 import { FileCard, FolderCard } from './LibraryCards'
 import { MoveFileDialog } from './MoveFileDialog'
+import { OrphanedPreviewsDialog } from './OrphanedPreviewsDialog'
 import { PlaybackModal } from './PlaybackModal'
 import { PreviewDirectoryDialog } from './PreviewDirectoryDialog'
 import { SearchResults } from './SearchResults'
@@ -81,12 +87,16 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const [infoFile, setInfoFile] = useState<FileEntry | null>(null)
   const [moveFile, setMoveFile] = useState<FileEntry | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [generateScriptOpen, setGenerateScriptOpen] = useState(false)
+  const [orphanedPreviewsOpen, setOrphanedPreviewsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>('name')
   const [reloadTick, setReloadTick] = useState(0)
   const [searchFiles, setSearchFiles] = useState<FileEntry[]>([])
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
   const overflowRef = useRef<HTMLDivElement | null>(null)
+  const moreRef = useRef<HTMLDivElement | null>(null)
   const historyRef = useRef<HTMLDivElement | null>(null)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
   // Tags edited inside FileInfoPanel must show on the cards as soon as the
@@ -154,6 +164,19 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [overflowOpen])
+
+  useEffect(() => {
+    if (!moreOpen) {
+      return
+    }
+    function handleClickOutside(event: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setMoreOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [moreOpen])
 
   useEffect(() => {
     if (!historyOpen) {
@@ -318,6 +341,41 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     }
   }
 
+  async function handleRescanWithMediaInfo() {
+    setRescanning(true)
+    try {
+      await tryApi('/api/jobs/rescan-directory', {
+        method: 'POST',
+        body: { path, with_media_info: true },
+      })
+      await refreshJobs()
+    } finally {
+      setRescanning(false)
+    }
+  }
+
+  const moreMenuActions = [
+    { key: 'rescan', label: t('library.rescan'), icon: <RefreshCw size={16} />, onClick: handleRescan },
+    {
+      key: 'rescanWithMediaInfo',
+      label: t('library.rescanWithMediaInfo'),
+      icon: <FileSearch2 size={16} />,
+      onClick: handleRescanWithMediaInfo,
+    },
+    {
+      key: 'generateScript',
+      label: t('library.generateScript'),
+      icon: <ScrollText size={16} />,
+      onClick: () => setGenerateScriptOpen(true),
+    },
+    {
+      key: 'deleteOrphanedPreviews',
+      label: t('library.deleteOrphanedPreviews'),
+      icon: <Trash2 size={16} />,
+      onClick: () => setOrphanedPreviewsOpen(true),
+    },
+  ]
+
   async function handlePreviewFile(fileId: string) {
     setPreviewingFileId(fileId)
     try {
@@ -434,17 +492,6 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
           <span className="library-view__toolbar-divider" aria-hidden="true" />
 
-          <button
-            type="button"
-            className="library-view__icon-btn"
-            aria-label={t('library.rescan')}
-            title={t('library.rescan')}
-            onClick={handleRescan}
-            disabled={rescanning}
-          >
-            <RefreshCw size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
-          </button>
-
           {/* Design System §5 (< 640px): secondary icon buttons collapse into an
               overflow menu; the same actions render inline on tablet/desktop. */}
           {directoryActions.map((action) => (
@@ -482,6 +529,44 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
                     onClick={() => {
                       action.onClick()
                       setOverflowOpen(false)
+                    }}
+                  >
+                    {action.icon}
+                    <span>{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Always-visible menu (unlike `.library-view__overflow` above,
+              which only exists to collapse convert/preview/tag under 640px):
+              rescan and the bulk directory-maintenance actions (user
+              request) live here at every screen width. */}
+          <div className="library-view__more" ref={moreRef}>
+            <button
+              type="button"
+              className="library-view__icon-btn library-view__more-trigger"
+              aria-label={t('library.moreActions2')}
+              title={t('library.moreActions2')}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((open) => !open)}
+            >
+              <MoreHorizontal size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
+            </button>
+            {moreOpen && (
+              <div className="library-view__overflow-menu" role="menu">
+                {moreMenuActions.map((action) => (
+                  <button
+                    key={action.key}
+                    type="button"
+                    role="menuitem"
+                    className="library-view__overflow-item"
+                    disabled={action.key.startsWith('rescan') && rescanning}
+                    onClick={() => {
+                      action.onClick()
+                      setMoreOpen(false)
                     }}
                   >
                     {action.icon}
@@ -613,6 +698,18 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           path={path}
           onClose={() => setTagDirOpen(false)}
           onStarted={refreshJobs}
+        />
+      )}
+
+      {generateScriptOpen && (
+        <GenerateScriptDialog path={path} onClose={() => setGenerateScriptOpen(false)} />
+      )}
+
+      {orphanedPreviewsOpen && (
+        <OrphanedPreviewsDialog
+          path={path}
+          onClose={() => setOrphanedPreviewsOpen(false)}
+          onDeleted={() => setReloadTick((tick) => tick + 1)}
         />
       )}
 

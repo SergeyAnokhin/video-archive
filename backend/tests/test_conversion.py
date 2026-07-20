@@ -134,6 +134,17 @@ def test_profile_crud_round_trips_hardware_accel(engine, source):
     assert updated["hardware_accel"] == "vaapi"
 
 
+def test_profile_crud_round_trips_preset(engine, source):
+    default_profile = conversion_profiles.create_profile(engine, {"name": "Default preset"})
+    assert default_profile["preset"] == "medium"
+
+    fast_profile = conversion_profiles.create_profile(engine, {"name": "Fast", "preset": "veryfast"})
+    assert fast_profile["preset"] == "veryfast"
+
+    updated = conversion_profiles.update_profile(engine, fast_profile["id"], {**fast_profile, "preset": "slow"})
+    assert updated["preset"] == "slow"
+
+
 # --- production mode ----------------------------------------------------------
 
 

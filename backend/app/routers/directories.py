@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import PurePosixPath
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import directory_ops
+from app import directory_ops, orphan_previews
 from app.db import get_engine
 from app.media import compute_variant_tags, file_row_to_dict, folder_gif_relative_path, resolve_variant_preview_flags
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 from app.status import compute_directory_status
 from app.tags import list_top_tags_for_files, top_tags_for_directory_subtree
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -175,6 +180,70 @@ def set_favorite_directory(body: SetFavoriteDirectoryRequest):
 @router.get("/directories/favorites")
 def get_favorite_directories():
     return {"favorites": directory_ops.list_favorites(get_engine())}
+
+
+def _directory_not_found_error(path: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"error": {"code": "directory_not_found", "message": f"Directory not found: {path}"}},
+    )
+
+
+def _get_directory_or_404(conn, source_id: str, path: str):
+    row = conn.execute(
+        text("SELECT id FROM directories WHERE source_id = :sid AND relative_path = :path"),
+        {"sid": source_id, "path": path},
+    ).fetchone()
+    if row is None:
+        raise _directory_not_found_error(path)
+    return row
+
+
+@router.get("/directories/orphaned-previews")
+def get_orphaned_previews(path: str = Query(default="")):
+    """Dry-run for the "delete orphaned previews" action (user request):
+    counts and samples `.jpg` collages in this directory that no known video
+    row references, without deleting anything."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+        directory_row = _get_directory_or_404(conn, source.id, path)
+
+    access = get_source_access(source)
+    orphans = orphan_previews.find_orphaned_previews(engine, access, directory_row.id, path)
+    return {
+        "count": len(orphans),
+        "sample": [PurePosixPath(rel_path).name for rel_path in orphans[:10]],
+    }
+
+
+class DeleteOrphanedPreviewsRequest(BaseModel):
+    path: str = ""
+
+
+@router.post("/directories/orphaned-previews/delete")
+def delete_orphaned_previews(body: DeleteOrphanedPreviewsRequest):
+    """Recomputes the orphan list server-side (rather than trusting a
+    client-supplied file list from an earlier dry-run) and deletes each one,
+    tolerating a single file's removal failure so it doesn't abort the rest
+    of the batch."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+        directory_row = _get_directory_or_404(conn, source.id, body.path)
+
+    access = get_source_access(source)
+    orphans = orphan_previews.find_orphaned_previews(engine, access, directory_row.id, body.path)
+
+    deleted_count = 0
+    for rel_path in orphans:
+        try:
+            access.remote_remove(rel_path)
+            deleted_count += 1
+        except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the batch
+            logger.warning("Failed to delete orphaned preview %s: %s", rel_path, exc)
+
+    return {"deleted_count": deleted_count}
 
 
 @router.get("/directories/preview.gif")

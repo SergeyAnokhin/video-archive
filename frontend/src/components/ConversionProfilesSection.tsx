@@ -235,6 +235,7 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
   const [crf, setCrf] = useState(initial?.crf?.toString() ?? '26')
   const [dropAudio, setDropAudio] = useState(initial?.drop_audio ?? true)
   const [hardwareAccel, setHardwareAccel] = useState(initial?.hardware_accel ?? 'off')
+  const [preset, setPreset] = useState(initial?.preset ?? 'medium')
   const [isDefault, setIsDefault] = useState(initial?.is_default ?? false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -254,6 +255,7 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
         crf: Number(crf),
         drop_audio: dropAudio,
         hardware_accel: hardwareAccel,
+        preset,
         is_default: isDefault,
       }
       const editingExisting = Boolean(initial && initial.id)
@@ -315,6 +317,26 @@ function ConversionProfileForm({ initial, onCancel, onSaved }: ConversionProfile
           </option>
         </select>
         <span className="settings-modal__hint">{t('conversionProfiles.hardwareAccelHint')}</span>
+      </label>
+
+      <label className="settings-modal__label">
+        {t('conversionProfiles.preset')}
+        <select
+          className="settings-modal__input"
+          value={preset}
+          onChange={(event) => setPreset(event.target.value)}
+        >
+          <option value="ultrafast">{t('conversionProfiles.presetUltrafast')}</option>
+          <option value="superfast">{t('conversionProfiles.presetSuperfast')}</option>
+          <option value="veryfast">{t('conversionProfiles.presetVeryfast')}</option>
+          <option value="faster">{t('conversionProfiles.presetFaster')}</option>
+          <option value="fast">{t('conversionProfiles.presetFast')}</option>
+          <option value="medium">{t('conversionProfiles.presetMedium')}</option>
+          <option value="slow">{t('conversionProfiles.presetSlow')}</option>
+          <option value="slower">{t('conversionProfiles.presetSlower')}</option>
+          <option value="veryslow">{t('conversionProfiles.presetVeryslow')}</option>
+        </select>
+        <span className="settings-modal__hint">{t('conversionProfiles.presetHint')}</span>
       </label>
 
       <div className="settings-modal__row">

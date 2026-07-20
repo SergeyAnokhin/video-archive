@@ -41,7 +41,7 @@ const ETA_WINDOW_MS = 5 * 60 * 1000
 // Mirrors `PAUSABLE_JOB_TYPES` in `backend/app/jobs/service.py`: only job
 // types with a per-item loop can honor a pause request between items --
 // `optimize_db`/`backup`/`restore` run one atomic action with no checkpoint.
-const PAUSABLE_JOB_TYPES = new Set(['rescan', 'convert', 'preview', 'tag', 'cleanup'])
+const PAUSABLE_JOB_TYPES = new Set(['rescan', 'rescan_with_media_info', 'convert', 'preview', 'tag', 'cleanup'])
 
 // Prefer an icon over a text label for status (per CLAUDE.md UI conventions):
 // the shape + color read at a glance, the full word is still available via `title` on hover.

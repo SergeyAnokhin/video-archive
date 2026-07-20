@@ -20,6 +20,7 @@ class ProfileRequest(BaseModel):
     crf: int = service.DEFAULT_CRF
     drop_audio: bool = True
     hardware_accel: str = service.DEFAULT_HARDWARE_ACCEL
+    preset: str = service.DEFAULT_PRESET
     extra_encoder_args: dict | None = None
 
 

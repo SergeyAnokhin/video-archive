@@ -770,6 +770,14 @@ MIGRATIONS: dict[int, list[str]] = {
     40: [
         "ALTER TABLE conversion_settings ADD COLUMN direct_write_enabled INTEGER NOT NULL DEFAULT 0",
     ],
+    # Per-profile ffmpeg encoder speed/quality trade-off (`-preset`, user
+    # request) -- lets a profile favor faster encodes or better compression
+    # independently of `crf`. Existing rows default to 'medium', ffmpeg's own
+    # default, so behavior is unchanged until a user opts into a different
+    # value.
+    41: [
+        "ALTER TABLE conversion_profiles ADD COLUMN preset TEXT NOT NULL DEFAULT 'medium'",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

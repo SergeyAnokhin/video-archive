@@ -232,6 +232,7 @@ export interface ConversionProfile {
   crf: number
   drop_audio: boolean
   hardware_accel: string
+  preset: string
   extra_encoder_args: Record<string, unknown> | null
   created_at: string
   updated_at: string

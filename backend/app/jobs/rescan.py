@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from app import media_probe
 from app.jobs import service
 from app.scan import discover_filesystem, upsert_directory, upsert_file
 from app.sources import get_source_access
@@ -23,7 +24,17 @@ def _now() -> str:
 
 
 def run_rescan_job(engine, job: dict) -> tuple[str, str]:
+    """Handles both the `"rescan"` and `"rescan_with_media_info"` job types --
+    the latter additionally probes (ffprobe/mp4-header, via
+    `app.media_probe.probe_and_cache()`) and caches technical metadata for
+    every video file touched, instead of leaving that to the lazy
+    `GET /files/{id}/media-info` endpoint. Only files whose cache is
+    currently empty are probed (a changed file's cache was just reset to
+    NULL by `upsert_file()` above; an unchanged file's cached probe from a
+    prior run/job is left alone), so re-running this on an already-probed
+    library is a cheap no-op rather than a full re-probe."""
     relative_path = (job["parameters"] or {}).get("path", "") or ""
+    with_media_info = job["job_type"] == "rescan_with_media_info"
 
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -55,6 +66,7 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
 
     processed = 0
     failed = 0
+    probed = 0
     total = len(touched_files)
     service.set_job_total_items(engine, job["id"], total)
 
@@ -79,7 +91,25 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
                     conn, source_id, dir_ids[attrs["directory_rel"]], rel_file, attrs, now,
                     existing_id=existing.id if existing else None,
                 )
-            service.complete_job_item(engine, item_id, file_id=file_id, message="Metadata refreshed.")
+                needs_probe = False
+                if with_media_info and attrs["is_video_supported"]:
+                    probed_row = conn.execute(
+                        text("SELECT media_probed_at FROM files WHERE id = :id"), {"id": file_id}
+                    ).fetchone()
+                    needs_probe = probed_row is not None and probed_row.media_probed_at is None
+
+            message = "Metadata refreshed."
+            if needs_probe:
+                probe = media_probe.probe_and_cache(
+                    engine, access, file_id, rel_file, attrs["extension"], attrs["size_bytes"], attrs["modified_at"],
+                )
+                if probe is not None:
+                    probed += 1
+                    message = "Metadata refreshed; media info probed."
+                else:
+                    message = "Metadata refreshed; media info could not be probed."
+
+            service.complete_job_item(engine, item_id, file_id=file_id, message=message)
             service.log_event(engine, job["id"], file_id, "debug", "job_item_completed", f"Rescanned {rel_file}")
             processed += 1
         except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
@@ -92,6 +122,8 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
     removed = _remove_stale(engine, source_id, relative_path, touched_dirs, touched_files)
 
     summary = f"Rescanned {processed} of {total} file(s)"
+    if with_media_info:
+        summary += f", probed {probed} file(s) for media info"
     if failed:
         summary += f", {failed} failed"
     if removed:

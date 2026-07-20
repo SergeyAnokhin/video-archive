@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
 from math import gcd
 from pathlib import PurePosixPath
 
@@ -13,7 +12,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import conversion, file_ops, mp4_probe, similarity
+from app import file_ops, media_probe, similarity
 from app.conversion_profiles import get_profile
 from app.db import get_engine
 from app.media import (
@@ -284,59 +283,21 @@ def get_file_media_info(file_id: str):
 
     access = get_source_access(row)
 
-    info = None
-    if row.extension in ("mp4", "mov", "m4v"):
-        # Cross-platform fast path (works for `local` and `smb` alike, no
-        # Windows/net-use dependency): reads only the container's `moov`
-        # box via seek+range reads instead of downloading/opening the whole
-        # file. `None` on any doubt -- falls straight through to the
-        # existing local_copy()+ffprobe path below, exactly as if this
-        # block weren't here.
-        info = mp4_probe.probe_media(access, row.relative_path, row.size_bytes)
-
-    if info is None:
-        # Slow fallback: local_copy() downloads the whole file (SMB) or opens
-        # it in place (local) before ffprobe can even start, so this can take
-        # seconds to minutes on a large file over a slow link. Logged before
-        # starting rather than only after finishing, so a request that's
-        # blocking the UI is visible in the console/log file while it's still
-        # in flight, not just once it's done.
-        logger.info("media-info: fast probe unavailable, falling back to local_copy()+ffprobe for %s", row.relative_path)
-        with access.local_copy(row.relative_path) as local_path:
-            info = conversion.probe_media(local_path)
+    # `media_probe.probe_and_cache()` tries the cross-platform mp4-header fast
+    # path first, then falls back to local_copy()+ffprobe -- logged before
+    # starting since the fallback can take seconds to minutes on a large file
+    # over a slow link, so a request blocking the UI is visible in the
+    # console/log file while still in flight, not just once it's done.
+    logger.info("media-info: probing %s", row.relative_path)
+    info = media_probe.probe_and_cache(
+        engine, access, file_id, row.relative_path, row.extension, row.size_bytes, row.modified_at
+    )
     if info is None:
         time.sleep(0.4)
-        logger.info("media-info: retrying local_copy()+ffprobe for %s", row.relative_path)
-        with access.local_copy(row.relative_path) as local_path:
-            info = conversion.probe_media(local_path)
-
-    if info is not None:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    UPDATE files
-                    SET width = :width, height = :height, video_codec = :video_codec,
-                        format_name = :format_name, bit_rate = :bit_rate,
-                        duration_seconds = COALESCE(:duration, duration_seconds),
-                        media_probed_at = :now
-                    WHERE id = :id AND media_probed_at IS NULL
-                      AND size_bytes = :size_bytes AND modified_at IS :modified_at
-                    """
-                ),
-                {
-                    "id": file_id,
-                    "width": info.get("width"),
-                    "height": info.get("height"),
-                    "video_codec": info.get("video_codec_name"),
-                    "format_name": info.get("format_name"),
-                    "bit_rate": info.get("bit_rate"),
-                    "duration": info.get("duration"),
-                    "now": datetime.now(timezone.utc).isoformat(),
-                    "size_bytes": row.size_bytes,
-                    "modified_at": row.modified_at,
-                },
-            )
+        logger.info("media-info: retrying probe for %s", row.relative_path)
+        info = media_probe.probe_and_cache(
+            engine, access, file_id, row.relative_path, row.extension, row.size_bytes, row.modified_at
+        )
 
     aspect_ratio = _aspect_ratio(info.get("width") if info else None, info.get("height") if info else None)
 

@@ -235,6 +235,30 @@
   color: var(--color-danger);
 }
 
+.generate-script-dialog__output {
+  min-height: 320px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+
+.orphaned-previews-dialog__list {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+  font-size: 13px;
+  color: var(--color-text);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.orphaned-previews-dialog__list li {
+  word-break: break-all;
+}
+
 /* Mobile: modals become full-screen sheets (Design System §5). */
 @media (max-width: 639px) {
   .convert-dialog-overlay {

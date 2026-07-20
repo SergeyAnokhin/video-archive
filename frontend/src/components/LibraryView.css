@@ -149,6 +149,23 @@
   background: var(--color-surface);
 }
 
+.library-view__overflow-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.library-view__overflow-item:disabled:hover {
+  background: transparent;
+}
+
+/* Unlike `.library-view__overflow` above (a responsive collapse of
+ * convert/preview/tag, hidden by default), this menu holds rescan and the
+ * bulk directory-maintenance actions (user request) and stays visible at
+ * every screen width. */
+.library-view__more {
+  position: relative;
+}
+
 /* Design System §5 (< 640px): secondary icon buttons (convert/preview/tag
  * folder actions) collapse into this overflow menu instead of the inline
  * row, which would otherwise crowd the toolbar next to the search box. */

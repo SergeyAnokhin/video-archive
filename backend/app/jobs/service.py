@@ -147,7 +147,7 @@ _pause_lock = threading.Lock()
 # with no per-item loop, so pausing them wouldn't do anything until that
 # single action finishes anyway -- excluded here so `pause_job` rejects them
 # with a clear error instead of silently no-op'ing.
-PAUSABLE_JOB_TYPES = frozenset({"rescan", "convert", "preview", "tag", "cleanup"})
+PAUSABLE_JOB_TYPES = frozenset({"rescan", "rescan_with_media_info", "convert", "preview", "tag", "cleanup"})
 
 
 def request_pause(job_id: str) -> None:

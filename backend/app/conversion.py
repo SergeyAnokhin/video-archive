@@ -152,6 +152,7 @@ def build_ffmpeg_command(
     extra_encoder_args: list[str] | None = None,
     hardware_accel: str = "off",
     decode_hw: bool = True,
+    preset: str | None = None,
 ) -> list[str]:
     """`decode_hw=True` (the default, post-V1, user request) hardware-decodes
     the source whenever available, same automatic-no-setting-needed
@@ -171,6 +172,12 @@ def build_ffmpeg_command(
 
     args = [ffmpeg_path() or "ffmpeg", "-y", *hw_decode.hwaccel_input_args(decode_backend)]
     args += ["-i", str(input_path), "-c:v", encoder, "-crf", str(crf)]
+
+    # `-preset` is x264/x265/vpx software-encoder vocabulary; hardware
+    # encoders (qsv/vaapi) either don't accept it or use a different preset
+    # scale, so only apply it when we resolved to the software encoder.
+    if preset and not has_hw_mapping(video_codec, hardware_accel):
+        args += ["-preset", preset]
 
     filters = []
     if decode_backend:

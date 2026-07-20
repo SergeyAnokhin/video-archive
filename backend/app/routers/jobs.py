@@ -16,10 +16,11 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from app import batch_submissions, conversion_profiles, preview_layouts, provider_entries, tags as tags_service
+from app import batch_submissions, conversion_profiles, conversion_script, preview_layouts, provider_entries, tags as tags_service
 from app.db import get_engine
 from app.jobs import service
 from app.source_access import get_active_source_or_404
+from app.sources import get_source_access
 
 router = APIRouter()
 
@@ -170,6 +171,7 @@ def delete_finished_jobs():
 
 class RescanDirectoryRequest(BaseModel):
     path: str = ""
+    with_media_info: bool = False
 
 
 @router.post("/jobs/rescan-directory")
@@ -195,7 +197,7 @@ def rescan_directory(body: RescanDirectoryRequest):
 
     return service.create_job(
         engine,
-        job_type="rescan",
+        job_type="rescan_with_media_info" if body.with_media_info else "rescan",
         scope_type="directory" if body.path else "source",
         scope_ref=body.path or None,
         parameters={"path": body.path},
@@ -257,6 +259,62 @@ def convert_directory(body: ConvertDirectoryRequest):
             "skip_processed": body.skip_processed,
         },
     )
+
+
+class ScriptOverrides(BaseModel):
+    video_codec: str | None = None
+    crf: int | None = None
+    max_dimension: int | None = None
+    drop_audio: bool | None = None
+    hardware_accel: str | None = None
+    preset: str | None = None
+    extra_encoder_args: list[str] | None = None
+
+
+class GenerateConversionScriptRequest(BaseModel):
+    path: str = ""
+    profile_id: str
+    overrides: ScriptOverrides | None = None
+
+
+@router.post("/jobs/generate-conversion-script")
+def generate_conversion_script(body: GenerateConversionScriptRequest):
+    """Synchronous, read-only: builds a standalone PowerShell script text for
+    the user to copy and run elsewhere (user request) -- unlike every other
+    endpoint in this router, this never creates a job or touches any file."""
+    engine = get_engine()
+    profile = conversion_profiles.get_profile(engine, body.profile_id)
+    if profile is None:
+        raise _profile_not_found_error(body.profile_id)
+
+    with engine.connect() as conn:
+        source = get_active_source_or_404(conn)
+        if body.path:
+            dir_row = conn.execute(
+                text("SELECT id FROM directories WHERE source_id = :sid AND relative_path = :path"),
+                {"sid": source.id, "path": body.path},
+            ).fetchone()
+            if dir_row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "error": {
+                            "code": "directory_not_found",
+                            "message": f"Directory not found: {body.path}",
+                        }
+                    },
+                )
+
+    access = get_source_access(source)
+    relative_paths = conversion_script.enumerate_directory_files(engine, source.id, body.path)
+    overrides = body.overrides.model_dump(exclude_none=True) if body.overrides else None
+    script, container = conversion_script.generate_powershell_script(
+        profile=profile,
+        overrides=overrides,
+        root_hint=access.direct_path(""),
+        relative_paths=relative_paths,
+    )
+    return {"script": script, "file_count": len(relative_paths), "container": container}
 
 
 class VariantOverride(BaseModel):

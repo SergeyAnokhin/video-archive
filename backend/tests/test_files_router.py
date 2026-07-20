@@ -200,8 +200,10 @@ def test_media_info_retries_once_after_transient_probe_failure(engine, source, m
     """User report: right after converting a file, the info panel showed
     size but not codec/resolution -- a freshly written file can briefly be
     unreadable by ffprobe (SMB server catch-up, antivirus scan). One bounded
-    retry (`routers/files.py::get_file_media_info`) should recover from a
-    transient failure instead of giving up after a single attempt."""
+    retry (`routers/files.py::get_file_media_info`, via
+    `app.media_probe.probe_and_cache()`) should recover from a transient
+    failure instead of giving up after a single attempt."""
+    from app import media_probe
     from app.routers import files as files_router
 
     root_id = _insert_directory(engine, source["id"], "", None)
@@ -223,7 +225,7 @@ def test_media_info_retries_once_after_transient_probe_failure(engine, source, m
         calls["count"] += 1
         return None if calls["count"] == 1 else real_info
 
-    monkeypatch.setattr(files_router.conversion, "probe_media", fake_probe_media)
+    monkeypatch.setattr(media_probe.conversion, "probe_media", fake_probe_media)
     monkeypatch.setattr(files_router.time, "sleep", lambda _seconds: None)
 
     with TestClient(app) as client:
@@ -270,7 +272,7 @@ def test_media_info_uses_cached_columns_without_probing(engine, source, monkeypa
     populated (by a prior GET, or by the convert/preview jobs), the endpoint
     must serve the response straight from the DB row and never call
     `conversion.probe_media()` again."""
-    from app.routers import files as files_router
+    from app import media_probe
 
     root_id = _insert_directory(engine, source["id"], "", None)
     (source["root"] / "clip.mp4").write_bytes(b"data")
@@ -289,7 +291,7 @@ def test_media_info_uses_cached_columns_without_probing(engine, source, monkeypa
     def fail_if_called(path):
         raise AssertionError("probe_media() should not be called on a cache hit")
 
-    monkeypatch.setattr(files_router.conversion, "probe_media", fail_if_called)
+    monkeypatch.setattr(media_probe.conversion, "probe_media", fail_if_called)
 
     with TestClient(app) as client:
         res = client.get(f"/api/files/{file_id}/media-info")
@@ -306,7 +308,7 @@ def test_media_info_uses_cached_columns_without_probing(engine, source, monkeypa
 def test_media_info_persists_probe_result_for_next_request(engine, source, monkeypatch):
     """A cache-miss request that succeeds should populate the cache columns,
     so a second request for the same file becomes a cache hit."""
-    from app.routers import files as files_router
+    from app import media_probe
 
     root_id = _insert_directory(engine, source["id"], "", None)
     (source["root"] / "clip.mp4").write_bytes(b"data")
@@ -327,7 +329,7 @@ def test_media_info_persists_probe_result_for_next_request(engine, source, monke
         calls["count"] += 1
         return real_info
 
-    monkeypatch.setattr(files_router.conversion, "probe_media", fake_probe_media)
+    monkeypatch.setattr(media_probe.conversion, "probe_media", fake_probe_media)
 
     with TestClient(app) as client:
         first = client.get(f"/api/files/{file_id}/media-info")
