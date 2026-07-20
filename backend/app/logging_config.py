@@ -94,3 +94,8 @@ def configure_logging() -> None:
     # `app.sources.smb_backend`), so the raw per-chunk log adds noise
     # without new information. Keep warnings/errors, drop the per-chunk chatter.
     logging.getLogger("smbprotocol").setLevel(logging.WARNING)
+
+    # watchfiles (uvicorn --reload's file watcher) logs an INFO line on every
+    # file save -- "1 change detected" -- which is reload plumbing, not
+    # application activity. Keep warnings/errors, drop the per-save chatter.
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
