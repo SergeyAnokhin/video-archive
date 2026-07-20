@@ -186,6 +186,16 @@ def upsert_file(
     now: str,
     existing_id: str | None = None,
 ) -> str:
+    """`existing_id`'s UPDATE branch also invalidates the cached
+    ffprobe-derived technical-data columns (width/height/video_codec/
+    format_name/bit_rate/duration_seconds/media_probed_at -- see migration
+    37) whenever this scan's `size_bytes`/`modified_at` don't match what's
+    already stored: that means the file's bytes actually changed on disk
+    (e.g. replaced outside the app), so any cached probe result is stale and
+    must be re-probed on next use. This never reads the file itself, only
+    compares the stat data this scan already walked -- rescan stays
+    filesystem-metadata-only. When the file is unchanged (the overwhelming
+    common case), the `CASE` is a no-op and the cache survives untouched."""
     if existing_id:
         conn.execute(
             text(
@@ -195,7 +205,21 @@ def upsert_file(
                     size_bytes = :size, modified_at = :modified_at,
                     is_video_supported = :is_video, is_image_supported = :is_image,
                     has_preview_asset = :has_preview,
-                    last_scanned_at = :now, updated_at = :now
+                    last_scanned_at = :now, updated_at = :now,
+                    width = CASE WHEN size_bytes = :size AND modified_at IS :modified_at
+                                 THEN width ELSE NULL END,
+                    height = CASE WHEN size_bytes = :size AND modified_at IS :modified_at
+                                  THEN height ELSE NULL END,
+                    video_codec = CASE WHEN size_bytes = :size AND modified_at IS :modified_at
+                                       THEN video_codec ELSE NULL END,
+                    format_name = CASE WHEN size_bytes = :size AND modified_at IS :modified_at
+                                       THEN format_name ELSE NULL END,
+                    bit_rate = CASE WHEN size_bytes = :size AND modified_at IS :modified_at
+                                    THEN bit_rate ELSE NULL END,
+                    duration_seconds = CASE WHEN size_bytes = :size AND modified_at IS :modified_at
+                                            THEN duration_seconds ELSE NULL END,
+                    media_probed_at = CASE WHEN size_bytes = :size AND modified_at IS :modified_at
+                                           THEN media_probed_at ELSE NULL END
                 WHERE id = :id
                 """
             ),

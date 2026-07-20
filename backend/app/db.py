@@ -729,6 +729,23 @@ MIGRATIONS: dict[int, list[str]] = {
     36: [
         "ALTER TABLE conversion_profiles ADD COLUMN hardware_accel TEXT NOT NULL DEFAULT 'off'",
     ],
+    # Post-V1 (user request): cache the rest of the technical-data panel's
+    # ffprobe fields (resolution/codec/container/bitrate), not just
+    # `duration_seconds` (migration 15) -- same "captured for free" pattern,
+    # extended to preview generation and conversion, plus a read-through
+    # cache in the media-info endpoint itself for files neither has touched
+    # yet. `media_probed_at` is the cache sentinel: NULL means "never
+    # probed"; non-NULL with width/height still NULL means "probed
+    # successfully, file has no video stream" (e.g. audio-only) -- without
+    # this distinction such a file would look like a permanent cache miss.
+    37: [
+        "ALTER TABLE files ADD COLUMN width INTEGER",
+        "ALTER TABLE files ADD COLUMN height INTEGER",
+        "ALTER TABLE files ADD COLUMN video_codec TEXT",
+        "ALTER TABLE files ADD COLUMN format_name TEXT",
+        "ALTER TABLE files ADD COLUMN bit_rate INTEGER",
+        "ALTER TABLE files ADD COLUMN media_probed_at TEXT",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

@@ -93,16 +93,35 @@ def _temp_output_path(directory: Path, stem: str, container: str) -> Path:
     return directory / f".{stem}.convert-{uuid.uuid4().hex[:8]}.{container}"
 
 
+def _probe_params(probe: dict | None) -> dict:
+    """Maps a `conversion.probe_media()` dict onto the `files` cache
+    columns' bind params, for the `UPDATE`/`INSERT` statements below."""
+    probe = probe or {}
+    return {
+        "width": probe.get("width"),
+        "height": probe.get("height"),
+        "video_codec": probe.get("video_codec_name"),
+        "format_name": probe.get("format_name"),
+        "bit_rate": probe.get("bit_rate"),
+    }
+
+
 def _encode_and_validate(
     engine, job_id: str, file_id: str, item_id: str, source_path: Path, temp_path: Path, params: dict,
     *, min_size_reduction_percent: float | None = None,
 ) -> dict:
-    """Returns `{"duration", "source_size", "output_size"}`: the source's
-    duration in seconds (from the ffprobe call this already performs for
-    max-dimension resolution), so callers can persist it without a second
-    probe (re-encoding does not change a video's duration), plus the
-    before/after byte sizes (user request: show original vs. resulting size
-    in the job log) so callers don't need a third `stat()` call of their own.
+    """Returns `{"duration", "source_size", "output_size", "source_probe",
+    "output_probe"}`: the source's duration in seconds (from the ffprobe call
+    this already performs for max-dimension resolution), so callers can
+    persist it without a second probe (re-encoding does not change a video's
+    duration), plus the before/after byte sizes (user request: show original
+    vs. resulting size in the job log) so callers don't need a third
+    `stat()` call of their own. `source_probe`/`output_probe` are the full
+    `conversion.probe_media()` dicts for the source and the encoded output,
+    already computed here for other purposes (max-dimension decision, the
+    result log line) -- callers use them to cache technical metadata
+    (resolution/codec/container/bitrate) on the `files` row(s) they write,
+    at no extra probe cost.
 
     Logs a `job_item_progress` event (post-V1, user request) around each
     stage -- probing, the ffmpeg encode itself, and output validation -- so
@@ -251,6 +270,8 @@ def _encode_and_validate(
         "duration": duration,
         "source_size": source_size,
         "output_size": output_size,
+        "source_probe": source_info,
+        "output_probe": output_info,
     }
 
 
@@ -295,6 +316,8 @@ def _replace_production(
                     has_preview_asset = :has_preview, converted_at = :now,
                     last_conversion_profile_id = :profile_id,
                     duration_seconds = COALESCE(:duration, duration_seconds),
+                    width = :width, height = :height, video_codec = :video_codec,
+                    format_name = :format_name, bit_rate = :bit_rate, media_probed_at = :now,
                     last_scanned_at = :now, updated_at = :now
                 WHERE id = :id
                 """
@@ -310,6 +333,7 @@ def _replace_production(
                 "profile_id": profile_id,
                 "duration": duration_seconds,
                 "id": file_row.id,
+                **_probe_params(encode_result["output_probe"]),
             },
         )
 
@@ -365,6 +389,8 @@ def _replace_test_mode(
                     size_bytes = :size, modified_at = :modified_at,
                     has_preview_asset = :has_preview,
                     duration_seconds = COALESCE(:duration, duration_seconds),
+                    width = :width, height = :height, video_codec = :video_codec,
+                    format_name = :format_name, bit_rate = :bit_rate, media_probed_at = :now,
                     last_scanned_at = :now, updated_at = :now
                 WHERE id = :id
                 """
@@ -379,6 +405,9 @@ def _replace_test_mode(
                 "duration": duration_seconds,
                 "now": now,
                 "id": file_row.id,
+                # Only renamed, bytes unchanged -- the source probe already
+                # taken for this same encode is still accurate for it.
+                **_probe_params(encode_result["source_probe"]),
             },
         )
         conn.execute(
@@ -388,12 +417,16 @@ def _replace_test_mode(
                     (id, source_id, directory_id, relative_path, file_name, extension,
                      size_bytes, modified_at, discovered_at, last_scanned_at,
                      is_video_supported, converted_at, last_conversion_profile_id,
-                     has_preview_asset, duration_seconds, created_at, updated_at)
+                     has_preview_asset, duration_seconds,
+                     width, height, video_codec, format_name, bit_rate, media_probed_at,
+                     created_at, updated_at)
                 VALUES
                     (:id, :sid, :dir_id, :rel, :file_name, :ext,
                      :size, :modified_at, :now, :now,
                      1, :now, :profile_id,
-                     :has_preview, :duration, :now, :now)
+                     :has_preview, :duration,
+                     :width, :height, :video_codec, :format_name, :bit_rate, :now,
+                     :now, :now)
                 """
             ),
             {
@@ -409,6 +442,7 @@ def _replace_test_mode(
                 "has_preview": has_preview,
                 "now": now,
                 "profile_id": profile_id,
+                **_probe_params(encode_result["output_probe"]),
             },
         )
 
@@ -461,7 +495,10 @@ def _create_variant(
                     UPDATE files
                     SET size_bytes = :size, modified_at = :modified_at, last_scanned_at = :now,
                         is_video_supported = 1, has_preview_asset = :has_preview,
-                        duration_seconds = :duration, updated_at = :now
+                        duration_seconds = :duration,
+                        width = :width, height = :height, video_codec = :video_codec,
+                        format_name = :format_name, bit_rate = :bit_rate, media_probed_at = :now,
+                        updated_at = :now
                     WHERE id = :id
                     """
                 ),
@@ -472,6 +509,7 @@ def _create_variant(
                     "duration": duration_seconds,
                     "has_preview": has_preview,
                     "now": now,
+                    **_probe_params(encode_result["output_probe"]),
                 },
             )
         else:
@@ -481,11 +519,15 @@ def _create_variant(
                     INSERT INTO files
                         (id, source_id, directory_id, relative_path, file_name, extension,
                          size_bytes, modified_at, discovered_at, last_scanned_at,
-                         is_video_supported, has_preview_asset, duration_seconds, created_at, updated_at)
+                         is_video_supported, has_preview_asset, duration_seconds,
+                         width, height, video_codec, format_name, bit_rate, media_probed_at,
+                         created_at, updated_at)
                     VALUES
                         (:id, :sid, :dir_id, :rel, :file_name, :ext,
                          :size, :modified_at, :now, :now,
-                         1, :has_preview, :duration, :now, :now)
+                         1, :has_preview, :duration,
+                         :width, :height, :video_codec, :format_name, :bit_rate, :now,
+                         :now, :now)
                     """
                 ),
                 {
@@ -500,6 +542,7 @@ def _create_variant(
                     "duration": duration_seconds,
                     "has_preview": has_preview,
                     "now": now,
+                    **_probe_params(encode_result["output_probe"]),
                 },
             )
 

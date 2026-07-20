@@ -55,15 +55,40 @@ def _resolve_layout(engine, preset_id: str | None) -> dict:
     return preset
 
 
-def _mark_file_previewed(engine, file_id: str, duration_seconds: float | None) -> None:
+def _mark_file_previewed(engine, file_id: str, info: dict | None) -> None:
+    """`info` is the `conversion.probe_media()` dict from this generation's
+    own probe, or `None` when a file is merely adopted/backfilled without
+    actually being (re)generated (see the `skip_processed` backfill branch
+    below) -- in that case every technical-data column is left exactly as
+    it was via `COALESCE`, including `media_probed_at` itself, since no
+    fresh probe happened to justify updating it."""
+    now = _now()
+    probed_at = now if info else None
+    info = info or {}
     with engine.begin() as conn:
         conn.execute(
             text(
                 "UPDATE files SET has_preview_asset = 1, preview_generated_at = :now, "
-                "duration_seconds = COALESCE(:duration, duration_seconds), updated_at = :now "
+                "duration_seconds = COALESCE(:duration, duration_seconds), "
+                "width = COALESCE(:width, width), height = COALESCE(:height, height), "
+                "video_codec = COALESCE(:video_codec, video_codec), "
+                "format_name = COALESCE(:format_name, format_name), "
+                "bit_rate = COALESCE(:bit_rate, bit_rate), "
+                "media_probed_at = COALESCE(:probed_at, media_probed_at), "
+                "updated_at = :now "
                 "WHERE id = :id"
             ),
-            {"now": _now(), "id": file_id, "duration": duration_seconds},
+            {
+                "now": now,
+                "id": file_id,
+                "probed_at": probed_at,
+                "duration": info.get("duration"),
+                "width": info.get("width"),
+                "height": info.get("height"),
+                "video_codec": info.get("video_codec_name"),
+                "format_name": info.get("format_name"),
+                "bit_rate": info.get("bit_rate"),
+            },
         )
 
 
@@ -98,7 +123,7 @@ def _generate_one_file(
     aspect_ratio: float,
     settings: dict,
     max_workers: int = 1,
-) -> tuple[str, float | None]:
+) -> tuple[str, dict]:
     if not access.exists(file_row.relative_path):
         raise RuntimeError("Source file no longer exists on the source.")
 
@@ -117,7 +142,7 @@ def _generate_one_file(
         local_dest = video_path.with_suffix(".jpg")
         with tempfile.TemporaryDirectory(prefix="va_preview_out_") as gif_stage_dir:
             local_gif = Path(gif_stage_dir) / f"{video_path.stem}.preview.gif"
-            duration_seconds = preview.generate_file_preview(
+            info = preview.generate_file_preview(
                 video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
                 gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
                 animated_source_mode=settings["animated_source_mode"],
@@ -131,7 +156,7 @@ def _generate_one_file(
             if local_gif.exists():
                 access.commit_new_file(local_gif, preview_gif_relative_path(file_row.relative_path))
         _try_store_similarity_signature(engine, job_id, file_row.id, video_path)
-    return dest_rel, duration_seconds
+    return dest_rel, info
 
 
 def run_preview_job(engine, job: dict) -> tuple[str, str]:
@@ -179,10 +204,10 @@ def _run_file_scope(
         # Only one file here: spend the full configured parallelism on this
         # file's own independent frame extractions instead (see
         # `preview.generate_file_preview()`'s `max_workers`).
-        output_ref, duration_seconds = _generate_one_file(
+        output_ref, info = _generate_one_file(
             engine, job["id"], access, row, layout, aspect_ratio, settings, max_workers=worker_count
         )
-        _mark_file_previewed(engine, row.id, duration_seconds)
+        _mark_file_previewed(engine, row.id, info)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
             engine, job["id"], row.id, "info", "job_item_completed", f"Preview generated for {row.relative_path}"
@@ -216,10 +241,10 @@ def _process_preview_file(
         # own frame extraction sequential (max_workers=1, the default) --
         # spending the configured parallelism on both axes at once would
         # spawn `files-in-flight x max_workers` ffmpeg processes together.
-        output_ref, duration_seconds = _generate_one_file(
+        output_ref, info = _generate_one_file(
             engine, job_id, access, row, layout, aspect_ratio, settings
         )
-        _mark_file_previewed(engine, row.id, duration_seconds)
+        _mark_file_previewed(engine, row.id, info)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
             engine, job_id, row.id, "info", "job_item_completed", f"Preview generated for {row.relative_path}"

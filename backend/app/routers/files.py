@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from math import gcd
 from pathlib import PurePosixPath
 
@@ -201,20 +202,34 @@ def get_file(file_id: str):
     }
 
 
+def _aspect_ratio(width: int | None, height: int | None) -> str | None:
+    if not width or not height:
+        return None
+    divisor = gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
+
+
 @router.get("/files/{file_id}/media-info")
 def get_file_media_info(file_id: str):
-    """On-demand technical info (codec/resolution/bitrate/etc.) for the file
-    info panel. Not persisted: ffprobe runs fresh on each request, mirroring
-    how `conversion.probe_media()` is already used elsewhere (jobs/convert.py,
-    tagging.py, similarity.py) rather than adding a DB column + rescan.
+    """Technical info (codec/resolution/bitrate/etc.) for the file info
+    panel, read-through cached on `files` (migration 37): `width, height,
+    video_codec, format_name, bit_rate, duration_seconds` plus a
+    `media_probed_at` sentinel. `media_probed_at IS NOT NULL` means a prior
+    probe (from this endpoint, a `convert` job, or a `preview` job -- see
+    `app/jobs/convert.py`, `app/jobs/preview.py`) already populated these
+    columns, so the response is built straight from the DB with no ffprobe
+    call and no `local_copy()` (a bonus for SMB sources: no temp download
+    either). Cleared by `scan.upsert_file()` whenever a rescan detects the
+    file's `size_bytes`/`modified_at` changed on disk, so an externally
+    replaced file gets re-probed instead of showing stale data forever.
 
-    Probes a `local_copy()` rather than `direct_path()`: ffprobe is an
-    external OS process, so for an SMB source a raw UNC `direct_path()`
-    string is only reachable through the app's own in-process `smbclient`
-    session, not by an external process using the OS's own SMB stack --
-    ffprobe would fail immediately and this endpoint would silently return
-    every field empty (bug report: file info panel showed size but nothing
-    else for a file whose preview had already been generated via
+    On a cache miss, probes a `local_copy()` rather than `direct_path()`:
+    ffprobe is an external OS process, so for an SMB source a raw UNC
+    `direct_path()` string is only reachable through the app's own in-process
+    `smbclient` session, not by an external process using the OS's own SMB
+    stack -- ffprobe would fail immediately and this endpoint would silently
+    return every field empty (bug report: file info panel showed size but
+    nothing else for a file whose preview had already been generated via
     `local_copy()`, which does work).
 
     One bounded retry after a short delay (user report: same "size shows,
@@ -227,13 +242,19 @@ def get_file_media_info(file_id: str):
     tell apart from "genuinely unprobeable". `probe_failed` in the response
     lets the frontend show an explicit retry affordance instead of quietly
     rendering blank fields that look identical to "this file has no video
-    stream"."""
+    stream". A successful probe is persisted (guarded by `media_probed_at IS
+    NULL AND size_bytes/modified_at` still matching, so a slow retry can't
+    clobber fresher data a concurrent request or job already wrote)."""
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(
             text(
                 """
-                SELECT f.relative_path, f.last_conversion_profile_id, s.*
+                SELECT f.relative_path, f.last_conversion_profile_id,
+                       f.size_bytes, f.modified_at,
+                       f.width, f.height, f.video_codec, f.format_name,
+                       f.bit_rate, f.duration_seconds, f.media_probed_at,
+                       s.*
                 FROM files f
                 JOIN sources s ON s.id = f.source_id
                 WHERE f.id = :id AND s.is_active = 1
@@ -245,6 +266,19 @@ def get_file_media_info(file_id: str):
             raise _file_not_found_error(file_id)
         profile = get_profile(engine, row.last_conversion_profile_id) if row.last_conversion_profile_id else None
 
+    if row.media_probed_at is not None:
+        return {
+            "width": row.width,
+            "height": row.height,
+            "aspect_ratio": _aspect_ratio(row.width, row.height),
+            "video_codec": row.video_codec,
+            "format_name": row.format_name,
+            "duration": row.duration_seconds,
+            "bit_rate": row.bit_rate,
+            "conversion_profile": profile,
+            "probe_failed": False,
+        }
+
     access = get_source_access(row)
     with access.local_copy(row.relative_path) as local_path:
         info = conversion.probe_media(local_path)
@@ -253,10 +287,35 @@ def get_file_media_info(file_id: str):
         with access.local_copy(row.relative_path) as local_path:
             info = conversion.probe_media(local_path)
 
-    aspect_ratio = None
-    if info and info.get("width") and info.get("height"):
-        divisor = gcd(info["width"], info["height"])
-        aspect_ratio = f"{info['width'] // divisor}:{info['height'] // divisor}"
+    if info is not None:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE files
+                    SET width = :width, height = :height, video_codec = :video_codec,
+                        format_name = :format_name, bit_rate = :bit_rate,
+                        duration_seconds = COALESCE(:duration, duration_seconds),
+                        media_probed_at = :now
+                    WHERE id = :id AND media_probed_at IS NULL
+                      AND size_bytes = :size_bytes AND modified_at IS :modified_at
+                    """
+                ),
+                {
+                    "id": file_id,
+                    "width": info.get("width"),
+                    "height": info.get("height"),
+                    "video_codec": info.get("video_codec_name"),
+                    "format_name": info.get("format_name"),
+                    "bit_rate": info.get("bit_rate"),
+                    "duration": info.get("duration"),
+                    "now": datetime.now(timezone.utc).isoformat(),
+                    "size_bytes": row.size_bytes,
+                    "modified_at": row.modified_at,
+                },
+            )
+
+    aspect_ratio = _aspect_ratio(info.get("width") if info else None, info.get("height") if info else None)
 
     return {
         "width": info.get("width") if info else None,

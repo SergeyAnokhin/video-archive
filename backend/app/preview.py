@@ -494,9 +494,10 @@ def generate_file_preview(
     animated_transition: str = "cut",
     max_workers: int = 1,
     on_stage: Callable[[str], None] | None = None,
-) -> float:
-    """Returns the source's duration in seconds (from the ffprobe call this
-    already performs), so callers can persist it without a second probe.
+) -> dict:
+    """Returns the source's `conversion.probe_media()` dict (duration,
+    width/height, codec, container, bitrate), so callers can persist the
+    technical-data cache columns on `files` without a second probe.
 
     `max_workers` (post-V1, user request, default 1 = sequential, unchanged
     prior behavior) spreads this one file's independent per-timestamp ffmpeg
@@ -584,7 +585,7 @@ def generate_file_preview(
     )
     stage(f"Rendered collage image in {time.monotonic() - t0:.2f}s")
 
-    return info["duration"]
+    return info
 
 
 # --- folder preview (animated GIF, diverse across videos/subfolders) ------

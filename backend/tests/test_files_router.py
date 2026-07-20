@@ -265,6 +265,81 @@ def test_media_info_includes_conversion_profile_used(engine, source):
     assert body["conversion_profile"]["name"] == "My Profile"
 
 
+def test_media_info_uses_cached_columns_without_probing(engine, source, monkeypatch):
+    """Migration 37: once `width`/`height`/etc. and `media_probed_at` are
+    populated (by a prior GET, or by the convert/preview jobs), the endpoint
+    must serve the response straight from the DB row and never call
+    `conversion.probe_media()` again."""
+    from app.routers import files as files_router
+
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "clip.mp4").write_bytes(b"data")
+    file_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE files SET width = 1920, height = 1080, video_codec = 'hevc', "
+                "format_name = 'mov,mp4,m4a,3gp,3g2,mj2', bit_rate = 5000000, "
+                "duration_seconds = 12.5, media_probed_at = :now WHERE id = :id"
+            ),
+            {"now": _now(), "id": file_id},
+        )
+
+    def fail_if_called(path):
+        raise AssertionError("probe_media() should not be called on a cache hit")
+
+    monkeypatch.setattr(files_router.conversion, "probe_media", fail_if_called)
+
+    with TestClient(app) as client:
+        res = client.get(f"/api/files/{file_id}/media-info")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["width"] == 1920
+    assert body["height"] == 1080
+    assert body["aspect_ratio"] == "16:9"
+    assert body["video_codec"] == "hevc"
+    assert body["duration"] == 12.5
+    assert body["probe_failed"] is False
+
+
+def test_media_info_persists_probe_result_for_next_request(engine, source, monkeypatch):
+    """A cache-miss request that succeeds should populate the cache columns,
+    so a second request for the same file becomes a cache hit."""
+    from app.routers import files as files_router
+
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "clip.mp4").write_bytes(b"data")
+    file_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+
+    calls = {"count": 0}
+    real_info = {
+        "has_video_stream": True,
+        "width": 1280,
+        "height": 720,
+        "video_codec_name": "h264",
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": 3.0,
+        "bit_rate": 200000,
+    }
+
+    def fake_probe_media(path):
+        calls["count"] += 1
+        return real_info
+
+    monkeypatch.setattr(files_router.conversion, "probe_media", fake_probe_media)
+
+    with TestClient(app) as client:
+        first = client.get(f"/api/files/{file_id}/media-info")
+        assert first.status_code == 200
+        assert calls["count"] == 1
+
+        second = client.get(f"/api/files/{file_id}/media-info")
+        assert second.status_code == 200
+        assert calls["count"] == 1  # not called again -- served from cache
+    assert second.json()["width"] == 1280
+
+
 def test_move_file_updates_path_and_directory(engine, source):
     root_id = _insert_directory(engine, source["id"], "", None)
     dest_id = _insert_directory(engine, source["id"], "dest", "")
