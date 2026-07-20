@@ -24,7 +24,20 @@ def find_orphaned_previews(
     and aren't themselves a tracked standalone image (post-V1: `.jpg` is also
     a supported first-class image type, `app/media.py`'s
     `SUPPORTED_IMAGE_EXTENSIONS`) -- so a real library image is never treated
-    as an orphan just because it happens to be a `.jpg`."""
+    as an orphan just because it happens to be a `.jpg`.
+
+    User report: some folders (bulk-downloaded content) contain a leftover
+    `<video file name>.jpg` -- the *full* video file name, extension and all
+    (e.g. `Clip.mp4.jpg` next to `Clip.mp4`) -- rather than this app's own
+    collage naming (`<stem>.jpg`, extension stripped). `discover_filesystem()`
+    doesn't recognize that naming as a video's collage, so it ends up tracked
+    as its own standalone-image `files` row, which used to make it look like
+    a "real library image" here and get protected from deletion -- exactly
+    backwards, since it's virtually always a foreign thumbnail bundled with
+    the video by whatever tool downloaded it, not a genuine photo. Any `.jpg`
+    whose name (minus the `.jpg`) case-insensitively matches a video file's
+    full name in the same directory is therefore never protected, regardless
+    of how it got classified during scan."""
     with engine.connect() as conn:
         rows = conn.execute(
             text(
@@ -34,13 +47,17 @@ def find_orphaned_previews(
             {"dir_id": directory_id},
         ).all()
 
+    video_file_names = {row.file_name.lower() for row in rows if row.is_video_supported}
+
     protected: set[str] = set()
     for row in rows:
         if row.is_video_supported and variant_base_stem(row.file_name) is None:
             stem = PurePosixPath(row.file_name).stem
             protected.add(sibling_relative_path(row.relative_path, f"{stem}.jpg"))
         if row.is_image_supported and row.file_name.lower().endswith(".jpg"):
-            protected.add(row.relative_path)
+            looks_like_leftover_video_thumbnail = row.file_name[: -len(".jpg")].lower() in video_file_names
+            if not looks_like_leftover_video_thumbnail:
+                protected.add(row.relative_path)
 
     actual: set[str] = set()
     for entry in access.scandir(directory_relative_path):

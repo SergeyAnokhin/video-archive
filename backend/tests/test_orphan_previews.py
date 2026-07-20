@@ -1,6 +1,8 @@
 """`find_orphaned_previews()` tests (user request: "delete orphaned previews"
 directory action): a `.jpg` on disk is only an orphan if it isn't a known
-video's collage and isn't itself a tracked standalone image."""
+video's collage and isn't itself a genuine tracked standalone image -- a
+`<video file name>.jpg` (extension kept) leftover thumbnail doesn't count as
+a genuine image even though `discover_filesystem()` had to track it as one."""
 
 from __future__ import annotations
 
@@ -101,3 +103,23 @@ def test_no_orphans_when_every_jpg_is_accounted_for(engine, source):
     orphans = find_orphaned_previews(engine, access, dir_id, "")
 
     assert orphans == []
+
+
+def test_leftover_full_filename_jpg_is_flagged_even_when_tracked_as_image(engine, source):
+    """User report: a `<video file name>.jpg` -- extension kept, e.g.
+    `Clip.mp4.jpg` next to `Clip.mp4` -- is a foreign thumbnail bundled by
+    whatever tool downloaded the video, not this app's own collage naming
+    (`<stem>.jpg`). `discover_filesystem()` doesn't recognize that naming as
+    a collage, so it gets its own standalone-image `files` row -- which must
+    not make it look "protected"; it should still be flagged for deletion."""
+    dir_id = _root_dir_id(engine, source["id"])
+    _insert_file(engine, source["id"], dir_id, "Clip.mp4", "Clip.mp4")
+    _insert_file(
+        engine, source["id"], dir_id, "Clip.mp4.jpg", "Clip.mp4.jpg", is_video=0, is_image=1,
+    )
+    (source["root"] / "Clip.mp4.jpg").write_bytes(b"leftover-thumbnail")
+
+    access = SourceAccess(LocalBackend(source["root"]), "local")
+    orphans = find_orphaned_previews(engine, access, dir_id, "")
+
+    assert orphans == ["Clip.mp4.jpg"]
