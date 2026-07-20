@@ -89,7 +89,11 @@
   "performanceSettings": {
     "title": "Performance",
     "parallelWorkers": "Parallel processing (files/variants at once)",
-    "hint": "How many files (bulk convert/preview jobs) or tuning variants are processed at the same time. For a single file, the same number is used to extract preview frames in parallel."
+    "hint": "How many files (bulk convert/preview jobs) or tuning variants are processed at the same time. For a single file, the same number is used to extract preview frames in parallel.",
+    "hardwareStatusTitle": "Hardware acceleration",
+    "hardwareEncode": "Encode (conversion)",
+    "hardwareDecode": "Decode (preview, conversion)",
+    "hardwareStatusHint": "Shows whether Intel QSV/VAAPI hardware acceleration is detected on this backend, not whether it's in use right now — actual usage shows up in the job log (🚀 messages)."
   },
   "networkAccess": {
     "title": "Network",

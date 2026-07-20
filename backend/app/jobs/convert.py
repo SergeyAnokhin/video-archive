@@ -176,7 +176,8 @@ def _encode_and_validate(
     # that determined `check_hardware_decode()` only verified a synthetic
     # h264 clip) is just as much a reason for the runtime retry below as an
     # encoder failure is.
-    decode_backend_used = hardware_decode.decode_backend() is not None
+    hw_decode_backend = hardware_decode.decode_backend()
+    decode_backend_used = hw_decode_backend is not None
 
     args = conversion.build_ffmpeg_command(
         source_path,
@@ -212,6 +213,18 @@ def _encode_and_validate(
     def should_stop() -> bool:
         return service.check_stop_requested(job_id) is not None
 
+    # Once per attempt (post-V1, user request "make it visible when hardware
+    # acceleration is actually used"): `effective_hw` is the ENCODER,
+    # `hw_decode_backend` the (independent) decode side -- either, both, or
+    # neither may be active.
+    if effective_hw != "off" or decode_backend_used:
+        hw_parts = []
+        if effective_hw != "off":
+            hw_parts.append(f"encode={effective_hw.upper()}")
+        if decode_backend_used:
+            hw_parts.append(f"decode={hw_decode_backend.upper()}")
+        progress(f"🚀 Hardware acceleration active ({', '.join(hw_parts)})")
+
     t0 = time.monotonic()
     progress(f"Encoding with ffmpeg (codec={params['video_codec']}, crf={params['crf']})")
     duration = source_info.get("duration") if source_info else None
@@ -226,10 +239,14 @@ def _encode_and_validate(
     # is never hidden, only given a second, unambiguous chance to succeed or
     # fail on its own terms.
     if not ok and (effective_hw != "off" or decode_backend_used):
-        reason = f"{effective_hw} hardware encode failed ({error})" if effective_hw != "off" else f"hardware decode failed ({error})"
+        reason = (
+            f"{effective_hw} hardware encode failed ({error})"
+            if effective_hw != "off"
+            else f"hardware decode failed ({error})"
+        )
         service.log_event(
             engine, job_id, file_id, "warning", "job_item_progress",
-            f"{reason}; retrying this file with the software encoder.",
+            f"⚠️ {reason}; retrying this file with the software encoder.",
         )
         if temp_path.exists():
             temp_path.unlink()

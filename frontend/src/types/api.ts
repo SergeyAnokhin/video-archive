@@ -21,6 +21,11 @@ export interface HardwareAccelInfo {
   vaapi: boolean
 }
 
+export interface HardwareDecodeInfo {
+  qsv: boolean
+  vaapi: boolean
+}
+
 export interface DatabaseInfo {
   status: string
   schema_version: number | null
@@ -92,6 +97,7 @@ export interface AppInfoResponse {
   queue: QueueInfo
   ffmpeg: FfmpegInfo
   hardware_accel: HardwareAccelInfo
+  hardware_decode: HardwareDecodeInfo
 }
 
 export type SourceProtocol = 'local' | 'smb'

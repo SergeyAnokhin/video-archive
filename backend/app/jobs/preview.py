@@ -35,7 +35,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app import performance_settings, preview, preview_layouts, preview_settings, similarity
+from app import hardware_decode, performance_settings, preview, preview_layouts, preview_settings, similarity
 from app.jobs import service
 from app.media import folder_gif_relative_path, is_test_artifact, preview_gif_relative_path, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -394,6 +394,15 @@ def _generate_folder_previews(
     animated_transition = settings["animated_transition"]
     gif_max_width = settings["gif_max_width"]
     updated = 0
+
+    # Once per sweep, not once per directory (post-V1, user request "make it
+    # visible when hardware acceleration is actually used").
+    hw_backend = hardware_decode.decode_backend()
+    if hw_backend:
+        service.log_event(
+            engine, job["id"], None, "info", "job_item_progress",
+            f"🚀 Hardware decode active ({hw_backend.upper()}) for folder-preview frame extraction",
+        )
 
     # A video nested several levels deep is a candidate for every ancestor
     # directory's own folder-preview.gif, so materialized local copies and

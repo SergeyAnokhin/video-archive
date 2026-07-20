@@ -29,6 +29,7 @@ def _active_source_summary() -> dict | None:
 def get_app_info(request: Request) -> dict:
     ffmpeg_status = request.app.state.ffmpeg_status
     hardware_accel_status = request.app.state.hardware_accel_status
+    hardware_decode_status = request.app.state.hardware_decode_status
 
     return {
         "app_version": request.app.state.app_version,
@@ -46,6 +47,15 @@ def get_app_info(request: Request) -> dict:
         "hardware_accel": {
             "qsv": hardware_accel_status.qsv,
             "vaapi": hardware_accel_status.vaapi,
+        },
+        # Decode (post-V1, user request "make it visible whether hardware
+        # acceleration is actually detected"): separate from `hardware_accel`
+        # above, which is the ENCODER probe -- a host can have working
+        # hardware decode without a working hardware encoder, or vice versa
+        # (see `app/hardware_decode.py`'s module docstring).
+        "hardware_decode": {
+            "qsv": hardware_decode_status.qsv,
+            "vaapi": hardware_decode_status.vaapi,
         },
     }
 

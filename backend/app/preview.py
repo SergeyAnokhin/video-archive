@@ -538,6 +538,15 @@ def generate_file_preview(
         raise PreviewError("Source is not a probeable video with a video stream and duration.")
     stage(f"Probed source ({info['duration']:.1f}s video) in {time.monotonic() - t0:.2f}s")
 
+    # Once per file, not once per sampled frame (post-V1, user request "make
+    # it visible when hardware acceleration is actually used"): every
+    # `extract_frame_image()`/`extract_clip_frames()` call below re-checks
+    # this same (cached) backend on its own, so logging it here once already
+    # reflects what the whole file's extraction will use.
+    hw_backend = hardware_decode.decode_backend()
+    if hw_backend:
+        stage(f"🚀 Hardware decode active ({hw_backend.upper()}) for frame extraction")
+
     t0 = time.monotonic()
     stage(f"Extracting {len(tiles)} collage frame(s)")
     timestamps = sample_interior_timestamps(info["duration"], len(tiles))

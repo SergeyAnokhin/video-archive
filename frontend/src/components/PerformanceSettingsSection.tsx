@@ -1,11 +1,22 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { tryApi } from '../api/client'
-import type { PerformanceSettings } from '../types/api'
+import { useBackendStatus } from '../hooks/useBackendStatus'
+import type { HardwareAccelInfo, HardwareDecodeInfo, PerformanceSettings } from '../types/api'
+
+function formatHardwareStatus(info: HardwareAccelInfo | HardwareDecodeInfo | undefined | null): string {
+  // Defensive against a backend that hasn't picked up this field yet (e.g.
+  // an already-running dev server from before it was added, or a tab left
+  // open across a backend redeploy) -- this reads a live network response,
+  // not a value this app controls end to end.
+  if (!info) return '…'
+  return `QSV ${info.qsv ? '✅' : '❌'} · VAAPI ${info.vaapi ? '✅' : '❌'}`
+}
 
 export function PerformanceSettingsSection() {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<PerformanceSettings | null>(null)
+  const backendStatus = useBackendStatus()
 
   useEffect(() => {
     void (async () => {
@@ -42,6 +53,21 @@ export function PerformanceSettingsSection() {
             onChange={(event) => void handleWorkersChange(Number(event.target.value))}
           />
         </label>
+      )}
+
+      {backendStatus.phase === 'ready' && (
+        <div className="settings-modal__row">
+          <div className="settings-modal__label">
+            {t('performanceSettings.hardwareStatusTitle')}
+            <p className="settings-modal__hint">
+              🚀 {t('performanceSettings.hardwareEncode')}: {formatHardwareStatus(backendStatus.appInfo.hardware_accel)}
+            </p>
+            <p className="settings-modal__hint">
+              🚀 {t('performanceSettings.hardwareDecode')}: {formatHardwareStatus(backendStatus.appInfo.hardware_decode)}
+            </p>
+            <p className="settings-modal__hint">{t('performanceSettings.hardwareStatusHint')}</p>
+          </div>
+        </div>
       )}
     </section>
   )
