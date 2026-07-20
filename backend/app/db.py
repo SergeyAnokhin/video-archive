@@ -746,6 +746,14 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE files ADD COLUMN bit_rate INTEGER",
         "ALTER TABLE files ADD COLUMN media_probed_at TEXT",
     ],
+    # `reap_orphaned_jobs()` marks a job `failed` when the backend restarted
+    # while it was still `running` (chat request: surface this distinctly
+    # from an ordinary failure like an ffmpeg error, instead of leaving the
+    # frontend to string-match `summary_message`). Existing rows default to
+    # 0/false, matching their real history.
+    38: [
+        "ALTER TABLE jobs ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

@@ -1,4 +1,4 @@
-import { Eye, EyeOff, ListChecks, Loader2, Menu, Settings } from 'lucide-react'
+import { Eye, EyeOff, ListChecks, Menu, Settings } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { usePreviewVisibility } from '../context/PreviewVisibilityContext'
 import { useInterfaceSettings } from '../context/InterfaceSettingsContext'
@@ -32,7 +32,7 @@ export function TopBar({
   const { t } = useTranslation()
   const { previewsVisible, toggle } = usePreviewVisibility()
   const { theme, setTheme } = useInterfaceSettings()
-  const { activeJob, activeJobItems } = useJobs()
+  const { jobs, activeJob, activeJobItems } = useJobs()
   const nextTheme = THEME_PRESETS[(THEME_PRESETS.indexOf(theme) + 1) % THEME_PRESETS.length]
   const ThemeIcon = THEME_ICON[theme]
   const themeToggleLabel = t('topBar.switchTheme', { theme: t(`theme.${nextTheme}`) })
@@ -52,6 +52,27 @@ export function TopBar({
         current: currentItem?.item_key ?? activeJob.scope_ref ?? t('jobs.scopeWholeSource'),
       })
     : ''
+
+  // Merged jobs-icon state (chat request): a running/queued job pulses the
+  // icon with a slow glow, and any failed job (not just one interrupted by a
+  // backend restart -- that finer distinction lives only on the job's own
+  // row in JobsModal) rings it red, so a failure is noticeable without
+  // opening the modal. Both can apply at once.
+  const failedCount = jobs.filter((job) => job.status === 'failed').length
+  const hasFailedJobs = failedCount > 0
+  const jobsToggleLabel = hasFailedJobs
+    ? t('jobs.failedBadge', { count: failedCount })
+    : activeJob
+      ? activityLabel
+      : t('topBar.jobsToggle')
+  const jobsToggleClassName = [
+    'top-bar__icon-btn',
+    'top-bar__jobs-toggle',
+    activeJob ? 'top-bar__jobs-toggle--running' : '',
+    hasFailedJobs ? 'top-bar__jobs-toggle--failed' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <header className="top-bar">
@@ -77,26 +98,19 @@ export function TopBar({
       </div>
 
       <div className="top-bar__actions">
-        {activeJob && (
-          <button
-            type="button"
-            className="top-bar__icon-btn top-bar__activity"
-            aria-label={activityLabel}
-            title={activityLabel}
-            onClick={onJobsToggle}
-          >
-            <Loader2 size={20} className="top-bar__activity-spinner" />
-          </button>
-        )}
-
         <button
           type="button"
-          className="top-bar__icon-btn"
-          aria-label={t('topBar.jobsToggle')}
-          title={t('topBar.jobsToggle')}
+          className={jobsToggleClassName}
+          aria-label={jobsToggleLabel}
+          title={jobsToggleLabel}
           onClick={onJobsToggle}
         >
           <ListChecks size={20} />
+          {hasFailedJobs && (
+            <span className="top-bar__jobs-toggle-badge" aria-hidden="true">
+              {failedCount > 9 ? '9+' : failedCount}
+            </span>
+          )}
         </button>
 
         <button

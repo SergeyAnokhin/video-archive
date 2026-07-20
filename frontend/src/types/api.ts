@@ -43,6 +43,7 @@ export interface JobSummary {
   summary_message: string | null
   total_items: number | null
   failed_item_count: number
+  interrupted: boolean
   created_at: string
   updated_at: string
 }

@@ -157,6 +157,15 @@
   color: var(--color-danger);
 }
 
+/* Failed because the backend restarted mid-job, not because of a real error
+   (e.g. ffmpeg) -- same red as a plain failure, plus a tinted circle so the
+   two read as different things at a glance. */
+.jobs-modal__status-icon--interrupted {
+  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  border-radius: 999px;
+  padding: 2px;
+}
+
 .jobs-modal__status-icon--queued,
 .jobs-modal__status-icon--paused {
   color: var(--color-warning);

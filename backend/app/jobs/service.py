@@ -192,6 +192,7 @@ def _job_row_to_dict(row, failed_item_count: int = 0) -> dict:
         "summary_message": row.summary_message,
         "total_items": row.total_items,
         "failed_item_count": failed_item_count,
+        "interrupted": bool(row.interrupted),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -431,18 +432,21 @@ def start_job(engine, job_id: str) -> None:
     log_event(engine, job_id, None, "info", "job_started", "Job started.")
 
 
-def finish_job(engine, job_id: str, status: str, summary_message: str | None = None) -> None:
+def finish_job(
+    engine, job_id: str, status: str, summary_message: str | None = None, *, interrupted: bool = False
+) -> None:
     now = _now()
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
                 UPDATE jobs
-                SET status = :status, finished_at = :now, updated_at = :now, summary_message = :msg
+                SET status = :status, finished_at = :now, updated_at = :now, summary_message = :msg,
+                    interrupted = :interrupted
                 WHERE id = :id
                 """
             ),
-            {"status": status, "now": now, "msg": summary_message, "id": job_id},
+            {"status": status, "now": now, "msg": summary_message, "interrupted": int(interrupted), "id": job_id},
         )
     level = "error" if status == "failed" else "info"
     log_event(engine, job_id, None, level, _FINISH_EVENT_TYPES[status], summary_message or status)
@@ -468,7 +472,13 @@ def reap_orphaned_jobs(engine) -> int:
     with engine.connect() as conn:
         rows = conn.execute(text("SELECT id FROM jobs WHERE status = 'running'")).all()
     for row in rows:
-        finish_job(engine, row.id, "failed", "Interrupted: the backend restarted while this job was running.")
+        finish_job(
+            engine,
+            row.id,
+            "failed",
+            "Interrupted: the backend restarted while this job was running.",
+            interrupted=True,
+        )
     return len(rows)
 
 

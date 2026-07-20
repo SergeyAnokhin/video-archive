@@ -582,6 +582,8 @@
     "remove": "Удалить",
     "scopeWholeSource": "Весь источник",
     "indicatorTooltip": "{{jobType}} — {{current}}",
+    "interruptedTooltip": "Прервано рестартом бэкенда — нажмите «Перезапустить», чтобы возобновить",
+    "failedBadge": "Ошибок в заданиях: {{count}} — откройте «Задания», чтобы посмотреть",
     "unit": {
       "day": "дн",
       "hour": "ч",

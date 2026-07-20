@@ -582,6 +582,8 @@
     "remove": "Remove",
     "scopeWholeSource": "Whole source",
     "indicatorTooltip": "{{jobType}} — {{current}}",
+    "interruptedTooltip": "Interrupted by a backend restart — click Restart to resume",
+    "failedBadge": "Failed jobs: {{count}} — open Jobs to check",
     "unit": {
       "day": "d",
       "hour": "h",

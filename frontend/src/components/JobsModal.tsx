@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Ban,
   CheckCircle2,
   Clock,
@@ -336,8 +337,12 @@ function JobRow({
     : null
 
   const clickableForLog = job.status === 'running' || job.status === 'queued' || job.status === 'paused'
-  const StatusIcon = STATUS_ICON[job.status]
-  const statusLabel = t(`jobs.section.${job.status}`)
+  // Interrupted-by-restart is still `status === 'failed'` (same Restart
+  // button, same section) but gets its own icon/tooltip so it reads
+  // differently from an ordinary failure like an ffmpeg error.
+  const isInterrupted = job.status === 'failed' && job.interrupted
+  const StatusIcon = isInterrupted ? AlertTriangle : STATUS_ICON[job.status]
+  const statusLabel = isInterrupted ? t('jobs.interruptedTooltip') : t(`jobs.section.${job.status}`)
 
   // Post-V1, user request: never show a raw job/file id on the card -- a
   // file-scope job's `scope_label` (resolved server-side) or a
@@ -357,7 +362,9 @@ function JobRow({
       <div className="jobs-modal__card-header">
         <div className="jobs-modal__card-heading">
           <span
-            className={`jobs-modal__status-icon jobs-modal__status-icon--${job.status}`}
+            className={`jobs-modal__status-icon jobs-modal__status-icon--${job.status}${
+              isInterrupted ? ' jobs-modal__status-icon--interrupted' : ''
+            }`}
             title={statusLabel}
             aria-label={statusLabel}
           >

@@ -77,9 +77,14 @@ def test_reap_orphaned_jobs_fails_stuck_running_jobs_and_makes_them_restartable(
     stuck_after = service.get_job(engine, stuck["id"])
     assert stuck_after["status"] == "failed"
     assert "restarted" in stuck_after["summary_message"]
+    # Structured flag (not string-matching summary_message) so the frontend
+    # can tell this apart from an ordinary failure, e.g. an ffmpeg error.
+    assert stuck_after["interrupted"] is True
     # Untouched: still queued, and the earlier real completion stays completed.
     assert service.get_job(engine, queued["id"])["status"] == "queued"
-    assert service.get_job(engine, completed["id"])["status"] == "completed"
+    completed_after = service.get_job(engine, completed["id"])
+    assert completed_after["status"] == "completed"
+    assert completed_after["interrupted"] is False
 
     restarted = service.restart_job(engine, stuck["id"])
     assert restarted["status"] == "queued"
