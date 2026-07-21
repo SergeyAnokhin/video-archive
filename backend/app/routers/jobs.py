@@ -321,6 +321,7 @@ class VariantOverride(BaseModel):
     max_dimension: int | None = None
     crf: int | None = None
     video_codec: str | None = None
+    preset: str | None = None
 
 
 class ConvertFileRequest(BaseModel):

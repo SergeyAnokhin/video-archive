@@ -681,6 +681,8 @@ def _create_variant(
     if params["max_dimension"]:
         tag_names.append(f"{params['max_dimension']}px")
     tag_names.append(f"CRF {params['crf']}")
+    if params["preset"] != profile.get("preset"):
+        tag_names.append(f"preset {params['preset']}")
     try:
         tags.assign_tuning_parameter_tags(engine, variant_id, tag_names)
     except Exception as exc:  # noqa: BLE001 - parameter tags are best-effort metadata; the encode itself succeeded

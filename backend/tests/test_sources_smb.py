@@ -178,6 +178,31 @@ def test_local_copy_falls_back_when_direct_access_unavailable(fake_smb, monkeypa
         assert local_path.read_bytes() == b"remote-bytes"
 
 
+def test_local_copy_fires_on_copy_start_only_on_download_branch(fake_smb):
+    # `on_copy_start` (user request: log "copying locally" for a slow SMB
+    # download) must fire exactly once for the download path -- callers rely
+    # on "did it fire at all" to decide whether to log a copy duration.
+    fake_smb.seed("clips/movie.mp4", b"remote-bytes")
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass")
+    calls = []
+
+    with backend.local_copy("clips/movie.mp4", on_copy_start=lambda: calls.append(1)):
+        pass
+    assert calls == [1]
+
+
+def test_local_copy_does_not_fire_on_copy_start_on_unc_fast_path(fake_smb, monkeypatch):
+    fake_smb.seed("clips/movie.mp4", b"remote-bytes")
+    monkeypatch.setattr(smb_backend.windows_unc, "available", lambda *a, **k: True)
+    monkeypatch.setattr(smb_backend, "_unc_readable", lambda p: True)
+    backend = SMBBackend("testnas", 445, "testshare", "user", "pass", direct_access_enabled=True)
+    calls = []
+
+    with backend.local_copy("clips/movie.mp4", on_copy_start=lambda: calls.append(1)):
+        pass
+    assert calls == []
+
+
 def test_read_bytes_and_open_range_add_to_smb_stats_counter(fake_smb):
     fake_smb.seed("clips/movie.mp4", b"x" * 40)
     backend = SMBBackend("testnas", 445, "testshare", "user", "pass")

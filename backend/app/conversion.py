@@ -380,4 +380,8 @@ def encode_variant_suffix(profile: dict, overrides: dict) -> str:
     crf = overrides.get("crf", profile["crf"])
     parts.append(f"crf{crf}")
 
+    preset = overrides.get("preset", profile.get("preset"))
+    if preset and preset != profile.get("preset"):
+        parts.append(f"preset-{preset}")
+
     return "-".join(parts)

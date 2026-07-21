@@ -242,6 +242,7 @@ export interface VariantOverride {
   max_dimension?: number
   crf?: number
   video_codec?: string
+  preset?: string
 }
 
 export interface FileMediaInfo {

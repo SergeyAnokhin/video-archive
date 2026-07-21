@@ -31,7 +31,7 @@ export function sortFiles(files: FileEntry[], sortBy: SortBy): FileEntry[] {
       sorted.sort((a, b) => a.file_name.localeCompare(b.file_name))
       break
     case 'size':
-      sorted.sort((a, b) => a.size_bytes - b.size_bytes)
+      sorted.sort((a, b) => b.size_bytes - a.size_bytes)
       break
     case 'tags':
       sorted.sort(compareByTags)

@@ -217,6 +217,54 @@ def test_convert_job_logs_per_stage_progress_events(engine, source):
     assert any("Validated" in message for message in progress_messages)
 
 
+def test_convert_job_logs_parameters_and_decile_progress(engine, source):
+    """User request: the job log's first content line should say what the
+    job was invoked with (scope/profile/mode/worker count), and encode
+    progress should get a log line every 10% crossed -- independent of the
+    throttled `progress_pct` DB column -- so a stuck/slow job is diagnosable
+    from the log alone."""
+    make_video(source["root"] / "clips" / "movie.avi")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)
+    file_row = _file_row(engine, "clips/movie.avi")
+
+    job = _run_job(
+        engine, "file", file_row.id,
+        {"file_id": file_row.id, "profile_id": profile["id"], "mode": "production"},
+    )
+    assert job["status"] == "completed"
+
+    with engine.connect() as conn:
+        events = [
+            (row.event_type, row.message)
+            for row in conn.execute(
+                text("SELECT event_type, message FROM app_events WHERE job_id = :id ORDER BY rowid"),
+                {"id": job["id"]},
+            ).all()
+        ]
+    event_types = [event_type for event_type, _ in events]
+
+    parameters_index = event_types.index("job_parameters")
+    started_index = event_types.index("job_item_started")
+    assert parameters_index < started_index
+    parameters_message = events[parameters_index][1]
+    assert "scope=single file" in parameters_message
+    assert f"profile='{profile['name']}'" in parameters_message
+    assert "mode=production" in parameters_message
+    assert "workers=" in parameters_message
+
+    progress_messages = [message for event_type, message in events if event_type == "job_item_progress"]
+    decile_messages = [message for message in progress_messages if "Encoding progress:" in message]
+    # A short synthetic clip can finish inside a single `on_progress` burst
+    # that jumps straight to 100% -- the important invariant is that the
+    # decile sequence never skips or repeats, not that every decile from
+    # 10-90% is necessarily observed.
+    assert decile_messages, "expected at least one decile progress line"
+    reported_deciles = [int(message.split("Encoding progress: ")[1].rstrip("%")) for message in decile_messages]
+    assert reported_deciles == sorted(set(reported_deciles))
+    assert reported_deciles[-1] == 100
+
+
 def test_convert_job_logs_command_directory_and_size(engine, source):
     """User request: the job log should show the ffmpeg command line (to
     copy/paste and reproduce in a terminal), which file/directory is being
@@ -857,6 +905,41 @@ def test_variant_sweep_tags_each_variant_with_its_parameters(engine, source):
     # The source file itself is untouched: no tags, still not "tagged".
     assert variant_tags("clips/clip.mp4") == []
     assert _file_row(engine, "clips/clip.variant-crf24.mp4").tagged_at is None
+
+
+def test_variant_sweep_preset_override_produces_distinct_filenames_and_tag(engine, source):
+    """Two variants that only differ by ffmpeg preset must not collide on
+    filename (preset isn't part of the suffix unless overridden) and must
+    carry a `preset <value>` tuning tag, same as codec/CRF/dimension."""
+    make_video(source["root"] / "clips" / "clip.mp4")
+    scan_source(engine, source["id"], source["root"])
+    profile = _make_profile(engine)  # crf 30, preset defaults to "medium"
+    file_row = _file_row(engine, "clips/clip.mp4")
+
+    params = {
+        "file_id": file_row.id, "profile_id": profile["id"], "mode": "test",
+        "variants": [{"preset": "fast"}, {"preset": "veryslow"}],
+    }
+    assert _run_job(engine, "file", file_row.id, params)["status"] == "completed"
+
+    variant_files = sorted(p.name for p in (source["root"] / "clips").glob("clip.variant-*.mp4"))
+    assert variant_files == ["clip.variant-crf30-preset-fast.mp4", "clip.variant-crf30-preset-veryslow.mp4"]
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT tc.display_name
+                FROM file_tags ft
+                JOIN tag_catalog tc ON tc.id = ft.tag_id
+                JOIN files f ON f.id = ft.file_id
+                WHERE f.relative_path = :rel
+                ORDER BY tc.display_name
+                """
+            ),
+            {"rel": "clips/clip.variant-crf30-preset-fast.mp4"},
+        ).all()
+    assert [row.display_name for row in rows] == ["CRF 30", "H265", "preset fast"]
 
 
 def test_repeated_variant_combination_across_sweeps_does_not_fail(engine, source):

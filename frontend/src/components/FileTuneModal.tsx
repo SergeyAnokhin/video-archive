@@ -17,12 +17,13 @@ interface VariantRow {
   maxDimension: string
   crf: string
   codec: string
+  preset: string
 }
 
 let rowCounter = 0
 function newRow(patch: Partial<VariantRow> = {}): VariantRow {
   rowCounter += 1
-  return { key: `row-${rowCounter}`, maxDimension: '', crf: '', codec: '', ...patch }
+  return { key: `row-${rowCounter}`, maxDimension: '', crf: '', codec: '', preset: '', ...patch }
 }
 
 function rowToOverride(row: VariantRow): VariantOverride {
@@ -30,6 +31,7 @@ function rowToOverride(row: VariantRow): VariantOverride {
   if (row.maxDimension) override.max_dimension = Number(row.maxDimension)
   if (row.crf) override.crf = Number(row.crf)
   if (row.codec) override.video_codec = row.codec
+  if (row.preset) override.preset = row.preset
   return override
 }
 
@@ -40,7 +42,25 @@ const CODEC_OPTIONS = ['h265', 'h264', 'vp9', 'av1']
 // standard-resolution checklist instead of typing a min/max/step range.
 const DIMENSION_PRESETS = [480, 640, 720, 960, 1024]
 
-type SweepParameter = 'dimension' | 'crf' | 'codec'
+const PRESET_OPTIONS = [
+  'ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow',
+] as const
+
+// Reuses the profile form's own preset labels (ConversionProfilesSection)
+// instead of duplicating translated strings for the same 9 ffmpeg levels.
+const PRESET_LABEL_KEY: Record<string, string> = {
+  ultrafast: 'conversionProfiles.presetUltrafast',
+  superfast: 'conversionProfiles.presetSuperfast',
+  veryfast: 'conversionProfiles.presetVeryfast',
+  faster: 'conversionProfiles.presetFaster',
+  fast: 'conversionProfiles.presetFast',
+  medium: 'conversionProfiles.presetMedium',
+  slow: 'conversionProfiles.presetSlow',
+  slower: 'conversionProfiles.presetSlower',
+  veryslow: 'conversionProfiles.presetVeryslow',
+}
+
+type SweepParameter = 'dimension' | 'crf' | 'codec' | 'preset'
 
 // Centered on the app's own defaults (h265 CRF 26, Specification §7): a
 // band around "good enough to archive" so the sweep still finishes
@@ -69,6 +89,8 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
   const [sweepStep, setSweepStep] = useState(String(DEFAULT_SWEEP_RANGES.crf.step))
   const [sweepCodecs, setSweepCodecs] = useState<string[]>([])
   const [sweepDimensions, setSweepDimensions] = useState<number[]>(DIMENSION_PRESETS)
+  const [sweepPresetA, setSweepPresetA] = useState('fast')
+  const [sweepPresetB, setSweepPresetB] = useState('slow')
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -168,6 +190,15 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
       return
     }
 
+    if (sweepParameter === 'preset') {
+      if (sweepPresetA === sweepPresetB) {
+        setGenerateError(t('convertDialog.variantsGenerateErrorPreset'))
+        return
+      }
+      setRows([newRow({ preset: sweepPresetA }), newRow({ preset: sweepPresetB })])
+      return
+    }
+
     const min = Number(sweepMin)
     const max = Number(sweepMax)
     const step = Number(sweepStep)
@@ -235,10 +266,42 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
                   <option value="dimension">{t('convertDialog.variantsParameterDimension')}</option>
                   <option value="crf">{t('convertDialog.variantsParameterCrf')}</option>
                   <option value="codec">{t('convertDialog.variantsParameterCodec')}</option>
+                  <option value="preset">{t('convertDialog.variantsParameterPreset')}</option>
                 </select>
               </label>
 
-              {sweepParameter === 'codec' ? (
+              {sweepParameter === 'preset' ? (
+                <div className="convert-dialog__sweep-range">
+                  <label className="convert-dialog__label">
+                    {t('convertDialog.variantsPresetA')}
+                    <select
+                      className="convert-dialog__input"
+                      value={sweepPresetA}
+                      onChange={(event) => setSweepPresetA(event.target.value)}
+                    >
+                      {PRESET_OPTIONS.map((preset) => (
+                        <option key={preset} value={preset}>
+                          {t(PRESET_LABEL_KEY[preset])}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="convert-dialog__label">
+                    {t('convertDialog.variantsPresetB')}
+                    <select
+                      className="convert-dialog__input"
+                      value={sweepPresetB}
+                      onChange={(event) => setSweepPresetB(event.target.value)}
+                    >
+                      {PRESET_OPTIONS.map((preset) => (
+                        <option key={preset} value={preset}>
+                          {t(PRESET_LABEL_KEY[preset])}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : sweepParameter === 'codec' ? (
                 <div className="convert-dialog__codec-options">
                   {CODEC_OPTIONS.map((codec) => (
                     <label key={codec} className="convert-dialog__checkbox">
@@ -306,6 +369,7 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
                         {row.maxDimension && `${t('convertDialog.variantMaxDimension')}: ${row.maxDimension}`}
                         {row.crf && `${t('convertDialog.variantCrf')}: ${row.crf}`}
                         {row.codec && row.codec.toUpperCase()}
+                        {row.preset && `${t('convertDialog.variantPreset')}: ${t(PRESET_LABEL_KEY[row.preset])}`}
                       </span>
                       <button
                         type="button"
@@ -368,7 +432,14 @@ export function FileTuneModal({ file, onClose, onStarted }: FileTuneModalProps) 
 interface VariantResultRowProps {
   item: JobItem
   override: VariantOverride
-  baseProfile: { video_codec: string; container: string; max_dimension: number | null; crf: number; drop_audio: boolean }
+  baseProfile: {
+    video_codec: string
+    container: string
+    max_dimension: number | null
+    crf: number
+    drop_audio: boolean
+    preset: string
+  }
   onPromoted: () => Promise<void>
 }
 
@@ -390,6 +461,7 @@ function VariantResultRow({ item, override, baseProfile, onPromoted }: VariantRe
           max_dimension: override.max_dimension ?? baseProfile.max_dimension,
           crf: override.crf ?? baseProfile.crf,
           drop_audio: baseProfile.drop_audio,
+          preset: override.preset ?? baseProfile.preset,
         },
       })
       await onPromoted()

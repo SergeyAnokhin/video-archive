@@ -10,8 +10,10 @@ import {
   Images,
   MoreHorizontal,
   MoreVertical,
+  RefreshCcw,
   RefreshCw,
   ScrollText,
+  Search,
   Tag,
   Tags,
   Trash2,
@@ -19,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { useJobs } from '../context/JobsContext'
+import { BreadcrumbSwitcher } from './BreadcrumbSwitcher'
 import { ConvertDirectoryDialog } from './ConvertDirectoryDialog'
 import { CreateFolderDialog } from './CreateFolderDialog'
 import { FileConvertModal } from './FileConvertModal'
@@ -95,9 +98,13 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const [reloadTick, setReloadTick] = useState(0)
   const [searchFiles, setSearchFiles] = useState<FileEntry[]>([])
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
+  const [quickFilterOpen, setQuickFilterOpen] = useState(false)
+  const [quickFilterText, setQuickFilterText] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const overflowRef = useRef<HTMLDivElement | null>(null)
   const moreRef = useRef<HTMLDivElement | null>(null)
   const historyRef = useRef<HTMLDivElement | null>(null)
+  const quickFilterRef = useRef<HTMLDivElement | null>(null)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
   // Tags edited inside FileInfoPanel must show on the cards as soon as the
   // panel closes (user request) -- the panel reports each successful tag
@@ -192,6 +199,28 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   }, [historyOpen])
 
   useEffect(() => {
+    if (!quickFilterOpen) {
+      return
+    }
+    function handleClickOutside(event: MouseEvent) {
+      if (quickFilterRef.current && !quickFilterRef.current.contains(event.target as Node)) {
+        setQuickFilterOpen(false)
+        setQuickFilterText('')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [quickFilterOpen])
+
+  // Quick filter is scoped to whatever listing is on screen -- reset it on
+  // folder navigation and when a global search takes over, so a stale filter
+  // can't silently hide everything in the new context (user request).
+  useEffect(() => {
+    setQuickFilterOpen(false)
+    setQuickFilterText('')
+  }, [path, activeSearch])
+
+  useEffect(() => {
     if (activeSearch) {
       return
     }
@@ -222,6 +251,10 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           setError(err instanceof Error ? err.message : String(err))
           setErrorCode(err instanceof ApiError ? err.code : undefined)
         }
+      } finally {
+        if (!cancelled) {
+          setRefreshing(false)
+        }
       }
     }
 
@@ -248,8 +281,26 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   // results' own on-screen order (`searchFiles`, kept in sync by
   // SearchResults' `onFilesChanged`) while a search is active (user request).
   const sortedFiles = activeSearch ? searchFiles : data ? sortFiles(data.files, sortBy) : []
-  const playingIndex = playingFile ? sortedFiles.findIndex((f) => f.id === playingFile.id) : -1
-  const infoIndex = infoFile ? sortedFiles.findIndex((f) => f.id === infoFile.id) : -1
+
+  // Quick filter (magnifying-glass button next to the breadcrumb) narrows the
+  // on-screen grid client-side by substring match, for both folders and
+  // files (user request). It only ever applies to the normal browsing grid --
+  // the search branch's own list passes through unchanged so activeSearch's
+  // existing behavior is untouched.
+  const quickFilterQuery = quickFilterText.trim().toLowerCase()
+
+  const visibleDirectories =
+    !activeSearch && data && quickFilterQuery
+      ? data.directories.filter((dir) => dir.name.toLowerCase().includes(quickFilterQuery))
+      : (data?.directories ?? [])
+
+  const visibleFiles =
+    !activeSearch && quickFilterQuery
+      ? sortedFiles.filter((file) => file.file_name.toLowerCase().includes(quickFilterQuery))
+      : sortedFiles
+
+  const playingIndex = playingFile ? visibleFiles.findIndex((f) => f.id === playingFile.id) : -1
+  const infoIndex = infoFile ? visibleFiles.findIndex((f) => f.id === infoFile.id) : -1
 
   function handleMoved() {
     setPlayingFile(null)
@@ -258,7 +309,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   }
 
   function goToPlayingOffset(offset: number) {
-    const target = sortedFiles[playingIndex + offset]
+    const target = visibleFiles[playingIndex + offset]
     if (target) {
       if (target.is_video_supported) {
         recordRecentlyViewed(target.id)
@@ -268,10 +319,22 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   }
 
   function goToInfoOffset(offset: number) {
-    const target = sortedFiles[infoIndex + offset]
+    const target = visibleFiles[infoIndex + offset]
     if (target) {
       setInfoFile(target)
     }
+  }
+
+  function handleQuickFilterToggle() {
+    setQuickFilterOpen((open) => !open)
+    if (quickFilterOpen) {
+      setQuickFilterText('')
+    }
+  }
+
+  function handleManualRefresh() {
+    setRefreshing(true)
+    setReloadTick((tick) => tick + 1)
   }
 
   function closePlayback() {
@@ -429,15 +492,52 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           </button>
           {segments.map((segment, index) => {
             const segmentPath = segments.slice(0, index + 1).join('/')
+            const parentPath = segments.slice(0, index).join('/')
             return (
               <span key={segmentPath}>
                 <span className="library-view__breadcrumb-sep">/</span>
                 <button type="button" onClick={() => onNavigate(segmentPath)}>
                   {segment}
                 </button>
+                <BreadcrumbSwitcher parentPath={parentPath} currentPath={segmentPath} onSelect={onNavigate} />
               </span>
             )
           })}
+          {!activeSearch && (
+            <>
+              <div className="library-view__quick-filter" ref={quickFilterRef}>
+                <button
+                  type="button"
+                  className="library-view__icon-btn"
+                  aria-label={t('library.quickFilterLabel')}
+                  title={t('library.quickFilterLabel')}
+                  aria-expanded={quickFilterOpen}
+                  onClick={handleQuickFilterToggle}
+                >
+                  <Search size={16} />
+                </button>
+                {quickFilterOpen && (
+                  <input
+                    type="text"
+                    className="library-view__quick-filter-input"
+                    placeholder={t('library.quickFilterPlaceholder')}
+                    value={quickFilterText}
+                    onChange={(event) => setQuickFilterText(event.target.value)}
+                    autoFocus
+                  />
+                )}
+              </div>
+              <button
+                type="button"
+                className="library-view__icon-btn"
+                aria-label={t('library.refreshFolder')}
+                title={t('library.refreshFolder')}
+                onClick={handleManualRefresh}
+              >
+                <RefreshCcw size={16} className={refreshing ? 'library-view__icon-spin' : undefined} />
+              </button>
+            </>
+          )}
         </nav>
 
         <div className="library-view__toolbar-actions">
@@ -626,9 +726,17 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             <p className="library-view__message">{t('library.empty')}</p>
           )}
 
-          {data && (data.directories.length > 0 || data.files.length > 0) && (
+          {data &&
+            (data.directories.length > 0 || data.files.length > 0) &&
+            quickFilterQuery &&
+            visibleDirectories.length === 0 &&
+            visibleFiles.length === 0 && (
+              <p className="library-view__message">{t('library.quickFilterNoMatches')}</p>
+            )}
+
+          {data && (visibleDirectories.length > 0 || visibleFiles.length > 0) && (
             <div className="library-view__grid">
-              {data.directories.map((dir) => (
+              {visibleDirectories.map((dir) => (
                 <FolderCard
                   key={dir.path}
                   dir={dir}
@@ -637,7 +745,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
                   onDelete={() => void handleDeleteFolder(dir.path)}
                 />
               ))}
-              {sortedFiles.map((file) => (
+              {visibleFiles.map((file) => (
                 <FileCard
                   key={file.id}
                   file={file}
@@ -724,7 +832,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             playingTagsChangedRef.current = true
           }}
           hasPrev={playingIndex > 0}
-          hasNext={playingIndex >= 0 && playingIndex < sortedFiles.length - 1}
+          hasNext={playingIndex >= 0 && playingIndex < visibleFiles.length - 1}
           onPrev={() => goToPlayingOffset(-1)}
           onNext={() => goToPlayingOffset(1)}
         />
@@ -740,7 +848,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             playingTagsChangedRef.current = true
           }}
           hasPrev={playingIndex > 0}
-          hasNext={playingIndex >= 0 && playingIndex < sortedFiles.length - 1}
+          hasNext={playingIndex >= 0 && playingIndex < visibleFiles.length - 1}
           onPrev={() => goToPlayingOffset(-1)}
           onNext={() => goToPlayingOffset(1)}
         />
@@ -789,7 +897,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             infoTagsChangedRef.current = true
           }}
           hasPrev={infoIndex > 0}
-          hasNext={infoIndex >= 0 && infoIndex < sortedFiles.length - 1}
+          hasNext={infoIndex >= 0 && infoIndex < visibleFiles.length - 1}
           onPrev={() => goToInfoOffset(-1)}
           onNext={() => goToInfoOffset(1)}
         />
