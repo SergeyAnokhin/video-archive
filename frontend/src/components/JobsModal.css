@@ -59,6 +59,11 @@
   color: var(--color-danger);
 }
 
+.jobs-modal__icon-btn--danger:hover {
+  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+  color: var(--color-danger);
+}
+
 .jobs-modal__icon-btn:disabled {
   opacity: 0.5;
   cursor: default;

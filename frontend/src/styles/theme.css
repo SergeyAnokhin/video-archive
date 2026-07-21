@@ -36,6 +36,23 @@
   --breakpoint-desktop: 1024px;
 }
 
+/* Strict background gradient (user request, 2026-07): the same subtle glow
+ * already used on Playful/Casino/Vivid, extended to the calm default. */
+[data-theme='strict'] body {
+  background: radial-gradient(circle at 50% 0%, var(--color-surface-raised) 0%, var(--color-bg) 65%);
+}
+
+[data-theme='strict'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='strict'] .settings-modal,
+[data-theme='strict'] .jobs-modal,
+[data-theme='strict'] .convert-dialog,
+[data-theme='strict'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
 /* Playful (Design System §2.2): warmer, more saturated accent on the same
  * dark neutral structure -- a casino/entertainment-inspired variant
  * (Specification §11.10), not a different layout. */
@@ -74,6 +91,17 @@
  * the flat surface color, same treatment as Casino below but subtler. */
 [data-theme='playful'] body {
   background: radial-gradient(circle at 50% 0%, var(--color-surface-raised) 0%, var(--color-bg) 65%);
+}
+
+[data-theme='playful'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='playful'] .settings-modal,
+[data-theme='playful'] .jobs-modal,
+[data-theme='playful'] .convert-dialog,
+[data-theme='playful'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
 }
 
 /* Playful decorative animations (Design System §3): short (100-250ms),
@@ -157,6 +185,17 @@
   background:
     radial-gradient(circle at 15% 100%, color-mix(in srgb, var(--color-border) 25%, transparent) 0%, transparent 45%),
     radial-gradient(circle at 50% 0%, #2a1533 0%, var(--color-bg) 60%);
+}
+
+[data-theme='casino'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='casino'] .settings-modal,
+[data-theme='casino'] .jobs-modal,
+[data-theme='casino'] .convert-dialog,
+[data-theme='casino'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
 }
 
 [data-theme='casino'] .library-card,
@@ -255,6 +294,23 @@
   --breakpoint-desktop: 1024px;
 }
 
+[data-theme='neon'] body {
+  background:
+    radial-gradient(circle at 15% 100%, color-mix(in srgb, var(--color-accent-2) 18%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, var(--color-surface-raised) 0%, var(--color-bg) 60%);
+}
+
+[data-theme='neon'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='neon'] .settings-modal,
+[data-theme='neon'] .jobs-modal,
+[data-theme='neon'] .convert-dialog,
+[data-theme='neon'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
 [data-theme='toxic'] {
   --color-bg: #0c1410;
   --color-surface: #141f19;
@@ -282,6 +338,23 @@
   --breakpoint-desktop: 1024px;
 }
 
+[data-theme='toxic'] body {
+  background:
+    radial-gradient(circle at 15% 100%, color-mix(in srgb, var(--color-accent) 18%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, var(--color-surface-raised) 0%, var(--color-bg) 60%);
+}
+
+[data-theme='toxic'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='toxic'] .settings-modal,
+[data-theme='toxic'] .jobs-modal,
+[data-theme='toxic'] .convert-dialog,
+[data-theme='toxic'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
 [data-theme='cyber'] {
   --color-bg: #120f1d;
   --color-surface: #1b1730;
@@ -307,6 +380,23 @@
   --touch-target-min: 40px;
   --breakpoint-tablet: 640px;
   --breakpoint-desktop: 1024px;
+}
+
+[data-theme='cyber'] body {
+  background:
+    radial-gradient(circle at 15% 100%, color-mix(in srgb, var(--color-accent-2) 18%, transparent) 0%, transparent 45%),
+    radial-gradient(circle at 50% 0%, var(--color-surface-raised) 0%, var(--color-bg) 60%);
+}
+
+[data-theme='cyber'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='cyber'] .settings-modal,
+[data-theme='cyber'] .jobs-modal,
+[data-theme='cyber'] .convert-dialog,
+[data-theme='cyber'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
 }
 
 /* Vivid Glam: the mockup's `panel`/`panel2` are diagonal gradients. Keeping
@@ -346,6 +436,17 @@
   background:
     radial-gradient(circle at 15% 100%, color-mix(in srgb, var(--color-accent) 22%, transparent) 0%, transparent 45%),
     radial-gradient(circle at 50% 0%, #40102e 0%, var(--color-bg) 60%);
+}
+
+[data-theme='vivid'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='vivid'] .settings-modal,
+[data-theme='vivid'] .jobs-modal,
+[data-theme='vivid'] .convert-dialog,
+[data-theme='vivid'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
 }
 
 [data-theme='vivid'] .library-card,
@@ -438,6 +539,25 @@
   --touch-target-min: 40px;
   --breakpoint-tablet: 640px;
   --breakpoint-desktop: 1024px;
+}
+
+/* Mono background gradient: kept single-layer and untinted (no accent glow),
+ * consistent with this theme's own "glow: false" intent above -- still a
+ * gradient per the user's request that every theme get one, just the
+ * calmest version. */
+[data-theme='mono'] body {
+  background: radial-gradient(circle at 50% 0%, var(--color-surface-raised) 0%, var(--color-bg) 70%);
+}
+
+[data-theme='mono'] .library-card {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
+}
+
+[data-theme='mono'] .settings-modal,
+[data-theme='mono'] .jobs-modal,
+[data-theme='mono'] .convert-dialog,
+[data-theme='mono'] .log-viewer {
+  background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-raised) 100%);
 }
 
 /* Neon / Toxic / Cyber: moderate glow on primary actions only (same

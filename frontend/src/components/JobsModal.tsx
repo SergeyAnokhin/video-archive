@@ -410,7 +410,7 @@ function JobRow({
           {canCancel && (
             <button
               type="button"
-              className="jobs-modal__icon-btn"
+              className="jobs-modal__icon-btn jobs-modal__icon-btn--danger"
               aria-label={t('jobs.cancel')}
               title={t('jobs.cancel')}
               onClick={onCancel}

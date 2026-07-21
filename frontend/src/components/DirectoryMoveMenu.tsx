@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, ChevronRight, Folder } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Folder, FolderPlus } from 'lucide-react'
 import { tryApi } from '../api/client'
 import type { DirectoryEntry } from '../types/api'
+import { CreateFolderDialog } from './CreateFolderDialog'
 import './DirectoryMoveMenu.css'
 
 interface DirectoryMoveMenuProps {
@@ -22,8 +23,22 @@ export function DirectoryMoveMenu({ rootPath, rootName, onPick }: DirectoryMoveM
   const [stack, setStack] = useState<{ path: string; name: string }[]>([{ path: rootPath, name: rootName }])
   const [children, setChildren] = useState<DirectoryEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [creatingFolder, setCreatingFolder] = useState(false)
 
   const current = stack[stack.length - 1]
+
+  async function loadChildren(path: string) {
+    setChildren(null)
+    setLoading(true)
+    try {
+      const json = await tryApi<{ directories: DirectoryEntry[] }>(
+        `/api/directories/children?path=${encodeURIComponent(path)}`,
+      )
+      setChildren(json?.directories ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -61,6 +76,15 @@ export function DirectoryMoveMenu({ rootPath, rootName, onPick }: DirectoryMoveM
         <span className="directory-move-menu__title" title={current.name}>
           {current.name}
         </span>
+        <button
+          type="button"
+          className="directory-move-menu__new-folder"
+          aria-label={t('library.moveMenuNewFolder')}
+          title={t('library.moveMenuNewFolder')}
+          onClick={() => setCreatingFolder(true)}
+        >
+          <FolderPlus size={14} />
+        </button>
       </div>
 
       <button type="button" className="directory-move-menu__here" onClick={() => onPick(current.path)}>
@@ -84,6 +108,17 @@ export function DirectoryMoveMenu({ rootPath, rootName, onPick }: DirectoryMoveM
             </button>
           ))}
         </div>
+      )}
+
+      {creatingFolder && (
+        <CreateFolderDialog
+          parentPath={current.path}
+          onClose={() => setCreatingFolder(false)}
+          onCreated={() => {
+            setCreatingFolder(false)
+            void loadChildren(current.path)
+          }}
+        />
       )}
     </div>
   )

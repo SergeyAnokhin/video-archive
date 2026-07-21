@@ -74,18 +74,24 @@
    the failed state below needs that property free so a red ring stays
    visible even while a job is also running. */
 .top-bar__jobs-toggle--running svg {
-  animation: top-bar-jobs-glow 2.6s ease-in-out infinite;
+  animation: top-bar-jobs-glow 3.2s ease-in-out infinite;
 }
 
+/* Both keyframes use the same two drop-shadow layers (only blur/color-mix %
+   change) so the browser interpolates smoothly across the whole cycle --
+   a mismatched filter-function list between keyframes can't interpolate and
+   pops instead, which read as a jerky pulse. */
+/* Roughly double the previous swing (user report: too subtle to notice)
+   while keeping the same two-layer shape so it stays smooth. */
 @keyframes top-bar-jobs-glow {
   0%,
   100% {
-    opacity: 0.4;
-    filter: drop-shadow(0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent));
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent))
+      drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent));
   }
   50% {
-    opacity: 1;
-    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--color-accent) 85%, transparent));
+    filter: drop-shadow(0 0 16px color-mix(in srgb, var(--color-accent) 95%, transparent))
+      drop-shadow(0 0 6px color-mix(in srgb, var(--color-accent) 70%, transparent));
   }
 }
 

@@ -6,6 +6,7 @@
 
 .library-view__toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
@@ -23,6 +24,7 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
   gap: var(--space-1);
 }
 
@@ -114,7 +116,10 @@
   .library-view__breadcrumb button {
     min-width: var(--touch-target-min);
     min-height: var(--touch-target-min);
-    padding: 0 var(--space-2);
+    /* Tighter than --space-2 (user report: path segments felt too spread
+       out on narrow screens) -- min-height still keeps the tap target's
+       vertical size at 40px, this only trims the horizontal breathing room. */
+    padding: 0 var(--space-1);
   }
 }
 
@@ -133,9 +138,11 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
+/* Single merged "⋮" menu (replaces the old separate "⋮"/"..." pair, user
+ * request): always visible -- it's also the only home for
+ * rescan/generate-script/delete-orphaned, which never had an inline form. */
 .library-view__overflow {
   position: relative;
-  display: none;
 }
 
 .library-view__overflow-menu {
@@ -181,25 +188,33 @@
   background: transparent;
 }
 
-/* Unlike `.library-view__overflow` above (a responsive collapse of
- * convert/preview/tag, hidden by default), this menu holds rescan and the
- * bulk directory-maintenance actions (user request) and stays visible at
- * every screen width. */
-.library-view__more {
-  position: relative;
-}
-
-/* Design System §5 (< 640px): secondary icon buttons (convert/preview/tag
- * folder actions) collapse into this overflow menu instead of the inline
- * row, which would otherwise crowd the toolbar next to the search box. */
-@media (max-width: 639px) {
+/* Design System §5, two-stage collapse (user request): convert/preview/tag
+ * give way first, at the wider desktop breakpoint -- they're the actions
+ * used least often relative to their width cost. History/add-folder/sort
+ * hold on until the narrower tablet breakpoint. Both tiers collapse into the
+ * single "⋮" menu above, which lists all of them unconditionally (see the
+ * JSX comment) rather than tracking viewport width in JS. */
+@media (max-width: 1023px) {
   .library-view__actions-inline {
     display: none;
   }
+}
 
-  .library-view__overflow {
-    display: block;
+@media (max-width: 639px) {
+  .library-view__actions-inline--secondary {
+    display: none;
   }
+}
+
+/* Overrides the two collapse rules above once the actions cluster has
+ * already dropped to its own line (JS-detected, see LibraryView.tsx) --
+ * a wrapped row has the full toolbar width to itself, so there's no reason
+ * to keep hiding icons behind "⋮" just because the viewport itself is
+ * narrow. Two-class specificity beats the single-class rules above
+ * regardless of source order, so no !important is needed. */
+.library-view__toolbar-actions--wrapped .library-view__actions-inline,
+.library-view__toolbar-actions--wrapped .library-view__actions-inline--secondary {
+  display: inline-flex;
 }
 
 .library-view__breadcrumb button:hover,
@@ -325,7 +340,13 @@
 }
 
 .library-card--folder:hover {
-  background: var(--color-surface-raised);
+  /* A gradient, not a flat color -- themes give .library-card a gradient
+     background-image (theme.css), and swapping to a plain background-color
+     on hover changes the paint type (image layer -> solid fill), which some
+     browsers repaint with a very slightly different subpixel snap on a
+     fractional-width grid card (auto-fill/minmax), reading as a 1-2px
+     "jump" (user report). Keeping it a gradient avoids the layer-type swap. */
+  background: linear-gradient(180deg, var(--color-surface-raised) 0%, var(--color-surface) 100%);
 }
 
 .library-card__thumb-frame {

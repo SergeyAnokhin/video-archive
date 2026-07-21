@@ -8,7 +8,6 @@ import {
   History,
   Home,
   Images,
-  MoreHorizontal,
   MoreVertical,
   RefreshCcw,
   RefreshCw,
@@ -90,7 +89,6 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const [infoFile, setInfoFile] = useState<FileEntry | null>(null)
   const [moveFile, setMoveFile] = useState<FileEntry | null>(null)
   const [overflowOpen, setOverflowOpen] = useState(false)
-  const [moreOpen, setMoreOpen] = useState(false)
   const [generateScriptOpen, setGenerateScriptOpen] = useState(false)
   const [orphanedPreviewsOpen, setOrphanedPreviewsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -102,9 +100,12 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const [quickFilterText, setQuickFilterText] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const overflowRef = useRef<HTMLDivElement | null>(null)
-  const moreRef = useRef<HTMLDivElement | null>(null)
   const historyRef = useRef<HTMLDivElement | null>(null)
   const quickFilterRef = useRef<HTMLDivElement | null>(null)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const breadcrumbNavRef = useRef<HTMLElement | null>(null)
+  const toolbarActionsRef = useRef<HTMLDivElement | null>(null)
+  const [toolbarWrapped, setToolbarWrapped] = useState(false)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
   // Tags edited inside FileInfoPanel must show on the cards as soon as the
   // panel closes (user request) -- the panel reports each successful tag
@@ -171,19 +172,6 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [overflowOpen])
-
-  useEffect(() => {
-    if (!moreOpen) {
-      return
-    }
-    function handleClickOutside(event: MouseEvent) {
-      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
-        setMoreOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [moreOpen])
 
   useEffect(() => {
     if (!historyOpen) {
@@ -266,6 +254,56 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
   const segments = path ? path.split('/') : []
   const recentVisits = getRecentFolderVisits().filter((visitPath) => visitPath !== path)
+
+  // The toolbar's action icons collapse via width media queries (see
+  // LibraryView.css), but a long breadcrumb can push the whole action
+  // cluster onto its own line well before either breakpoint is crossed --
+  // once that happens there's a full row of free width and no reason to
+  // keep them hidden behind "⋮" (user report). Detect the wrap by comparing
+  // the two flex children's offsetTop instead of tracking width in JS.
+  useEffect(() => {
+    const toolbar = toolbarRef.current
+    if (!toolbar) return
+    const WRAPPED_CLASS = 'library-view__toolbar-actions--wrapped'
+    function checkWrap() {
+      const nav = breadcrumbNavRef.current
+      const actions = toolbarActionsRef.current
+      if (!nav || !actions) return
+      // Measuring the actions cluster while it's already expanded (wrapped
+      // class applied) is self-reinforcing: the expanded icon row is wider,
+      // so it "doesn't fit" next to nav even once nav has shrunk back down
+      // (e.g. after navigating back to root) -- the wrapped state could
+      // never clear itself. Force the collapsed sizing back on first, then
+      // measure against *that*, which answers the real question ("does the
+      // normally-collapsed toolbar need to wrap") instead of the circular
+      // one.
+      const wasWrapped = actions.classList.contains(WRAPPED_CLASS)
+      if (wasWrapped) actions.classList.remove(WRAPPED_CLASS)
+      // `nav` has its own internal flex-wrap (search/refresh can drop to a
+      // second sub-line on their own), which makes nav taller without the
+      // actions cluster having moved to a new *toolbar* line at all --
+      // comparing raw offsetTop falsely read that as "wrapped" (with
+      // align-items: center, a taller nav vertically centers the shorter
+      // actions block below nav's own top). Only count it as wrapped once
+      // actions starts at or below nav's bottom edge, i.e. no vertical
+      // overlap between the two -- that's the only case where actions
+      // truly landed on the toolbar's own next flex line.
+      const isWrapped = actions.offsetTop >= nav.offsetTop + nav.offsetHeight
+      if (isWrapped) actions.classList.add(WRAPPED_CLASS)
+      setToolbarWrapped(isWrapped)
+    }
+    checkWrap()
+    const observer = new ResizeObserver(checkWrap)
+    observer.observe(toolbar)
+    // Belt-and-suspenders alongside the observer above: a plain window
+    // resize (no navigation, so `path` doesn't change and this effect
+    // doesn't re-run) must still be able to trigger a recheck.
+    window.addEventListener('resize', checkWrap)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', checkWrap)
+    }
+  }, [path])
 
   // A brand-new (or just-switched-to) source's directories/files rows only
   // exist once its background `rescan` job finishes -- until then, even the
@@ -439,6 +477,8 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     },
   ]
 
+  const overflowActions = [...directoryActions, ...moreMenuActions]
+
   async function handlePreviewFile(fileId: string) {
     setPreviewingFileId(fileId)
     try {
@@ -485,8 +525,8 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
   return (
     <div className="library-view">
-      <div className="library-view__toolbar">
-        <nav className="library-view__breadcrumb" aria-label={t('library.breadcrumb')}>
+      <div className="library-view__toolbar" ref={toolbarRef}>
+        <nav className="library-view__breadcrumb" aria-label={t('library.breadcrumb')} ref={breadcrumbNavRef}>
           <button type="button" onClick={() => onNavigate('')}>
             <Home size={14} /> {t('library.root')}
           </button>
@@ -540,11 +580,14 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           )}
         </nav>
 
-        <div className="library-view__toolbar-actions">
+        <div
+          className={`library-view__toolbar-actions${toolbarWrapped ? ' library-view__toolbar-actions--wrapped' : ''}`}
+          ref={toolbarActionsRef}
+        >
           <div className="library-view__history" ref={historyRef}>
             <button
               type="button"
-              className="library-view__icon-btn"
+              className="library-view__icon-btn library-view__actions-inline--secondary"
               aria-label={t('library.folderNavHistory')}
               title={t('library.folderNavHistory')}
               aria-haspopup="menu"
@@ -568,11 +611,11 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             )}
           </div>
 
-          <span className="library-view__toolbar-divider" aria-hidden="true" />
+          <span className="library-view__toolbar-divider library-view__actions-inline--secondary" aria-hidden="true" />
 
           <button
             type="button"
-            className="library-view__icon-btn"
+            className="library-view__icon-btn library-view__actions-inline--secondary"
             aria-label={t('library.createFolder')}
             title={t('library.createFolder')}
             onClick={() => setCreateFolderOpen(true)}
@@ -582,7 +625,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
           <button
             type="button"
-            className="library-view__icon-btn"
+            className="library-view__icon-btn library-view__actions-inline--secondary"
             aria-label={sortToggleLabel}
             title={sortToggleLabel}
             onClick={() => setSortBy(nextSortBy)}
@@ -590,10 +633,11 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             <SortIcon size={16} />
           </button>
 
-          <span className="library-view__toolbar-divider" aria-hidden="true" />
+          <span className="library-view__toolbar-divider library-view__actions-inline" aria-hidden="true" />
 
-          {/* Design System §5 (< 640px): secondary icon buttons collapse into an
-              overflow menu; the same actions render inline on tablet/desktop. */}
+          {/* Design System §5 (< 1024px): secondary icon buttons collapse into
+              the single overflow menu below; the same actions render inline
+              on desktop. */}
           {directoryActions.map((action) => (
             <button
               key={action.key}
@@ -607,57 +651,65 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             </button>
           ))}
 
+          {/* Single "⋮" menu (merges the old separate "⋮"/"..." menus, user
+              request): always visible, since it's also the only home for
+              rescan/generate-script/delete-orphaned below. History/add
+              folder/sort stay reachable here too once their own inline
+              buttons collapse under 640px -- listing them unconditionally is
+              a small accepted redundancy above that width, in exchange for
+              a pure-CSS (no JS width tracking) collapse. */}
           <div className="library-view__overflow" ref={overflowRef}>
             <button
               type="button"
               className="library-view__icon-btn library-view__overflow-trigger"
               aria-label={t('library.moreActions')}
+              title={t('library.moreActions')}
               aria-haspopup="menu"
               aria-expanded={overflowOpen}
               onClick={() => setOverflowOpen((open) => !open)}
             >
-              <MoreVertical size={16} />
+              <MoreVertical size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
             </button>
             {overflowOpen && (
               <div className="library-view__overflow-menu" role="menu">
-                {directoryActions.map((action) => (
-                  <button
-                    key={action.key}
-                    type="button"
-                    role="menuitem"
-                    className="library-view__overflow-item"
-                    onClick={() => {
-                      action.onClick()
-                      setOverflowOpen(false)
-                    }}
-                  >
-                    {action.icon}
-                    <span>{action.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Always-visible menu (unlike `.library-view__overflow` above,
-              which only exists to collapse convert/preview/tag under 640px):
-              rescan and the bulk directory-maintenance actions (user
-              request) live here at every screen width. */}
-          <div className="library-view__more" ref={moreRef}>
-            <button
-              type="button"
-              className="library-view__icon-btn library-view__more-trigger"
-              aria-label={t('library.moreActions2')}
-              title={t('library.moreActions2')}
-              aria-haspopup="menu"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((open) => !open)}
-            >
-              <MoreHorizontal size={16} className={rescanning ? 'library-view__icon-spin' : undefined} />
-            </button>
-            {moreOpen && (
-              <div className="library-view__overflow-menu" role="menu">
-                {moreMenuActions.map((action) => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="library-view__overflow-item"
+                  disabled={recentVisits.length === 0}
+                  onClick={() => {
+                    setOverflowOpen(false)
+                    setHistoryOpen(true)
+                  }}
+                >
+                  <History size={16} />
+                  <span>{t('library.folderNavHistory')}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="library-view__overflow-item"
+                  onClick={() => {
+                    setOverflowOpen(false)
+                    setCreateFolderOpen(true)
+                  }}
+                >
+                  <FolderPlus size={16} />
+                  <span>{t('library.createFolder')}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="library-view__overflow-item"
+                  onClick={() => {
+                    setOverflowOpen(false)
+                    setSortBy(nextSortBy)
+                  }}
+                >
+                  <SortIcon size={16} />
+                  <span>{sortToggleLabel}</span>
+                </button>
+                {overflowActions.map((action) => (
                   <button
                     key={action.key}
                     type="button"
@@ -666,7 +718,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
                     disabled={action.key.startsWith('rescan') && rescanning}
                     onClick={() => {
                       action.onClick()
-                      setMoreOpen(false)
+                      setOverflowOpen(false)
                     }}
                   >
                     {action.icon}

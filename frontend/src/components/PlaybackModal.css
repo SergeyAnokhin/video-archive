@@ -74,8 +74,22 @@
 }
 
 .playback-overlay__mode-toggle {
+  gap: var(--space-1);
   padding: 0 var(--space-3);
   font-size: 12px;
+}
+
+/* Narrow screens while watching video: keep the icon, drop the long label
+   text (same pattern as .top-bar__title in TopBar.css) so this button
+   doesn't crowd the top-right cluster next to delete/close. */
+@media (max-width: 479px) {
+  .playback-overlay__mode-toggle-label {
+    display: none;
+  }
+
+  .playback-overlay__mode-toggle {
+    padding: 0;
+  }
 }
 
 /* Prev/next: a wide invisible click zone spanning the vertical middle of

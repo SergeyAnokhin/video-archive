@@ -140,10 +140,14 @@ export function PlaybackModal({
           <button
             type="button"
             className="playback-overlay__mode-toggle"
+            aria-label={mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
+            title={mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
             onClick={() => setMode(mode === 'stream' ? 'direct_link' : 'stream')}
           >
-            {mode === 'stream' ? <Link size={14} /> : <PlayCircle size={14} />}{' '}
-            {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
+            {mode === 'stream' ? <Link size={14} /> : <PlayCircle size={14} />}
+            <span className="playback-overlay__mode-toggle-label">
+              {mode === 'stream' ? t('playbackModal.switchToDirectLink') : t('playbackModal.switchToStream')}
+            </span>
           </button>
         )}
         {onDelete && (

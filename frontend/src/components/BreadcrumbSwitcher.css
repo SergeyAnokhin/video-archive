@@ -21,10 +21,21 @@
   color: var(--color-text);
 }
 
+/* Deliberately no 40px touch-target enlargement here, on any width (user
+   report, repeated): a bigger tap box left an empty gap between the segment
+   text and the chevron even with flex-start alignment, since the icon still
+   only hugs one edge of the wider box. The segment name button right next
+   to it already carries the real touch target; this stays a small, tight
+   secondary affordance flush against the text (~2px padding only). Needs an
+   explicit override below (not just omitting a rule) because this button is
+   nested inside .library-view__breadcrumb, so LibraryView.css's own
+   ".library-view__breadcrumb button" mobile rule (0,1,1 specificity) also
+   matches it and would otherwise win back the 40px min-width/height. */
 @media (max-width: 639px) {
-  .breadcrumb-switcher__toggle {
-    min-width: var(--touch-target-min);
-    min-height: var(--touch-target-min);
+  .breadcrumb-switcher .breadcrumb-switcher__toggle {
+    min-width: 0;
+    min-height: 0;
+    padding: 2px;
   }
 }
 

@@ -34,12 +34,34 @@
 }
 
 .directory-move-menu__title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.directory-move-menu__new-folder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.directory-move-menu__new-folder:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
 }
 
 .directory-move-menu__here {
