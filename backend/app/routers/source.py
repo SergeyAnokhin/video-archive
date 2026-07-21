@@ -1,5 +1,5 @@
-"""Source configuration for the `local` and `smb` protocols (Specification
-§5, API §2). `webdav` remains reserved for an optional later stage.
+"""Source configuration for the `local`, `smb`, and `webdav` protocols
+(Specification §5, API §2).
 """
 
 from __future__ import annotations
@@ -18,10 +18,11 @@ from app.db import get_engine
 from app.source_switch import switch_active_source
 from app.sources import get_source_access, smb_backend
 from app.sources.smb_backend import test_connection as smb_test_connection
+from app.sources.webdav_backend import test_connection as webdav_test_connection
 
 router = APIRouter()
 
-SUPPORTED_PROTOCOLS = ("local", "smb")
+SUPPORTED_PROTOCOLS = ("local", "smb", "webdav")
 
 
 class SourceRequest(BaseModel):
@@ -33,6 +34,7 @@ class SourceRequest(BaseModel):
     username: str | None = None
     password: str | None = None
     direct_access_enabled: bool = False
+    verify_ssl: bool = True
 
 
 def _resolve_local_path(root_path: str) -> Path:
@@ -51,6 +53,7 @@ def _source_row_to_dict(row) -> dict:
         "port": row.port,
         "root_path": row.root_path,
         "direct_access_enabled": bool(getattr(row, "direct_access_enabled", False)),
+        "verify_ssl": bool(getattr(row, "verify_ssl", True)),
         "is_active": bool(row.is_active),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -79,6 +82,23 @@ def get_source():
     return _source_row_to_dict(row) if row else None
 
 
+def _test_connection_for(
+    protocol: str,
+    host: str | None,
+    port: int | None,
+    root_path: str,
+    username: str | None,
+    password: str | None,
+    verify_ssl: bool,
+) -> tuple[bool, str | None]:
+    """Shared by `test_source_connection()` and `put_source()`'s reconnect
+    pre-flight check -- dispatches to the right remote protocol's
+    `test_connection()`."""
+    if protocol == "smb":
+        return smb_test_connection(host, port, root_path, username, password)
+    return webdav_test_connection(host, port, root_path, username, password, verify_ssl)
+
+
 @router.post("/source/test-connection")
 def test_source_connection(body: SourceRequest):
     if body.protocol == "local":
@@ -89,10 +109,12 @@ def test_source_connection(body: SourceRequest):
             return {"ok": False, "message": f"Path is not a directory: {path}"}
         return {"ok": True, "message": None}
 
-    if body.protocol == "smb":
+    if body.protocol in ("smb", "webdav"):
         if not body.host:
-            return {"ok": False, "message": "Host is required for an SMB source."}
-        ok, message = smb_test_connection(body.host, body.port, body.root_path, body.username, body.password)
+            return {"ok": False, "message": f"Host is required for a {body.protocol} source."}
+        ok, message = _test_connection_for(
+            body.protocol, body.host, body.port, body.root_path, body.username, body.password, body.verify_ssl
+        )
         return {"ok": ok, "message": message}
 
     return {"ok": False, "message": f"Supported protocols: {', '.join(SUPPORTED_PROTOCOLS)}."}
@@ -102,8 +124,8 @@ def test_source_connection(body: SourceRequest):
 def put_source(body: SourceRequest):
     """Configure a source and switch to it. If the currently active source
     has the same `(protocol, root_path)` -- the same underlying data -- this
-    is a reconnect: `host`/`port`/credentials/`direct_access_enabled`/`name`
-    are updated on that same row in place, no backup/wipe/rescan (see
+    is a reconnect: `host`/`port`/credentials/`direct_access_enabled`/
+    `verify_ssl`/`name` are updated on that same row in place, no backup/wipe/rescan (see
     `switch_active_source()`'s `already_active` handling). A pre-flight
     connection check runs first so a bad host/password surfaces as a clean
     400 instead of an unhandled exception from deeper in the switch.
@@ -139,14 +161,17 @@ def put_source(body: SourceRequest):
         if not body.host:
             raise HTTPException(
                 status_code=400,
-                detail={"error": {"code": "host_required", "message": "Host is required for an SMB source."}},
+                detail={"error": {"code": "host_required", "message": f"Host is required for a {body.protocol} source."}},
             )
         root_path = (body.root_path or "").strip("/\\")
         host, port = body.host, body.port
 
-    # Only meaningful for smb: ignored (always stored off) for local, which
-    # has no UNC/OS-session concept in the first place.
+    # Only meaningful for smb: ignored (always stored off) for local/webdav,
+    # which have no UNC/OS-session concept in the first place.
     direct_access_enabled = bool(body.direct_access_enabled) if body.protocol == "smb" else False
+    # Only meaningful for webdav: ignored (always stored on, i.e. strict) for
+    # local/smb.
+    verify_ssl = bool(body.verify_ssl) if body.protocol == "webdav" else True
 
     with engine.connect() as conn:
         active_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -167,14 +192,16 @@ def put_source(body: SourceRequest):
                 {"protocol": body.protocol, "root_path": root_path, "host": host, "port": port},
             ).fetchone()
 
-    if is_reconnect and body.protocol == "smb":
+    if is_reconnect and body.protocol in ("smb", "webdav"):
         test_username = body.username or None
         test_password = body.password or None
         if not test_username and not test_password:
             test_username, test_password = secrets_store.get_source_credentials_for(
                 existing.username_ref, existing.secret_ref
             )
-        ok, message = smb_test_connection(host, port, root_path, test_username, test_password)
+        ok, message = _test_connection_for(
+            body.protocol, host, port, root_path, test_username, test_password, verify_ssl
+        )
         if not ok:
             raise HTTPException(
                 status_code=400,
@@ -184,7 +211,7 @@ def put_source(body: SourceRequest):
     if existing is not None:
         source_id = existing.id
         username_ref, secret_ref = existing.username_ref, existing.secret_ref
-        if body.protocol == "smb" and (body.username or body.password):
+        if body.protocol != "local" and (body.username or body.password):
             username_ref, secret_ref = secrets_store.set_source_credentials_for(
                 source_id, body.username or "", body.password or ""
             )
@@ -193,7 +220,7 @@ def put_source(body: SourceRequest):
                 text(
                     "UPDATE sources SET name = :name, host = :host, port = :port, "
                     "username_ref = :username_ref, secret_ref = :secret_ref, "
-                    "direct_access_enabled = :direct_access_enabled, "
+                    "direct_access_enabled = :direct_access_enabled, verify_ssl = :verify_ssl, "
                     "updated_at = :now WHERE id = :id"
                 ),
                 {
@@ -203,6 +230,7 @@ def put_source(body: SourceRequest):
                     "username_ref": username_ref,
                     "secret_ref": secret_ref,
                     "direct_access_enabled": direct_access_enabled,
+                    "verify_ssl": verify_ssl,
                     "now": now,
                     "id": source_id,
                 },
@@ -210,7 +238,7 @@ def put_source(body: SourceRequest):
     else:
         source_id = str(uuid.uuid4())
         username_ref, secret_ref = None, None
-        if body.protocol == "smb":
+        if body.protocol != "local":
             username_ref, secret_ref = secrets_store.set_source_credentials_for(
                 source_id, body.username or "", body.password or ""
             )
@@ -220,9 +248,9 @@ def put_source(body: SourceRequest):
                     """
                     INSERT INTO sources
                         (id, name, protocol, host, port, root_path, username_ref, secret_ref,
-                         direct_access_enabled, is_active, created_at, updated_at, last_connected_at)
+                         direct_access_enabled, verify_ssl, is_active, created_at, updated_at, last_connected_at)
                     VALUES (:id, :name, :protocol, :host, :port, :root_path, :username_ref, :secret_ref,
-                            :direct_access_enabled, 0, :now, :now, :now)
+                            :direct_access_enabled, :verify_ssl, 0, :now, :now, :now)
                     """
                 ),
                 {
@@ -235,6 +263,7 @@ def put_source(body: SourceRequest):
                     "username_ref": username_ref,
                     "secret_ref": secret_ref,
                     "direct_access_enabled": direct_access_enabled,
+                    "verify_ssl": verify_ssl,
                     "now": now,
                 },
             )

@@ -105,7 +105,7 @@ export interface AppInfoResponse {
   hardware_decode: HardwareDecodeInfo
 }
 
-export type SourceProtocol = 'local' | 'smb'
+export type SourceProtocol = 'local' | 'smb' | 'webdav'
 
 export interface SourceConfig {
   id: string
@@ -115,6 +115,7 @@ export interface SourceConfig {
   port: number | null
   root_path: string
   direct_access_enabled: boolean
+  verify_ssl: boolean
   is_active: boolean
   created_at: string
   updated_at: string

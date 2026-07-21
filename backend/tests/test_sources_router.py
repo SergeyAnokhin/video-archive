@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app import secrets_store
 from app.jobs import service
 from app.main import app
 from app.media import preview_gif_relative_path
@@ -159,6 +160,31 @@ def test_forget_removes_an_inactive_source_without_touching_its_files(engine, so
     # Forgetting a source only drops its saved config -- it must never
     # connect to (or touch) that source's own disk.
     assert gif.exists()
+
+
+def test_forget_deletes_stored_credentials_for_non_local_source(engine):
+    """Regression for broadening `forget_source()`'s credential cleanup from
+    `protocol == 'smb'` to `protocol != 'local'` (webdav support) -- an
+    inactive webdav source's stored credentials must be deleted from
+    secrets.env, not just its DB row."""
+    source_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    username_ref, secret_ref = secrets_store.set_source_credentials_for(source_id, "user", "pass")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO sources (id, name, protocol, host, root_path, username_ref, secret_ref, "
+                "is_active, created_at, updated_at) "
+                "VALUES (:id, 'WebDAV', 'webdav', 'nas.local', '', :uref, :sref, 0, :now, :now)"
+            ),
+            {"id": source_id, "uref": username_ref, "sref": secret_ref, "now": now},
+        )
+
+    with TestClient(app) as client:
+        r = client.delete(f"/api/sources/{source_id}")
+        assert r.status_code == 200
+
+    assert secrets_store.get_source_credentials_for(username_ref, secret_ref) == (None, None)
 
 
 def test_clear_preview_cache_for_active_source_resets_db_flags(engine, source):

@@ -8,8 +8,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from email.utils import format_datetime
+from pathlib import Path, PurePosixPath
 
+import httpx
 import pytest
 from sqlalchemy import text
 
@@ -266,6 +268,176 @@ def smb_source(engine, fake_smb):
             {"id": source_id, "host": fake_smb.host, "root": fake_smb.share, "now": now},
         )
     return {"id": source_id, "fs": fake_smb}
+
+
+class FakeWebDAVFS:
+    """In-memory fake WebDAV server: an `httpx.MockTransport` handler that
+    understands `PROPFIND`/`GET` (with `Range`)/`PUT`/`DELETE`/`MKCOL`/`MOVE`
+    against the same kind of files/dirs dict `FakeSMBFS` uses, so
+    `app.sources.webdav_backend.WebDAVBackend`'s real PROPFIND-XML
+    building/parsing and Range-header logic gets exercised without a real
+    WebDAV server (none is available in this environment, same constraint as
+    SMB's `FakeSMBFS` -- see `docs/development.md`)."""
+
+    def __init__(self, base_url: str = "https://testnas"):
+        self.base_url = base_url.rstrip("/")
+        self.files: dict[str, tuple[bytes, float]] = {}
+        self.dirs: set[str] = set()
+        self.fail_next: list[Exception] = []
+
+    def _maybe_fail(self, request: httpx.Request) -> None:
+        if self.fail_next:
+            raise self.fail_next.pop(0)
+
+    def seed(self, rel_path: str, content: bytes) -> None:
+        self.files[rel_path] = (content, datetime.now(timezone.utc).timestamp())
+
+    def read(self, rel_path: str) -> bytes:
+        return self.files[rel_path][0]
+
+    def exists(self, rel_path: str) -> bool:
+        if rel_path == "":
+            return True
+        return (
+            rel_path in self.files
+            or rel_path in self.dirs
+            or any(k.startswith(rel_path + "/") for k in self.files)
+        )
+
+    def is_dir(self, rel_path: str) -> bool:
+        return rel_path == "" or (rel_path not in self.files and self.exists(rel_path))
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self._maybe_fail(request)
+        request.read()  # buffer the (possibly streamed) request body into `.content`
+        rel_path = request.url.path.strip("/")
+        method = request.method
+
+        if method == "PROPFIND":
+            return self._propfind(request, rel_path)
+        if method == "GET":
+            return self._get(request, rel_path)
+        if method == "PUT":
+            self.files[rel_path] = (request.content, datetime.now(timezone.utc).timestamp())
+            return httpx.Response(201, request=request)
+        if method == "MKCOL":
+            parent = str(PurePosixPath(rel_path).parent)
+            if parent not in ("", ".") and not self.exists(parent):
+                return httpx.Response(409, request=request)
+            if rel_path in self.dirs:
+                return httpx.Response(405, request=request)
+            self.dirs.add(rel_path)
+            return httpx.Response(201, request=request)
+        if method == "DELETE":
+            if rel_path in self.files:
+                del self.files[rel_path]
+            else:
+                self.dirs.discard(rel_path)
+            return httpx.Response(204, request=request)
+        if method == "MOVE":
+            dest_rel = httpx.URL(request.headers.get("Destination", "")).path.strip("/")
+            if rel_path in self.files:
+                self.files[dest_rel] = self.files.pop(rel_path)
+            else:
+                self.dirs.discard(rel_path)
+                self.dirs.add(dest_rel)
+            return httpx.Response(201, request=request)
+        return httpx.Response(405, request=request)
+
+    def _propfind(self, request: httpx.Request, rel_path: str) -> httpx.Response:
+        if not self.exists(rel_path):
+            return httpx.Response(404, request=request)
+        responses = [self._response_xml(rel_path)]
+        if request.headers.get("Depth") == "1" and self.is_dir(rel_path):
+            prefix = f"{rel_path}/" if rel_path else ""
+            seen: set[str] = set()
+            for key in list(self.files) + list(self.dirs):
+                if key == rel_path or not key.startswith(prefix):
+                    continue
+                child = key[len(prefix):].split("/", 1)[0]
+                if child and child not in seen:
+                    seen.add(child)
+                    responses.append(self._response_xml(f"{prefix}{child}"))
+        body = (
+            '<?xml version="1.0" encoding="utf-8"?><D:multistatus xmlns:D="DAV:">'
+            + "".join(responses)
+            + "</D:multistatus>"
+        )
+        return httpx.Response(
+            207, request=request, content=body.encode("utf-8"), headers={"Content-Type": "application/xml"}
+        )
+
+    def _response_xml(self, rel_path: str) -> str:
+        href = f"/{rel_path}" if rel_path else "/"
+        if self.is_dir(rel_path):
+            return (
+                f"<D:response><D:href>{href}/</D:href><D:propstat><D:prop>"
+                "<D:resourcetype><D:collection/></D:resourcetype></D:prop>"
+                "<D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>"
+            )
+        content, mtime = self.files[rel_path]
+        last_modified = format_datetime(datetime.fromtimestamp(mtime, tz=timezone.utc), usegmt=True)
+        return (
+            f"<D:response><D:href>{href}</D:href><D:propstat><D:prop>"
+            "<D:resourcetype/>"
+            f"<D:getcontentlength>{len(content)}</D:getcontentlength>"
+            f"<D:getlastmodified>{last_modified}</D:getlastmodified>"
+            "</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>"
+        )
+
+    def _get(self, request: httpx.Request, rel_path: str) -> httpx.Response:
+        if rel_path not in self.files:
+            return httpx.Response(404, request=request)
+        content, _ = self.files[rel_path]
+        range_header = request.headers.get("Range")
+        if range_header:
+            start_s, _, end_s = range_header.replace("bytes=", "").partition("-")
+            start = int(start_s) if start_s else 0
+            end = int(end_s) if end_s else len(content) - 1
+            chunk = content[start : end + 1]
+            return httpx.Response(
+                206,
+                request=request,
+                content=chunk,
+                headers={"Content-Range": f"bytes {start}-{end}/{len(content)}"},
+            )
+        return httpx.Response(200, request=request, content=content)
+
+
+@pytest.fixture()
+def fake_webdav(monkeypatch):
+    """Redirects every `httpx.Client` constructed anywhere in the process
+    (in particular by `WebDAVBackend`, which doesn't pass an explicit
+    `transport` when built via `get_source_access()`) to an in-memory
+    `FakeWebDAVFS` instead of the real network -- the `httpx.Client` analogue
+    of `fake_smb`'s monkeypatching of `smbclient`'s module functions."""
+    fs = FakeWebDAVFS()
+    real_client = httpx.Client
+
+    def _client_factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(fs.handle)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", _client_factory)
+    return fs
+
+
+@pytest.fixture()
+def webdav_source(engine, fake_webdav):
+    """An active `webdav` source row pointing at the `fake_webdav` fake server."""
+    source_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO sources (id, name, protocol, host, port, root_path, "
+                "username_ref, secret_ref, verify_ssl, is_active, created_at, updated_at) "
+                "VALUES (:id, 'Test WebDAV', 'webdav', :host, NULL, '', "
+                "'SOURCE_USERNAME', 'SOURCE_PASSWORD', 1, 1, :now, :now)"
+            ),
+            {"id": source_id, "host": fake_webdav.base_url, "now": now},
+        )
+    return {"id": source_id, "fs": fake_webdav}
 
 
 def make_video(path: Path, *, size: str = "160x120", duration: float = 0.5) -> None:

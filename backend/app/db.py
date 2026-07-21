@@ -778,6 +778,13 @@ MIGRATIONS: dict[int, list[str]] = {
     41: [
         "ALTER TABLE conversion_profiles ADD COLUMN preset TEXT NOT NULL DEFAULT 'medium'",
     ],
+    # Opt-in "skip TLS certificate verification" for a `webdav` source
+    # (Synology DSM's WebDAV Server ships with a self-signed HTTPS cert by
+    # default). Off by default -- verification stays strict until the user
+    # explicitly opts out; meaningless for `local`/`smb` rows.
+    42: [
+        "ALTER TABLE sources ADD COLUMN verify_ssl INTEGER NOT NULL DEFAULT 1",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

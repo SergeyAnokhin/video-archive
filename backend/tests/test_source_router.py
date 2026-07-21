@@ -1,8 +1,9 @@
 """HTTP-layer tests for `/api/source*` (API §2, Specification §5): the
-pre-Stage-7 `local` flow (regression) plus the Stage 7 `smb` flow — test
-connection, connect (with credential storage + scan), and reconnect — driven
-against the in-memory `fake_smb` fixture (`conftest.py`) since no real SMB
-server is available in this environment.
+pre-Stage-7 `local` flow (regression), the Stage 7 `smb` flow, and the
+`webdav` flow — test connection, connect (with credential storage + scan),
+and reconnect — driven against the in-memory `fake_smb`/`fake_webdav`
+fixtures (`conftest.py`) since no real SMB/WebDAV server is available in this
+environment.
 """
 
 from __future__ import annotations
@@ -147,6 +148,160 @@ def test_smb_source_requires_host(tmp_path, monkeypatch):
         r = client.put("/api/source", json={"name": "NAS", "protocol": "smb", "root_path": "share"})
         assert r.status_code == 400
         assert r.json()["detail"]["error"]["code"] == "host_required"
+
+
+def test_webdav_source_test_connection_and_connect(tmp_path, monkeypatch, fake_webdav):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    fake_webdav.seed("clips/movie.mp4", b"0" * 42)
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/source/test-connection",
+            json={
+                "name": "NAS", "protocol": "webdav", "host": fake_webdav.base_url,
+                "root_path": "", "username": "user", "password": "pass", "verify_ssl": False,
+            },
+        )
+        assert r.json()["ok"] is True
+
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "webdav", "host": fake_webdav.base_url,
+                "root_path": "", "username": "user", "password": "pass", "verify_ssl": False,
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["protocol"] == "webdav"
+        assert body["host"] == fake_webdav.base_url
+        assert body["verify_ssl"] is False
+        _wait_for_job(client, body["scan_job"]["id"])
+
+        r = client.get("/api/source")
+        assert r.json()["host"] == fake_webdav.base_url
+        assert r.json()["verify_ssl"] is False
+
+        r = client.get("/api/files")
+        assert len(r.json()["files"]) == 1
+        assert r.json()["files"][0]["file_name"] == "movie.mp4"
+
+        r = client.post("/api/source/reconnect")
+        assert r.json()["ok"] is True
+
+
+def test_webdav_source_requires_host(tmp_path, monkeypatch):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.put("/api/source", json={"name": "NAS", "protocol": "webdav", "root_path": "share"})
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"]["code"] == "host_required"
+
+
+def test_active_webdav_source_reconnect_updates_connection_params_without_rescan(tmp_path, monkeypatch, fake_webdav):
+    """Mirrors `test_active_smb_source_reconnect_updates_connection_params_without_rescan`:
+    editing the active WebDAV source's connection parameters (port, username,
+    password, name, verify_ssl) while the underlying data is unchanged (same
+    protocol + root_path) is a reconnect, not a switch."""
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    fake_webdav.seed("clips/movie.mp4", b"0" * 42)
+
+    with TestClient(app) as client:
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "webdav", "host": fake_webdav.base_url,
+                "root_path": "", "username": "user", "password": "pass", "verify_ssl": True,
+            },
+        )
+        assert r.status_code == 200
+        source_id = r.json()["id"]
+        _wait_for_job(client, r.json()["scan_job"]["id"])
+
+        r = client.post("/api/jobs/cleanup-stale-records")
+        _wait_for_job(client, r.json()["id"])
+        jobs_before = [j["id"] for j in client.get("/api/jobs").json()["jobs"]]
+        assert jobs_before
+
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS (renamed)", "protocol": "webdav", "host": fake_webdav.base_url,
+                "root_path": "", "username": "user2", "password": "pass2", "verify_ssl": False,
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["id"] == source_id
+        assert body["name"] == "NAS (renamed)"
+        assert body["verify_ssl"] is False
+        assert body["scan_job"] is None
+        assert body["detected_backups"] == []
+
+        assert [j["id"] for j in client.get("/api/jobs").json()["jobs"]] == jobs_before
+
+        engine = db_module.get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": source_id}).fetchone()
+        assert secrets_store.get_source_credentials_for(row.username_ref, row.secret_ref) == ("user2", "pass2")
+
+
+def test_active_webdav_source_reconnect_rejects_bad_connection(tmp_path, monkeypatch, fake_webdav):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "webdav", "host": fake_webdav.base_url,
+                "root_path": "", "username": "user", "password": "pass",
+            },
+        )
+        assert r.status_code == 200
+        source_id = r.json()["id"]
+
+        fake_webdav.fail_next.append(RuntimeError("boom"))
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "webdav", "host": fake_webdav.base_url,
+                "root_path": "", "username": "user2", "password": "pass2",
+            },
+        )
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"]["code"] == "connection_failed"
+
+        engine = db_module.get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT * FROM sources WHERE id = :id"), {"id": source_id}).fetchone()
+        assert secrets_store.get_source_credentials_for(row.username_ref, row.secret_ref) == ("user", "pass")
+
+
+def test_source_status_webdav(tmp_path, monkeypatch, fake_webdav):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.put(
+            "/api/source",
+            json={
+                "name": "NAS", "protocol": "webdav", "host": fake_webdav.base_url,
+                "root_path": "", "username": "user", "password": "pass",
+            },
+        )
+        assert r.status_code == 200
+
+        r = client.get("/api/source/status")
+        assert r.status_code == 200
+        body = r.json()
+        assert body == {"ok": True, "message": None, "direct_access_enabled": False, "direct_access_active": None}
 
 
 def test_switching_sources_backs_up_and_auto_restores_from_saved_backup(tmp_path, monkeypatch):
@@ -434,6 +589,6 @@ def test_unsupported_protocol_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "_engine", None)
 
     with TestClient(app) as client:
-        r = client.put("/api/source", json={"name": "X", "protocol": "webdav", "root_path": "/x"})
+        r = client.put("/api/source", json={"name": "X", "protocol": "ftp", "root_path": "/x"})
         assert r.status_code == 400
         assert r.json()["detail"]["error"]["code"] == "unsupported_protocol"

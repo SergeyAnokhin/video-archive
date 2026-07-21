@@ -94,7 +94,7 @@ export function SavedSourcesSection() {
             <span className="settings-modal__field-label">{entry.name}</span>
             {entry.is_active && <span className="backup-row__badge">{t('savedSources.active')}</span>}
             <p className="settings-modal__hint">
-              {entry.protocol === 'smb' ? `${entry.host}/${entry.root_path}` : entry.root_path}
+              {entry.protocol !== 'local' ? `${entry.host}/${entry.root_path}` : entry.root_path}
             </p>
             {entry.is_active && (
               <p className="settings-modal__hint">

@@ -31,6 +31,7 @@ export function SourceSection() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [directAccessEnabled, setDirectAccessEnabled] = useState(false)
+  const [verifySsl, setVerifySsl] = useState(true)
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null)
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -47,12 +48,13 @@ export function SourceSection() {
 
   useEffect(() => {
     if (source) {
-      setProtocol(source.protocol === 'smb' ? 'smb' : 'local')
+      setProtocol(source.protocol === 'smb' || source.protocol === 'webdav' ? source.protocol : 'local')
       setName(source.name)
       setRootPath(source.root_path)
       setHost(source.host ?? '')
       setPort(source.port ? String(source.port) : '')
       setDirectAccessEnabled(source.direct_access_enabled)
+      setVerifySsl(source.verify_ssl)
     }
   }, [source])
 
@@ -63,7 +65,7 @@ export function SourceSection() {
   // keeps the same source id, so it wouldn't otherwise re-trigger this).
   useEffect(() => {
     let cancelled = false
-    if (source?.protocol === 'smb') {
+    if (source && source.protocol !== 'local') {
       void tryApi<SourceStatus>('/api/source/status').then((json) => {
         if (!cancelled) setStatus(json)
       })
@@ -113,13 +115,14 @@ export function SourceSection() {
       name,
       protocol,
       root_path: rootPath,
-      ...(protocol === 'smb'
+      ...(protocol === 'smb' || protocol === 'webdav'
         ? {
             host,
             port: port ? Number(port) : undefined,
             username: username || undefined,
             password: password || undefined,
-            direct_access_enabled: directAccessEnabled,
+            direct_access_enabled: protocol === 'smb' && directAccessEnabled,
+            verify_ssl: protocol !== 'webdav' || verifySsl,
           }
         : {}),
     }
@@ -159,7 +162,7 @@ export function SourceSection() {
       setDetectedBackups(json.detected_backups)
       setRestoreMessage(null)
       await refreshJobs()
-      if (json.protocol === 'smb') {
+      if (json.protocol !== 'local') {
         setStatus(await tryApi<SourceStatus>('/api/source/status'))
       }
     } catch (err) {
@@ -208,20 +211,23 @@ export function SourceSection() {
   }
 
   const isSmb = protocol === 'smb'
-  const canSubmit = isSmb ? Boolean(name && host && rootPath) : Boolean(name && rootPath)
+  const isWebdav = protocol === 'webdav'
+  const isRemote = isSmb || isWebdav
+  const canSubmit = isRemote ? Boolean(name && host && rootPath) : Boolean(name && rootPath)
   // Reconnecting the active source with different connection parameters
-  // (host/port/credentials/direct access/name) rather than switching to a
-  // different one -- same underlying data (protocol + root_path unchanged),
-  // so no replace confirmation and no backup/rescan (mirrors the backend's
-  // own `is_reconnect` check in `put_source()`).
+  // (host/port/credentials/direct access/verify_ssl/name) rather than
+  // switching to a different one -- same underlying data (protocol +
+  // root_path unchanged), so no replace confirmation and no backup/rescan
+  // (mirrors the backend's own `is_reconnect` check in `put_source()`).
   const isConnectionOnlyEdit =
     source !== null &&
-    source.protocol === 'smb' &&
-    isSmb &&
+    source.protocol !== 'local' &&
+    source.protocol === protocol &&
+    isRemote &&
     rootPath.replace(/^[/\\]+/, '').replace(/[/\\]+$/, '') === source.root_path
 
   let statusHint: { text: string; variant: 'error' | 'warning' | null } | null = null
-  if (source?.protocol === 'smb' && status) {
+  if (source?.protocol !== 'local' && status) {
     if (!status.ok) {
       statusHint = { text: t('settings.sourceStatusFail', { message: status.message }), variant: 'error' }
     } else if (status.direct_access_enabled) {
@@ -294,6 +300,7 @@ export function SourceSection() {
         >
           <option value="local">{t('settings.sourceProtocolLocalOption')}</option>
           <option value="smb">{t('settings.sourceProtocolSmbOption')}</option>
+          <option value="webdav">{t('settings.sourceProtocolWebdavOption')}</option>
         </select>
       </label>
 
@@ -306,7 +313,7 @@ export function SourceSection() {
         />
       </label>
 
-      {isSmb && (
+      {isRemote && (
         <>
           <label className="settings-modal__label">
             {t('settings.sourceHost')}
@@ -314,7 +321,7 @@ export function SourceSection() {
               className="settings-modal__input"
               value={host}
               onChange={(event) => setHost(event.target.value)}
-              placeholder="nas.local"
+              placeholder={isWebdav ? 'https://nas.local' : 'nas.local'}
             />
           </label>
           <label className="settings-modal__label">
@@ -324,23 +331,23 @@ export function SourceSection() {
               type="number"
               value={port}
               onChange={(event) => setPort(event.target.value)}
-              placeholder="445"
+              placeholder={isWebdav ? '5006' : '445'}
             />
           </label>
         </>
       )}
 
       <label className="settings-modal__label">
-        {isSmb ? t('settings.sourceRemotePath') : t('settings.sourcePath')}
+        {isRemote ? t('settings.sourceRemotePath') : t('settings.sourcePath')}
         <input
           className="settings-modal__input"
           value={rootPath}
           onChange={(event) => setRootPath(event.target.value)}
-          placeholder={isSmb ? 'videos' : './library'}
+          placeholder={isRemote ? 'videos' : './library'}
         />
       </label>
 
-      {isSmb && (
+      {isRemote && (
         <>
           <label className="settings-modal__label">
             {t('settings.sourceUsername')}
@@ -358,11 +365,11 @@ export function SourceSection() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder={source?.protocol === 'smb' ? t('settings.sourcePasswordHint') : ''}
+              placeholder={source?.protocol !== 'local' ? t('settings.sourcePasswordHint') : ''}
               autoComplete="current-password"
             />
           </label>
-          {isWindows && (
+          {isSmb && isWindows && (
             <label className="settings-modal__field">
               <span className="settings-modal__field-label">{t('settings.sourceDirectAccess')}</span>
               <input
@@ -372,10 +379,25 @@ export function SourceSection() {
               />
             </label>
           )}
+          {isWebdav && (
+            <label className="settings-modal__field">
+              <span className="settings-modal__field-label">{t('settings.sourceVerifySsl')}</span>
+              <input
+                type="checkbox"
+                checked={verifySsl}
+                onChange={(event) => setVerifySsl(event.target.checked)}
+              />
+            </label>
+          )}
+          {isWebdav && !verifySsl && (
+            <p className="settings-modal__hint settings-modal__hint--warning">
+              {t('settings.sourceVerifySslWarning')}
+            </p>
+          )}
         </>
       )}
 
-      {!isSmb && <p className="settings-modal__hint">{t('settings.sourceProtocolLocal')}</p>}
+      {!isRemote && <p className="settings-modal__hint">{t('settings.sourceProtocolLocal')}</p>}
 
       {testResult && (
         <p
@@ -430,7 +452,7 @@ export function SourceSection() {
             <X size={14} /> {t('settings.cancel')}
           </button>
         )}
-        {source && source.protocol === 'smb' && (
+        {source && source.protocol !== 'local' && (
           <button
             type="button"
             className="settings-modal__option settings-modal__option--icon"

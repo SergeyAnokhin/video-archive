@@ -10,6 +10,7 @@ This folder contains the living project documentation — the documents that are
 | [`architecture.md`](architecture.md) | Current high-level architecture and cross-cutting conventions | A component, flow, or convention changes |
 | [`development.md`](development.md) | Developer workflow: run, test, manual verification | Commands, test suites, or workflows change |
 | [`deployment.md`](deployment.md) | k3s cluster deployment: CI → GHCR → ArgoCD flow, Helm chart, node placement switch, human checklist | Dockerfiles, chart, CI workflow, or cluster setup change |
+| [`webdav-setup.md`](webdav-setup.md) | Configuring a `webdav` source and its NAS side (Synology DSM's WebDAV Server) | WebDAV setup steps or the connection-string convention change |
 
 Project overview and startup instructions live in the root [`README.md`](../README.md).
 

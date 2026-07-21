@@ -1,8 +1,8 @@
 """`SourceAccess`: the protocol-agnostic facade used by scan/convert/preview/
 tag job code and the browsing/playback routers (Specification §5). It
-dispatches every call to a `LocalBackend` or `SMBBackend` instance, so callers
-only ever deal with relative-path strings — never a raw `pathlib.Path` that
-may or may not point at a real local file.
+dispatches every call to a `LocalBackend`, `SMBBackend`, or `WebDAVBackend`
+instance, so callers only ever deal with relative-path strings — never a raw
+`pathlib.Path` that may or may not point at a real local file.
 """
 
 from __future__ import annotations
@@ -123,5 +123,15 @@ def get_source_access(source_row) -> SourceAccess:
             source_row.host, source_row.port, source_row.root_path, username, password, direct_access_enabled
         )
         return SourceAccess(backend, "smb")
+
+    if source_row.protocol == "webdav":
+        from app.sources.webdav_backend import WebDAVBackend
+
+        username, password = secrets_store.get_source_credentials_for(
+            source_row.username_ref, source_row.secret_ref
+        )
+        verify_ssl = bool(getattr(source_row, "verify_ssl", True))
+        backend = WebDAVBackend(source_row.host, source_row.port, source_row.root_path, username, password, verify_ssl)
+        return SourceAccess(backend, "webdav")
 
     return SourceAccess(LocalBackend(Path(source_row.root_path)), "local")

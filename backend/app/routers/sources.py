@@ -1,7 +1,7 @@
 """Saved-sources list, switching, and preview-asset management (user
 request): lets several archives (e.g. a local test folder and a remote SMB
-share) be configured once and switched between without losing each one's own
-data. `PUT /source` (see `app/routers/source.py`) still owns configuring a
+or WebDAV share) be configured once and switched between without losing each
+one's own data. `PUT /source` (see `app/routers/source.py`) still owns configuring a
 new/existing source's connection details; this router covers listing what's
 saved, activating one of them, forgetting one, and clearing the active
 source's animated preview GIFs.
@@ -89,7 +89,7 @@ def forget_source(source_id: str):
 
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM sources WHERE id = :id"), {"id": source_id})
-    if row.protocol == "smb":
+    if row.protocol != "local":
         secrets_store.delete_source_credentials_for(row.username_ref, row.secret_ref)
     return {"deleted": True}
 
