@@ -207,7 +207,9 @@ class SMBBackend:
         local_path = tmp_dir / PureWindowsPath(rel_path).name
         try:
             def _download() -> None:
-                with smbclient.open_file(self._unc(rel_path), mode="rb") as remote_f, open(local_path, "wb") as local_f:
+                with smbclient.open_file(
+                    self._unc(rel_path), mode="rb", share_access="rwd"
+                ) as remote_f, open(local_path, "wb") as local_f:
                     _copy_and_count(remote_f, local_f)
 
             self._with_retry(_download)
@@ -240,7 +242,9 @@ class SMBBackend:
             parent = PureWindowsPath(dest_rel_path).parent
             if str(parent) not in ("", "."):
                 smbclient.makedirs(self._unc(str(parent)), exist_ok=True)
-            with open(local_path, "rb") as local_f, smbclient.open_file(self._unc(dest_rel_path), mode="wb") as remote_f:
+            with open(local_path, "rb") as local_f, smbclient.open_file(
+                self._unc(dest_rel_path), mode="wb", share_access="rwd"
+            ) as remote_f:
                 _copy_and_count(local_f, remote_f)
 
         self._with_retry(_upload)
@@ -273,7 +277,7 @@ class SMBBackend:
 
     def read_bytes(self, rel_path: str) -> bytes:
         def _read() -> bytes:
-            with smbclient.open_file(self._unc(rel_path), mode="rb") as f:
+            with smbclient.open_file(self._unc(rel_path), mode="rb", share_access="rwd") as f:
                 return f.read()
 
         data = self._with_retry(_read)
@@ -282,7 +286,7 @@ class SMBBackend:
 
     def open_range(self, rel_path: str, start: int = 0, end: int | None = None) -> Iterator[bytes]:
         def _open():
-            return smbclient.open_file(self._unc(rel_path), mode="rb")
+            return smbclient.open_file(self._unc(rel_path), mode="rb", share_access="rwd")
 
         f = self._with_retry(_open)
         try:
