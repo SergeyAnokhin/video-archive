@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from app.orphan_previews import find_orphaned_previews
+from app.orphan_previews import delete_orphaned_previews, find_orphaned_previews
 from app.sources import SourceAccess
 from app.sources.local_backend import LocalBackend
 
@@ -123,3 +123,45 @@ def test_leftover_full_filename_jpg_is_flagged_even_when_tracked_as_image(engine
     orphans = find_orphaned_previews(engine, access, dir_id, "")
 
     assert orphans == ["Clip.mp4.jpg"]
+
+
+def test_delete_removes_leftover_thumbnails_tracked_files_row_too(engine, source):
+    """The DB-row counterpart of the test above: a leftover-thumbnail orphan
+    was tracked as its own standalone-image `files` row, so deleting it must
+    also remove that row (and its tags) -- otherwise the directory listing
+    keeps showing a ghost card whose thumbnail/stream now 404s, even though
+    the file is genuinely gone from disk (user report)."""
+    dir_id = _root_dir_id(engine, source["id"])
+    _insert_file(engine, source["id"], dir_id, "Clip.mp4", "Clip.mp4")
+    _insert_file(
+        engine, source["id"], dir_id, "Clip.mp4.jpg", "Clip.mp4.jpg", is_video=0, is_image=1,
+    )
+    (source["root"] / "Clip.mp4.jpg").write_bytes(b"leftover-thumbnail")
+
+    with engine.begin() as conn:
+        file_id = conn.execute(
+            text("SELECT id FROM files WHERE relative_path = 'Clip.mp4.jpg'")
+        ).scalar_one()
+        conn.execute(
+            text(
+                "INSERT INTO tag_catalog (id, tag_key, display_name, is_active, sort_order, created_at, updated_at) "
+                "VALUES ('tag1', 'sample', 'sample', 1, 0, :now, :now)"
+            ),
+            {"now": _now()},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO file_tags (id, file_id, tag_id, score, provider_name, model_name, assigned_at) "
+                "VALUES ('ft1', :fid, 'tag1', 90, 'manual', NULL, :now)"
+            ),
+            {"fid": file_id, "now": _now()},
+        )
+
+    access = SourceAccess(LocalBackend(source["root"]), "local")
+    deleted_count = delete_orphaned_previews(engine, access, dir_id, "")
+
+    assert deleted_count == 1
+    assert not (source["root"] / "Clip.mp4.jpg").exists()
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT id FROM files WHERE relative_path = 'Clip.mp4.jpg'")).fetchone() is None
+        assert conn.execute(text("SELECT * FROM file_tags WHERE file_id = :fid"), {"fid": file_id}).fetchone() is None

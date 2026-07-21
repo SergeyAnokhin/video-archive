@@ -9,11 +9,15 @@ out of scope here.
 
 from __future__ import annotations
 
+import logging
 from pathlib import PurePosixPath
 
 from sqlalchemy import text
 
-from app.media import sibling_relative_path, variant_base_stem
+from app import file_ops
+from app.media import preview_gif_relative_path, sibling_relative_path, variant_base_stem
+
+logger = logging.getLogger(__name__)
 
 
 def find_orphaned_previews(
@@ -67,3 +71,41 @@ def find_orphaned_previews(
         actual.add(rel)
 
     return sorted(actual - protected)
+
+
+def delete_orphaned_previews(
+    engine, access, directory_id: str, directory_relative_path: str
+) -> int:
+    """Deletes every orphan `find_orphaned_previews()` finds, tolerating a
+    single file's removal failure so it doesn't abort the rest of the batch.
+
+    A "leftover video thumbnail" orphan (`<video file name>.jpg`, see
+    `find_orphaned_previews()`'s docstring) was tracked as its own
+    standalone-image `files` row by `discover_filesystem()` -- removing only
+    the on-disk file and leaving that row behind would keep it showing up in
+    the directory listing (and its now-gone thumbnail/stream would 404), so
+    any matching row (plus its `file_tags`/`file_similarity_signatures` and
+    GIF preview asset, mirroring `file_ops.delete_file()`) is cleaned up too."""
+    orphans = find_orphaned_previews(engine, access, directory_id, directory_relative_path)
+
+    deleted_count = 0
+    for rel_path in orphans:
+        try:
+            access.remote_remove(rel_path)
+        except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the batch
+            logger.warning("Failed to delete orphaned preview %s: %s", rel_path, exc)
+            continue
+        deleted_count += 1
+
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT id FROM files WHERE directory_id = :dir_id AND relative_path = :rel"),
+                {"dir_id": directory_id, "rel": rel_path},
+            ).fetchone()
+            if row is not None:
+                gif_rel = preview_gif_relative_path(rel_path)
+                if access.exists(gif_rel):
+                    access.remote_remove(gif_rel)
+                file_ops.delete_file_rows(conn, row.id)
+
+    return deleted_count

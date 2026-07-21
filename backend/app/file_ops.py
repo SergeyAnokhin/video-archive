@@ -60,10 +60,21 @@ def _has_sibling_jpg_collage(row) -> bool:
     return row.extension.lower() not in ("jpg", "jpeg")
 
 
+def delete_file_rows(conn, file_id: str) -> None:
+    """Deletes a file's `files`/`file_tags`/`file_similarity_signatures` rows
+    (job history rows referencing the file are left as-is, same as the
+    cleanup job). Callers are responsible for removing the file itself (and
+    any sibling preview assets) from the source beforehand -- this only
+    touches the database, so it's also reusable for a file whose disk removal
+    happened elsewhere (e.g. the orphaned-previews cleanup)."""
+    conn.execute(text("DELETE FROM file_tags WHERE file_id = :id"), {"id": file_id})
+    conn.execute(text("DELETE FROM file_similarity_signatures WHERE file_id = :id"), {"id": file_id})
+    conn.execute(text("DELETE FROM files WHERE id = :id"), {"id": file_id})
+
+
 def delete_file(engine, file_id: str) -> None:
     """Removes the file plus its sibling preview assets from the source, then
-    the `files`/`file_tags`/`file_similarity_signatures` rows (job history
-    rows referencing the file are left as-is, same as the cleanup job)."""
+    its DB rows via `delete_file_rows()`."""
     with engine.begin() as conn:
         row = _file_with_source_lookup(conn, file_id)
         if row is None:
@@ -82,9 +93,7 @@ def delete_file(engine, file_id: str) -> None:
         if access.exists(gif_rel):
             access.remote_remove(gif_rel)
 
-        conn.execute(text("DELETE FROM file_tags WHERE file_id = :id"), {"id": file_id})
-        conn.execute(text("DELETE FROM file_similarity_signatures WHERE file_id = :id"), {"id": file_id})
-        conn.execute(text("DELETE FROM files WHERE id = :id"), {"id": file_id})
+        delete_file_rows(conn, file_id)
 
 
 def move_file(engine, file_id: str, target_directory: str):

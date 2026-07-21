@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import PurePosixPath
 
 from fastapi import APIRouter, HTTPException, Query
@@ -17,8 +16,6 @@ from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 from app.status import compute_directory_status
 from app.tags import list_top_tags_for_files, top_tags_for_directory_subtree
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -224,24 +221,16 @@ class DeleteOrphanedPreviewsRequest(BaseModel):
 @router.post("/directories/orphaned-previews/delete")
 def delete_orphaned_previews(body: DeleteOrphanedPreviewsRequest):
     """Recomputes the orphan list server-side (rather than trusting a
-    client-supplied file list from an earlier dry-run) and deletes each one,
-    tolerating a single file's removal failure so it doesn't abort the rest
-    of the batch."""
+    client-supplied file list from an earlier dry-run) and deletes each one
+    -- see `orphan_previews.delete_orphaned_previews()` for the on-disk +
+    DB-row cleanup this delegates to."""
     engine = get_engine()
     with engine.connect() as conn:
         source = get_active_source_or_404(conn)
         directory_row = _get_directory_or_404(conn, source.id, body.path)
 
     access = get_source_access(source)
-    orphans = orphan_previews.find_orphaned_previews(engine, access, directory_row.id, body.path)
-
-    deleted_count = 0
-    for rel_path in orphans:
-        try:
-            access.remote_remove(rel_path)
-            deleted_count += 1
-        except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the batch
-            logger.warning("Failed to delete orphaned preview %s: %s", rel_path, exc)
+    deleted_count = orphan_previews.delete_orphaned_previews(engine, access, directory_row.id, body.path)
 
     return {"deleted_count": deleted_count}
 
