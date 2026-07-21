@@ -412,6 +412,8 @@
     "like": "Good tag",
     "dislike": "Bad tag",
     "pricePerMillion": "${{input}} in / ${{output}} out per 1M tokens",
+    "priceRowIn": "in ${{value}}",
+    "priceRowOut": "out ${{value}}",
     "priceUnavailable": "Price not set",
     "priceSource": {
       "manual": "manual",

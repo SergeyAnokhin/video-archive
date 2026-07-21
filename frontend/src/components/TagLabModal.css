@@ -74,22 +74,134 @@
   letter-spacing: 0.02em;
 }
 
-.tag-lab__model-row {
+.tag-lab-model-picker {
+  position: relative;
+  width: 100%;
+}
+
+.tag-lab-model-picker__toggle {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
+  width: 100%;
+  cursor: pointer;
 }
 
-.tag-lab__model-row .convert-dialog__input {
-  flex: 1;
-  min-width: 0;
+.tag-lab-model-picker__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
-.tag-lab__model-price {
+.tag-lab-model-picker__chevron {
   flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.tag-lab-model-picker__placeholder {
+  color: var(--color-text-muted);
+}
+
+.tag-lab-model-picker__list {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 50;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.tag-lab-model-picker__option {
+  display: block;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tag-lab-model-picker__option:hover {
+  background: var(--color-surface-raised);
+}
+
+.tag-lab-model-picker__option--selected {
+  background: var(--color-surface-raised);
+}
+
+.tag-lab-model-picker__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.tag-lab-model-picker__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tag-lab-model-picker__custom-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+
+.tag-lab-model-picker__pair {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
+}
+
+/* Custom name present -> the provider/model pair becomes secondary detail
+   underneath it, muted so it doesn't compete with the name (user request:
+   only show the pair a second time when it's not already identical to what's
+   shown above). No custom name -> the pair IS the primary label, so provider
+   and model each keep their own color at full size instead of being muted. */
+.tag-lab-model-picker__custom-name + .tag-lab-model-picker__pair {
+  color: var(--color-text-muted);
+}
+
+.tag-lab-model-picker__provider {
+  color: var(--color-accent);
+}
+
+.tag-lab-model-picker__slash {
+  color: var(--color-text-muted);
+}
+
+.tag-lab-model-picker__model {
+  color: var(--color-text);
+}
+
+.tag-lab-model-picker__custom-name + .tag-lab-model-picker__pair .tag-lab-model-picker__provider,
+.tag-lab-model-picker__custom-name + .tag-lab-model-picker__pair .tag-lab-model-picker__model {
+  color: inherit;
+}
+
+.tag-lab-model-picker__price {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 11px;
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+
+.tag-lab-model-picker__price-empty {
+  font-size: 12px;
 }
 
 .tag-lab__model-stats {

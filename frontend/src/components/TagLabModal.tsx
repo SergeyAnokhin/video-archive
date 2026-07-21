@@ -15,6 +15,7 @@ import type {
   TagLabRunResult,
 } from '../types/api'
 import { TagBadge } from './TagBadge'
+import { TagLabModelPicker } from './TagLabModelPicker'
 import './ConvertDialog.css'
 import './TagLabModal.css'
 
@@ -144,12 +145,6 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
   const selectedEntry = entries.find((entry) => entry.id === entryId) ?? null
   const selectedStats = selectedEntry
     ? ratings.find((row) => statsKey(row.provider_type, row.model_name) === statsKey(selectedEntry.provider_type, selectedEntry.vision_model))
-    : undefined
-  // Shown next to the model picker itself, before any run -- lets the price
-  // be checked while still choosing a model, not only after seeing a result
-  // (user request).
-  const selectedPrice = selectedEntry
-    ? prices.find((row) => row.provider_type === selectedEntry.provider_type && row.model_name === selectedEntry.vision_model)
     : undefined
   const currentPrice = result
     ? prices.find((row) => row.provider_type === result.provider_type && row.model_name === result.model_name)
@@ -373,30 +368,13 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
 
         <label className="convert-dialog__label">
           {t('tagLab.modelLabel')}
-          <div className="tag-lab__model-row">
-            <select
-              className="convert-dialog__input"
-              value={entryId}
-              onChange={(event) => setEntryId(event.target.value)}
-              disabled={entries.length === 0}
-            >
-              {entries.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.display_name} ({entry.provider_type}/{entry.vision_model ?? '?'})
-                </option>
-              ))}
-            </select>
-            {selectedEntry && (
-              <span className="tag-lab__model-price">
-                {selectedPrice?.input_per_million != null && selectedPrice.output_per_million != null
-                  ? t('tagLab.pricePerMillion', {
-                      input: selectedPrice.input_per_million,
-                      output: selectedPrice.output_per_million,
-                    })
-                  : t('tagLab.priceUnavailable')}
-              </span>
-            )}
-          </div>
+          <TagLabModelPicker
+            entries={entries}
+            prices={prices}
+            value={entryId}
+            onChange={setEntryId}
+            disabled={entries.length === 0}
+          />
         </label>
         {entriesLoaded && entries.length === 0 && (
           <p className="convert-dialog__hint convert-dialog__hint--warning">{t('tagLab.modelEmptyHint')}</p>
