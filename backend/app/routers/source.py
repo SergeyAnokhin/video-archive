@@ -16,7 +16,7 @@ from app import secrets_store
 from app.config import BACKEND_DIR
 from app.db import get_engine
 from app.source_switch import switch_active_source
-from app.sources import get_source_access
+from app.sources import get_source_access, smb_backend
 from app.sources.smb_backend import test_connection as smb_test_connection
 
 router = APIRouter()
@@ -298,6 +298,25 @@ def get_source_status():
     with engine.connect() as conn:
         row = _get_active_source_row(conn)
     return _check_connection_status(row)
+
+
+@router.get("/source/smb-lock-status")
+def get_smb_lock_status():
+    """Status of the process-wide SMB serialization lock (see
+    `smb_backend._smb_lock`'s docstring) -- deliberately does *not* call
+    `_check_connection_status()`/`access.is_dir()` like `/source/status`
+    does, since that goes through the very lock this endpoint reports on and
+    would hang along with everything else if it's wedged. One lock covers
+    every SMB source in the process, not just the active one."""
+    return smb_backend.get_lock_status()
+
+
+@router.post("/source/smb-lock-status/release")
+def release_smb_lock():
+    """Escape hatch for a wedged SMB lock (Settings UI "release lock"
+    button) -- see `smb_backend.force_release_lock()`."""
+    smb_backend.force_release_lock()
+    return smb_backend.get_lock_status()
 
 
 @router.post("/source/reconnect")

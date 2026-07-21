@@ -1,11 +1,21 @@
-import { Plug, RefreshCw, RotateCcw, Save, X } from 'lucide-react'
+import { Lock, Plug, RefreshCw, RotateCcw, Save, Unlock, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
 import { useSource } from '../context/SourceContext'
 import { api, rawApi, tryApi } from '../api/client'
 import { useBackendStatus } from '../hooks/useBackendStatus'
-import type { BackupSummary, SourceConfig, SourceProtocol, SourceStatus, TestConnectionResult } from '../types/api'
+import { formatElapsedCompact, type DurationUnitLabels } from '../utils/format'
+import type {
+  BackupSummary,
+  SmbLockStatus,
+  SourceConfig,
+  SourceProtocol,
+  SourceStatus,
+  TestConnectionResult,
+} from '../types/api'
+
+const SMB_LOCK_POLL_INTERVAL_MS = 5000
 
 export function SourceSection() {
   const { t } = useTranslation()
@@ -29,6 +39,8 @@ export function SourceSection() {
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectResult, setReconnectResult] = useState<SourceStatus | null>(null)
   const [status, setStatus] = useState<SourceStatus | null>(null)
+  const [lockStatus, setLockStatus] = useState<SmbLockStatus | null>(null)
+  const [releasingLock, setReleasingLock] = useState(false)
   const [detectedBackups, setDetectedBackups] = useState<BackupSummary[]>([])
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
@@ -62,6 +74,39 @@ export function SourceSection() {
       cancelled = true
     }
   }, [source?.id, source?.protocol])
+
+  // The SMB serialization lock is process-wide, not tied to a source id, so
+  // this polls independently of `source?.id` -- but only while an SMB source
+  // is active, since that's the only time it can ever be held. Polled
+  // (rather than fetched once) so the indicator reflects a lock taken or
+  // released by any in-flight job, not just this component's own actions.
+  useEffect(() => {
+    if (source?.protocol !== 'smb') {
+      setLockStatus(null)
+      return
+    }
+    let cancelled = false
+    async function poll() {
+      const json = await tryApi<SmbLockStatus>('/api/source/smb-lock-status')
+      if (json && !cancelled) setLockStatus(json)
+    }
+    void poll()
+    const timer = window.setInterval(() => void poll(), SMB_LOCK_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [source?.protocol])
+
+  async function handleReleaseLock() {
+    setReleasingLock(true)
+    try {
+      const json = await api<SmbLockStatus>('/api/source/smb-lock-status/release', { method: 'POST' })
+      setLockStatus(json)
+    } finally {
+      setReleasingLock(false)
+    }
+  }
 
   function buildPayload() {
     return {
@@ -186,6 +231,13 @@ export function SourceSection() {
     }
   }
 
+  const durationUnits: DurationUnitLabels = {
+    day: t('jobs.unitShort.day'),
+    hour: t('jobs.unitShort.hour'),
+    minute: t('jobs.unitShort.minute'),
+    second: t('jobs.unitShort.second'),
+  }
+
   return (
     <section className="settings-modal__section">
       <h3 className="settings-modal__section-title">{t('settings.sourceSection')}</h3>
@@ -207,6 +259,29 @@ export function SourceSection() {
           className={`settings-modal__hint${statusHint.variant ? ` settings-modal__hint--${statusHint.variant}` : ''}`}
         >
           {statusHint.text}
+        </p>
+      )}
+
+      {source?.protocol === 'smb' && lockStatus && (
+        <p
+          className={`settings-modal__hint settings-modal__hint--smb-lock${lockStatus.held ? ' settings-modal__hint--warning' : ''}`}
+        >
+          {lockStatus.held ? <Lock size={13} /> : <Unlock size={13} />}
+          {lockStatus.held
+            ? t('settings.sourceSmbLockHeld', {
+                duration: formatElapsedCompact(lockStatus.seconds_held ?? 0, durationUnits),
+              })
+            : t('settings.sourceSmbLockFree')}
+          {lockStatus.held && (
+            <button
+              type="button"
+              className="settings-modal__option"
+              onClick={() => void handleReleaseLock()}
+              disabled={releasingLock}
+            >
+              <Unlock size={13} /> {t('settings.sourceSmbLockRelease')}
+            </button>
+          )}
         </p>
       )}
 

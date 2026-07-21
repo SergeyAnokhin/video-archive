@@ -485,18 +485,39 @@ def get_current_job_summary(engine) -> dict | None:
 def claim_next_queued_job(engine, job_types: frozenset[str] | None = None) -> dict | None:
     """`job_types`, when given, restricts the claim to that set (the
     concurrency-lane worker calls this once per lane, each with its own
-    fixed set of job types, so at most one job per lane runs at a time)."""
+    fixed set of job types, so at most one job per lane runs at a time).
+
+    Selects the oldest matching row and marks it 'running' in the same
+    UPDATE (guarded by a `WHERE status = 'queued'` re-check on the write
+    itself), rather than a plain `SELECT` followed by a separate write --
+    two callers racing this (two lanes, or a stray second backend process
+    sharing the same database) could otherwise both read the same 'queued'
+    row before either wrote to it, and both start running it."""
     params: dict = {}
     where = "status = 'queued'"
     if job_types is not None:
         placeholders = ", ".join(f":jt{i}" for i in range(len(job_types)))
         where += f" AND job_type IN ({placeholders})"
         params.update({f"jt{i}": jt for i, jt in enumerate(job_types)})
-    with engine.connect() as conn:
+    params["now"] = _now()
+    with engine.begin() as conn:
         row = conn.execute(
-            text(f"SELECT * FROM jobs WHERE {where} ORDER BY created_at LIMIT 1"), params
+            text(
+                f"""
+                UPDATE jobs
+                SET status = 'running', started_at = :now, updated_at = :now
+                WHERE id = (SELECT id FROM jobs WHERE {where} ORDER BY created_at LIMIT 1)
+                  AND status = 'queued'
+                RETURNING *
+                """
+            ),
+            params,
         ).fetchone()
-    return _job_row_to_dict(row) if row else None
+    if row is None:
+        return None
+    job = _job_row_to_dict(row)
+    job["scope_label"] = _resolve_scope_labels(engine, [job]).get(job["id"])
+    return job
 
 
 def start_job(engine, job_id: str) -> None:

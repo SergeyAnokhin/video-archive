@@ -419,6 +419,39 @@ def test_claim_next_queued_job_respects_job_types_filter(engine, source):
     assert claimed["id"] == rescan_job["id"]
 
 
+def test_claim_next_queued_job_is_atomic_under_concurrent_callers(engine, source):
+    """Two threads racing `claim_next_queued_job` for the same job_type set
+    must never both get the same job -- regression test for the
+    plain-SELECT-then-separate-write race (a bare `SELECT` could let two
+    callers both read the same 'queued' row before either had written to
+    it, e.g. two lanes or a stray second backend process sharing the same
+    database)."""
+    job = service.create_job(engine, "rescan", "source", None, {"path": ""})
+
+    results: list[dict | None] = []
+    barrier = threading.Barrier(2)
+
+    def _claim() -> None:
+        barrier.wait(timeout=5)
+        results.append(service.claim_next_queued_job(engine, job_types=worker_module._CPU_JOB_TYPES))
+
+    threads = [threading.Thread(target=_claim) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+
+    claimed = [r for r in results if r is not None]
+    assert len(claimed) == 1
+    assert claimed[0]["id"] == job["id"]
+
+    with engine.connect() as conn:
+        count = conn.execute(
+            text("SELECT COUNT(*) FROM jobs WHERE id = :id AND status = 'running'"), {"id": job["id"]}
+        ).scalar()
+    assert count == 1
+
+
 def test_cpu_and_network_jobs_run_concurrently(engine, source, monkeypatch):
     """Proves the two lanes genuinely run at the same time rather than one
     after another: each fake handler blocks on a 2-party barrier, so if the

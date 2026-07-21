@@ -39,9 +39,10 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Iterator
 
@@ -64,7 +65,79 @@ _CHUNK_SIZE = 512 * 1024
 # "read of closed file" when one thread's retry reset the shared connection
 # out from under another thread's in-flight read). Serializing all backend
 # calls through this lock keeps SMB traffic to one operation at a time.
+#
+# This lock is process-wide (every host, every source), not per-host: it
+# only guards `smbclient`'s shared connection pool, not a specific share, so
+# splitting it per-host wouldn't actually stop two hosts' calls from racing
+# the same pool internals.
 _smb_lock = threading.Lock()
+
+# Separate, always-fast lock guarding *metadata about* `_smb_lock` (who's
+# holding it and since when) -- deliberately never nested inside `_smb_lock`
+# itself, so a caller stuck on a hung SMB read (see `_locked()` below) can
+# never make this metadata unreadable too. This is what lets the Settings UI
+# show "SMB lock: busy" instead of hanging in the same way as everything else.
+_state_lock = threading.Lock()
+_lock_held_since: float | None = None
+_lock_description: str | None = None
+
+
+@contextmanager
+def _locked(description: str):
+    """Acquires the current `_smb_lock` while recording why, for
+    `get_lock_status()`. Reads `_smb_lock` via the global each time (not a
+    cached reference) so a `force_release_lock()` call made while this is
+    blocked takes effect for the *next* caller immediately, without needing
+    this one to ever return."""
+    global _lock_held_since, _lock_description
+    lock = _smb_lock
+    with lock:
+        with _state_lock:
+            _lock_held_since = time.monotonic()
+            _lock_description = description
+        try:
+            yield
+        finally:
+            with _state_lock:
+                # Only clear if nobody force-released (and thus already
+                # cleared/reassigned) while we were running -- otherwise a
+                # slow caller finishing after a force-release would wipe out
+                # a newer, unrelated holder's state.
+                if _smb_lock is lock:
+                    _lock_held_since = None
+                    _lock_description = None
+
+
+def get_lock_status() -> dict:
+    """Read-only snapshot for the Settings UI -- deliberately touches only
+    `_state_lock` (always fast), never `_smb_lock` itself."""
+    with _state_lock:
+        held_since = _lock_held_since
+        description = _lock_description
+    if held_since is None:
+        return {"held": False, "held_since": None, "seconds_held": None, "description": None}
+    seconds_held = time.monotonic() - held_since
+    held_since_iso = (datetime.now(timezone.utc) - timedelta(seconds=seconds_held)).isoformat()
+    return {
+        "held": True,
+        "held_since": held_since_iso,
+        "seconds_held": seconds_held,
+        "description": description,
+    }
+
+
+def force_release_lock() -> None:
+    """Escape hatch for a wedged `_smb_lock` (Settings UI "release lock"
+    button): swaps in a brand-new lock so every future SMB call proceeds
+    immediately. Whatever thread is stuck holding the *old* lock keeps
+    holding it forever -- Python has no safe way to force a thread off a
+    blocking socket call -- but that thread is now abandoned rather than
+    blocking the rest of the process."""
+    global _smb_lock, _lock_held_since, _lock_description
+    with _state_lock:
+        _smb_lock = threading.Lock()
+        _lock_held_since = None
+        _lock_description = None
 
 
 def _copy_and_count(src, dst) -> None:
@@ -122,7 +195,7 @@ class SMBBackend:
         # caches one connection per host process-wide, so an unsynchronized
         # `register_session()` here can race a concurrent request's SMB
         # traffic on that shared socket (see `_smb_lock` above).
-        with _smb_lock:
+        with _locked(f"{host}: register_session"):
             self._register_session()
 
     def _register_session(self) -> None:
@@ -139,7 +212,8 @@ class SMBBackend:
         return f"\\\\{self.host}\\{tail}"
 
     def _with_retry(self, func, *args, **kwargs):
-        with _smb_lock:
+        description = f"{self.host}: {getattr(func, '__name__', 'smb_operation')}"
+        with _locked(description):
             try:
                 return func(*args, **kwargs)
             except _RETRYABLE:

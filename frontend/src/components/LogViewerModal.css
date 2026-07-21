@@ -61,7 +61,8 @@
   cursor: not-allowed;
 }
 
-.log-viewer__close {
+.log-viewer__close,
+.log-viewer__fullscreen {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -74,7 +75,8 @@
   cursor: pointer;
 }
 
-.log-viewer__close:hover {
+.log-viewer__close:hover,
+.log-viewer__fullscreen:hover {
   background: var(--color-surface-raised);
 }
 
@@ -208,6 +210,16 @@
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.log-viewer-overlay--fullscreen {
+  padding: 0;
+}
+
+.log-viewer--fullscreen {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
 }
 
 /* Mobile: modals become full-screen sheets (Design System §5). */

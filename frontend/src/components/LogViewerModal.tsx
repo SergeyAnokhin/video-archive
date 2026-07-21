@@ -1,4 +1,4 @@
-import { Check, Copy, X } from 'lucide-react'
+import { Check, Copy, Maximize2, Minimize2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { tryApi } from '../api/client'
@@ -41,6 +41,7 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
   const [levelFilter, setLevelFilter] = useState('')
   const [events, setEvents] = useState<LogEvent[]>([])
   const [copied, setCopied] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
   const baselineMs = events.length > 0 ? new Date(events[0].created_at).getTime() : null
 
@@ -63,6 +64,23 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      return
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        // Capture phase + stopPropagation so the first Escape only exits
+        // fullscreen; the bubble-phase listener above still closes the
+        // modal on a second Escape (same pattern as TaggingSettingsSection).
+        event.stopPropagation()
+        setIsFullscreen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [isFullscreen])
 
   useEffect(() => {
     let cancelled = false
@@ -99,9 +117,9 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
   }, [events])
 
   return (
-    <div className="log-viewer-overlay" onClick={onClose}>
+    <div className={`log-viewer-overlay${isFullscreen ? ' log-viewer-overlay--fullscreen' : ''}`} onClick={onClose}>
       <div
-        className="log-viewer"
+        className={`log-viewer${isFullscreen ? ' log-viewer--fullscreen' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={t('logs.title')}
@@ -118,6 +136,15 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
             >
               {copied ? <Check size={14} /> : <Copy size={14} />}
               {copied ? t('logs.copied') : t('logs.copyAll')}
+            </button>
+            <button
+              type="button"
+              className="log-viewer__fullscreen"
+              aria-label={isFullscreen ? t('logs.exitFullscreen') : t('logs.enterFullscreen')}
+              title={isFullscreen ? t('logs.exitFullscreen') : t('logs.enterFullscreen')}
+              onClick={() => setIsFullscreen((prev) => !prev)}
+            >
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
             <button
               type="button"

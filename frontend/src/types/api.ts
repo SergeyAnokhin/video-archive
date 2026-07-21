@@ -134,6 +134,13 @@ export interface SourceStatus {
   direct_access_active: boolean | null
 }
 
+export interface SmbLockStatus {
+  held: boolean
+  held_since: string | null
+  seconds_held: number | null
+  description: string | null
+}
+
 export interface PreviewCacheStats {
   size_bytes: number
   file_count: number

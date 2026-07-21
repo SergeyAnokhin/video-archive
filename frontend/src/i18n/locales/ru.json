@@ -73,6 +73,9 @@
     "sourceStatusFail": "Не удалось подключиться: {{message}}",
     "sourceStatusDirectActive": "Прямой доступ активен.",
     "sourceStatusDirectFallback": "Прямой доступ сейчас недоступен — используется копирование файлов.",
+    "sourceSmbLockFree": "Блокировка SMB: свободна",
+    "sourceSmbLockHeld": "Блокировка SMB: занята ({{duration}}) — все операции с этим NAS ждут своей очереди",
+    "sourceSmbLockRelease": "Снять блокировку",
     "detectedBackupsHint": "На этом источнике найдено резервных копий: {{count}}.",
     "restoreDetected": "Восстановить",
     "confirmRestoreDetected": "Восстановление заменит текущие метаданные библиотеки содержимым этой резервной копии. Продолжить?",
@@ -696,6 +699,8 @@
   "logs": {
     "title": "Просмотр логов",
     "close": "Закрыть",
+    "enterFullscreen": "На весь экран",
+    "exitFullscreen": "Свернуть",
     "copyAll": "Копировать всё",
     "copied": "Скопировано",
     "filterJob": "ID задания",

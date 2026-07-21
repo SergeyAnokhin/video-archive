@@ -404,6 +404,31 @@ def test_source_status_smb_direct_access(tmp_path, monkeypatch, fake_smb):
         assert body["direct_access_active"] is False
 
 
+def test_smb_lock_status_and_release(tmp_path, monkeypatch):
+    from app.sources import smb_backend
+
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.get("/api/source/smb-lock-status")
+        assert r.status_code == 200
+        assert r.json() == {"held": False, "held_since": None, "seconds_held": None, "description": None}
+
+        with smb_backend._locked("test operation"):
+            r = client.get("/api/source/smb-lock-status")
+            body = r.json()
+            assert body["held"] is True
+            assert body["description"] == "test operation"
+
+            r = client.post("/api/source/smb-lock-status/release")
+            assert r.json()["held"] is False
+
+        # The (now-abandoned) holder's own `finally` must not resurrect the
+        # cleared state once it "finishes" past the `with` block above.
+        assert client.get("/api/source/smb-lock-status").json()["held"] is False
+
+
 def test_unsupported_protocol_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
     monkeypatch.setattr(db_module, "_engine", None)

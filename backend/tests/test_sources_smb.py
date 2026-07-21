@@ -13,6 +13,7 @@ aren't on PATH, same as the local-source equivalents in
 from __future__ import annotations
 
 import shutil
+import threading
 from pathlib import Path
 
 import pytest
@@ -235,6 +236,65 @@ def test_local_copy_and_commit_new_file_add_to_smb_stats_counter(fake_smb, tmp_p
     before = smb_stats.get_total_bytes_transferred()
     backend.commit_new_file(local_file, "clips/output.mp4")
     assert smb_stats.get_total_bytes_transferred() == before + 25
+
+
+# --- process-wide `_smb_lock` status/force-release (Settings UI) ------------
+
+
+def test_get_lock_status_reports_idle_when_not_held():
+    assert smb_backend.get_lock_status() == {
+        "held": False,
+        "held_since": None,
+        "seconds_held": None,
+        "description": None,
+    }
+
+
+def test_get_lock_status_reports_held_while_locked():
+    with smb_backend._locked("test operation"):
+        status = smb_backend.get_lock_status()
+        assert status["held"] is True
+        assert status["description"] == "test operation"
+        assert status["seconds_held"] >= 0
+        assert status["held_since"] is not None
+    assert smb_backend.get_lock_status()["held"] is False
+
+
+def test_force_release_lock_unblocks_new_callers_even_if_old_holder_never_returns():
+    """Regression test for the escape hatch the Settings UI's "release lock"
+    button uses: a caller stuck holding `_smb_lock` forever (the real-world
+    symptom is a hung SMB read) must not be able to block a brand-new caller
+    once `force_release_lock()` has been called."""
+    still_locked = threading.Event()
+    release_stuck_caller = threading.Event()
+
+    def _stuck_caller():
+        with smb_backend._locked("stuck operation"):
+            still_locked.set()
+            release_stuck_caller.wait(timeout=5)
+
+    stuck_thread = threading.Thread(target=_stuck_caller, daemon=True)
+    stuck_thread.start()
+    try:
+        assert still_locked.wait(timeout=5)
+        assert smb_backend.get_lock_status()["held"] is True
+
+        smb_backend.force_release_lock()
+        assert smb_backend.get_lock_status()["held"] is False
+
+        new_caller_acquired = threading.Event()
+
+        def _new_caller():
+            with smb_backend._locked("new operation"):
+                new_caller_acquired.set()
+
+        new_thread = threading.Thread(target=_new_caller, daemon=True)
+        new_thread.start()
+        assert new_caller_acquired.wait(timeout=2)
+        new_thread.join(timeout=5)
+    finally:
+        release_stuck_caller.set()
+        stuck_thread.join(timeout=5)
 
 
 # --- write-side direct-access fast path (commit/rename/remove) --------------
