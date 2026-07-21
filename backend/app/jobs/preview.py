@@ -136,7 +136,15 @@ def _generate_one_file(
     def on_stage(message: str) -> None:
         service.log_event(engine, job_id, file_row.id, "info", "job_item_progress", message)
 
-    with access.local_copy(file_row.relative_path) as video_path:
+    copy_state: dict[str, float | None] = {"t0": None}
+
+    def _on_copy_start() -> None:
+        copy_state["t0"] = time.monotonic()
+        on_stage("Copying source file locally (no direct/UNC access)…")
+
+    with access.local_copy(file_row.relative_path, on_copy_start=_on_copy_start) as video_path:
+        if copy_state["t0"] is not None:
+            on_stage(f"Copy finished in {time.monotonic() - copy_state['t0']:.2f}s")
         # The JPEG collage is written next to the video itself (via
         # `commit_new_file`, a no-op move for `local` sources since
         # `local_copy()` already yields the real on-disk path there, an
@@ -171,6 +179,15 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     settings = preview_settings.get_settings(engine)
     aspect_ratio = preview_settings.effective_aspect_ratio(settings)
     worker_count = max(1, performance_settings.get_settings(engine)["parallel_workers"])
+
+    scope_desc = (
+        "single file" if job["scope_type"] == "file" else f"directory '{params.get('path') or '(whole source)'}'"
+    )
+    service.log_event(
+        engine, job["id"], None, "info", "job_parameters",
+        f"Parameters: scope={scope_desc}, layout='{layout['name']}' ({layout['grid_rows']}x{layout['grid_cols']}), "
+        f"workers={worker_count}",
+    )
 
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -421,7 +438,22 @@ def _generate_folder_previews(
 
         def get_local_path(rel: str) -> Path:
             if rel not in local_paths:
-                local_paths[rel] = job_stack.enter_context(access.local_copy(rel))
+                copy_state: dict[str, float | None] = {"t0": None}
+
+                def _on_copy_start() -> None:
+                    copy_state["t0"] = time.monotonic()
+                    service.log_event(
+                        engine, job["id"], None, "info", "job_item_progress",
+                        f"Copying '{rel}' locally (no direct/UNC access)…",
+                    )
+
+                path = job_stack.enter_context(access.local_copy(rel, on_copy_start=_on_copy_start))
+                if copy_state["t0"] is not None:
+                    service.log_event(
+                        engine, job["id"], None, "info", "job_item_progress",
+                        f"Copy of '{rel}' finished in {time.monotonic() - copy_state['t0']:.2f}s",
+                    )
+                local_paths[rel] = path
             return local_paths[rel]
 
         def get_segments(rel: str, count: int) -> list:

@@ -39,6 +39,7 @@ import os
 import shutil
 import tempfile
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
@@ -191,13 +192,16 @@ class SMBBackend:
         return self.direct_access_enabled and windows_unc.available(self.host, self.share, self.username, self.password)
 
     @contextmanager
-    def local_copy(self, rel_path: str) -> Iterator[Path]:
+    def local_copy(self, rel_path: str, *, on_copy_start: Callable[[], None] | None = None) -> Iterator[Path]:
         if self._direct_available():
             unc_path = Path(self._unc(rel_path))
             if _unc_readable(unc_path):
                 yield unc_path
                 return
             windows_unc.report_failure(self.host, self.username)
+
+        if on_copy_start is not None:
+            on_copy_start()
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="va_smb_"))
         local_path = tmp_dir / PureWindowsPath(rel_path).name

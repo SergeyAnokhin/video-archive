@@ -165,13 +165,7 @@
 .log-viewer__time {
   flex-shrink: 0;
   color: var(--color-text-muted);
-}
-
-.log-viewer__level {
-  flex-shrink: 0;
-  width: 60px;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+  cursor: default;
 }
 
 .log-viewer__file-badge {
@@ -201,11 +195,11 @@
   color: var(--color-accent-contrast);
 }
 
-.log-viewer__row--warning .log-viewer__level {
+.log-viewer__row--warning .log-viewer__time {
   color: var(--color-warning);
 }
 
-.log-viewer__row--error .log-viewer__level,
+.log-viewer__row--error .log-viewer__time,
 .log-viewer__row--error .log-viewer__message {
   color: var(--color-danger);
 }

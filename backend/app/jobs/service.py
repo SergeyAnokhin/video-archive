@@ -31,7 +31,7 @@ _FINISH_EVENT_TYPES = {
 _CONSOLE_INFO_EVENT_TYPES = frozenset(
     {
         "job_item_started", "job_item_progress", "job_force_cancelled", "job_force_abandoned", "job_item_tags",
-        "batch_poll_check",
+        "batch_poll_check", "job_parameters",
     }
 )
 
@@ -80,6 +80,7 @@ def _forget_file_indices(job_id: str) -> None:
 _EVENT_EMOJI = {
     "job_queued": "🕒",
     "job_started": "▶️",
+    "job_parameters": "⚙️",
     "job_completed": "✅",
     "job_failed": "❌",
     "job_cancelled": "🛑",

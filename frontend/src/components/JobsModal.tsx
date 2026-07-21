@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   Eraser,
+  FileVideo,
   Hourglass,
   Layers,
   Loader2,
@@ -475,20 +476,29 @@ function JobRow({
         (currentItem.item_key && onNavigate ? (
           <button
             type="button"
-            className="jobs-modal__row-message jobs-modal__row-message--link"
+            className="jobs-modal__row-message jobs-modal__row-message--link jobs-modal__row-message--with-icon"
             title={currentItem.item_key}
             onClick={(event) => {
               event.stopPropagation()
               onNavigate(dirname(currentItem.item_key as string))
             }}
           >
-            {t('jobs.progress.current', { name: basename(currentItem.item_key) })}
+            <FileVideo size={12} className="jobs-modal__row-message-icon" aria-hidden="true" />
+            <span className="jobs-modal__row-message-text">
+              {t('jobs.progress.current', { name: basename(currentItem.item_key) })}
+            </span>
           </button>
         ) : (
-          <div className="jobs-modal__row-message" title={currentItem.item_key ?? undefined}>
-            {t('jobs.progress.current', {
-              name: currentItem.item_key ? basename(currentItem.item_key) : (currentItem.file_id ?? '…'),
-            })}
+          <div
+            className="jobs-modal__row-message jobs-modal__row-message--with-icon"
+            title={currentItem.item_key ?? undefined}
+          >
+            <FileVideo size={12} className="jobs-modal__row-message-icon" aria-hidden="true" />
+            <span className="jobs-modal__row-message-text">
+              {t('jobs.progress.current', {
+                name: currentItem.item_key ? basename(currentItem.item_key) : (currentItem.file_id ?? '…'),
+              })}
+            </span>
           </div>
         ))}
 

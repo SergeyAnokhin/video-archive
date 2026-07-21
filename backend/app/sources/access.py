@@ -7,6 +7,7 @@ may or may not point at a real local file.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -60,8 +61,8 @@ class SourceAccess:
     # -- processing (convert/preview/tag) --
 
     @contextmanager
-    def local_copy(self, rel_path: str) -> Iterator[Path]:
-        with self._backend.local_copy(rel_path) as path:
+    def local_copy(self, rel_path: str, *, on_copy_start: Callable[[], None] | None = None) -> Iterator[Path]:
+        with self._backend.local_copy(rel_path, on_copy_start=on_copy_start) as path:
             yield path
 
     @contextmanager

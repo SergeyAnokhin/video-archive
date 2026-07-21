@@ -264,9 +264,16 @@ def _encode_and_validate(
     # hammer the job_items row with writes -- the Jobs modal polls it every
     # 1.5s anyway (`JobsContext.tsx`), so anything finer would be wasted.
     last_reported = {"pct": -1.0, "at": 0.0}
+    last_decile = {"value": 0}  # 0 = nothing logged yet; deciles run 1..10 (10%..100%)
 
     def on_progress(pct: float) -> None:
         now = time.monotonic()
+
+        decile = min(int(pct // 10), 10)
+        while last_decile["value"] < decile:
+            last_decile["value"] += 1
+            progress(f"Encoding progress: {last_decile['value'] * 10}%")
+
         if pct - last_reported["pct"] < 1.0 and now - last_reported["at"] < 1.0 and pct < 100.0:
             return
         last_reported["pct"] = pct
@@ -692,7 +699,21 @@ def _convert_one_file(
     if not access.exists(file_row.relative_path):
         raise ConversionError("Source file no longer exists on the source.")
 
-    with access.local_copy(file_row.relative_path) as old_path:
+    copy_state: dict[str, float | None] = {"t0": None}
+
+    def _on_copy_start() -> None:
+        copy_state["t0"] = time.monotonic()
+        service.log_event(
+            engine, job_id, file_row.id, "info", "job_item_progress",
+            "Copying source file locally (no direct/UNC access)…",
+        )
+
+    with access.local_copy(file_row.relative_path, on_copy_start=_on_copy_start) as old_path:
+        if copy_state["t0"] is not None:
+            service.log_event(
+                engine, job_id, file_row.id, "info", "job_item_progress",
+                f"Copy finished in {time.monotonic() - copy_state['t0']:.2f}s",
+            )
         if mode == "test":
             return _replace_test_mode(
                 engine, job_id, item_id, access, old_path, file_row, profile, profile_id,
@@ -722,6 +743,16 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
     conv_settings = conversion_settings.get_settings(engine)
     min_size_reduction_percent = conv_settings["min_size_reduction_percent"]
     direct_write_enabled = conv_settings["direct_write_enabled"]
+
+    scope_desc = (
+        "single file" if job["scope_type"] == "file" else f"directory '{params.get('path') or '(whole source)'}'"
+    )
+    service.log_event(
+        engine, job["id"], None, "info", "job_parameters",
+        f"Parameters: scope={scope_desc}, profile='{profile['name']}', mode={mode}, "
+        f"workers={worker_count}, min_size_reduction={min_size_reduction_percent}%, "
+        f"direct_write={'on' if direct_write_enabled else 'off'}",
+    )
 
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
@@ -965,7 +996,21 @@ def _run_variant_sweep(
     total = len(variants)
     service.set_job_total_items(engine, job["id"], total)
 
-    with access.local_copy(row.relative_path) as old_path:
+    copy_state: dict[str, float | None] = {"t0": None}
+
+    def _on_copy_start() -> None:
+        copy_state["t0"] = time.monotonic()
+        service.log_event(
+            engine, job["id"], row.id, "info", "job_item_progress",
+            "Copying source file locally (no direct/UNC access)…",
+        )
+
+    with access.local_copy(row.relative_path, on_copy_start=_on_copy_start) as old_path:
+        if copy_state["t0"] is not None:
+            service.log_event(
+                engine, job["id"], row.id, "info", "job_item_progress",
+                f"Copy finished in {time.monotonic() - copy_state['t0']:.2f}s",
+            )
         index = 0
         while index < total:
             stop = service.check_stop_requested(job["id"])

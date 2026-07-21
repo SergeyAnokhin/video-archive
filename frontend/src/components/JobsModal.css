@@ -210,6 +210,24 @@
   cursor: pointer;
 }
 
+.jobs-modal__row-message--with-icon {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.jobs-modal__row-message-icon {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.jobs-modal__row-message-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .jobs-modal__row-scope--link:hover,
 .jobs-modal__row-message--link:hover {
   color: var(--color-text);

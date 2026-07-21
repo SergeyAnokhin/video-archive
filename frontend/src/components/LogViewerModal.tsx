@@ -16,8 +16,11 @@ const MAX_EVENTS = 500
 // `service.log_event()` (backend) prepends this to the message text itself
 // so it also shows up in the console/copy-all output; stripped back off
 // here since the Log Viewer renders the same number as its own clickable
-// badge instead (`payload.file_index`).
-const FILE_INDEX_PREFIX = /^\[#\d+\]\s*/
+// badge instead (`payload.file_index`). Not anchored to the start of the
+// string: the backend also prepends a per-event-type emoji *after* this
+// prefix (e.g. "⏭️ [#1] Skipped ..."), which would otherwise push `[#N]`
+// past position 0 and make an anchored match silently fail.
+const FILE_INDEX_PREFIX = /\[#\d+\]\s*/
 
 function stripFileIndexPrefix(message: string): string {
   return message.replace(FILE_INDEX_PREFIX, '')
@@ -174,8 +177,12 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
             const isActiveFileFilter = fileIndex !== null && fileIdFilter === event.file_id
             return (
               <div key={event.id} className={`log-viewer__row log-viewer__row--${event.level}`}>
-                <span className="log-viewer__time">{formatElapsed(event.created_at, baselineMs)}</span>
-                <span className="log-viewer__level">{event.level}</span>
+                <span
+                  className="log-viewer__time"
+                  title={`${new Date(event.created_at).toLocaleString()} · ${event.level.toUpperCase()}`}
+                >
+                  {formatElapsed(event.created_at, baselineMs)}
+                </span>
                 {fileIndex !== null && (
                   <button
                     type="button"

@@ -8,6 +8,7 @@ tests keep passing unchanged.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,8 +61,8 @@ class LocalBackend:
         return EntryStat(size=st.st_size, modified_at=datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat())
 
     @contextmanager
-    def local_copy(self, rel_path: str) -> Iterator[Path]:
-        # Already a real local path: no download/cleanup needed.
+    def local_copy(self, rel_path: str, *, on_copy_start: Callable[[], None] | None = None) -> Iterator[Path]:
+        # Already a real local path: no download/cleanup needed, callback never fires.
         yield self._abs(rel_path)
 
     @contextmanager

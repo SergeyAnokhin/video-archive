@@ -643,7 +643,7 @@
     },
     "progress": {
       "count": "{{done}} / {{total}}",
-      "current": "Обработка: {{name}}",
+      "current": "{{name}}",
       "eta": "Осталось: ~{{time}}",
       "itemEta": "Осталось по файлу: ~{{time}}",
       "elapsed": "В процессе: {{time}}",
