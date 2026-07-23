@@ -14,6 +14,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
+from pathlib import PurePosixPath
 
 from sqlalchemy import bindparam, text
 
@@ -336,6 +337,30 @@ def _job_item_row_to_dict(row) -> dict:
 
 # --- events -------------------------------------------------------------
 
+# Console/file-log lines only need a human-readable name, not the raw file
+# id or a full path (user request) -- `PurePosixPath(...).name` is the same
+# idiom used elsewhere for `relative_path` -> basename (e.g.
+# `app.routers.directories`). Cached per file id since one file gets many
+# `job_item_progress` lines (one per pipeline stage) during a single
+# conversion, and a DB lookup on every line would be wasteful.
+_file_name_cache_lock = threading.Lock()
+_file_name_cache: dict[str, str] = {}
+
+
+def _resolve_file_name(engine, file_id: str | None) -> str | None:
+    if not file_id:
+        return None
+    with _file_name_cache_lock:
+        cached = _file_name_cache.get(file_id)
+    if cached is not None:
+        return cached
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT relative_path FROM files WHERE id = :id"), {"id": file_id}).first()
+    name = PurePosixPath(row.relative_path).name if row and row.relative_path else file_id
+    with _file_name_cache_lock:
+        _file_name_cache[file_id] = name
+    return name
+
 
 def log_event(
     engine,
@@ -386,12 +411,19 @@ def log_event(
     # actually spending its time), without flooding the console the way
     # printing every `info` event would (e.g. every skipped file in a large
     # rescan).
-    if level == "error":
-        logger.error("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
-    elif level == "warning":
-        logger.warning("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
-    elif event_type in _CONSOLE_INFO_EVENT_TYPES:
-        logger.info("[%s] job=%s file=%s: %s", event_type, job_id, file_id, message)
+    # The job id is dropped entirely and the file id resolved to its name
+    # (user request: the raw uuids added noise without adding information at
+    # a glance).
+    should_log_console = level in ("error", "warning") or event_type in _CONSOLE_INFO_EVENT_TYPES
+    if should_log_console:
+        file_name = _resolve_file_name(engine, file_id)
+        line = f"[{event_type}]" + (f" file={file_name}" if file_name else "") + f": {message}"
+        if level == "error":
+            logger.error(line)
+        elif level == "warning":
+            logger.warning(line)
+        else:
+            logger.info(line)
 
 
 # --- jobs -----------------------------------------------------------------

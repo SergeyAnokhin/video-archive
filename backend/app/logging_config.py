@@ -33,7 +33,52 @@ LOG_DIR = (
 )
 LOG_FILE = LOG_DIR / "backend.log"
 
-_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+_TIME_FORMAT = "%H:%M:%S"
+# Console drops the level word entirely (user request: it stretched every
+# line out) and relies on `_ColorConsoleFormatter` coloring the timestamp
+# instead, mirroring `LogViewerModal.tsx`'s `.log-viewer__row--warning
+# .log-viewer__time` / `--error` coloring on the frontend. The rotating file
+# has no color, so it keeps the level as text.
+_CONSOLE_FORMAT = "%(asctime)s %(short_name)s: %(message)s"
+_FILE_FORMAT = "%(asctime)s %(levelname)s %(short_name)s: %(message)s"
+
+_ANSI_YELLOW = "\x1b[33m"
+_ANSI_RED = "\x1b[31m"
+_ANSI_RESET = "\x1b[0m"
+_LEVEL_COLORS = {"WARNING": _ANSI_YELLOW, "ERROR": _ANSI_RED, "CRITICAL": _ANSI_RED}
+
+
+def _abbreviate_logger_name(name: str) -> str:
+    """User request, terminal legibility: "app.jobs.service" -> "a.j.service"
+    -- keeps the last component (the actual module) in full and collapses
+    every parent package down to its initial."""
+    parts = name.split(".")
+    if len(parts) <= 1:
+        return name
+    return ".".join(part[:1] for part in parts[:-1]) + "." + parts[-1]
+
+
+class _AbbreviatingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        record.short_name = _abbreviate_logger_name(record.name)
+        return super().format(record)
+
+
+class _ColorConsoleFormatter(_AbbreviatingFormatter):
+    """Colors the timestamp by level instead of printing a level word, only
+    when writing to a real terminal (`use_color`) -- so output redirected to
+    a file/pipe stays plain, ANSI-free text."""
+
+    def __init__(self, *args, use_color: bool, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._use_color = use_color
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        time_str = super().formatTime(record, datefmt)
+        color = _LEVEL_COLORS.get(record.levelname)
+        if self._use_color and color:
+            return f"{color}{time_str}{_ANSI_RESET}"
+        return time_str
 
 
 class _WindowsSafeTimedRotatingFileHandler(TimedRotatingFileHandler):
@@ -56,7 +101,6 @@ class _WindowsSafeTimedRotatingFileHandler(TimedRotatingFileHandler):
 
 def configure_logging() -> None:
     LOG_DIR.mkdir(exist_ok=True)
-    formatter = logging.Formatter(_FORMAT)
 
     # `logging.StreamHandler()` writes to stderr, which Python opens as
     # `cp1252` on Windows regardless of terminal (Git Bash's mintty renders
@@ -67,7 +111,9 @@ def configure_logging() -> None:
     sys.stderr.reconfigure(encoding="utf-8")
 
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(
+        _ColorConsoleFormatter(_CONSOLE_FORMAT, datefmt=_TIME_FORMAT, use_color=sys.stderr.isatty())
+    )
 
     # Rotates every 5 minutes, one backup kept -- the file always holds the
     # last 5-10 minutes of activity (enough to diagnose an error just seen
@@ -75,7 +121,7 @@ def configure_logging() -> None:
     file_handler = _WindowsSafeTimedRotatingFileHandler(
         LOG_FILE, when="M", interval=5, backupCount=1, encoding="utf-8"
     )
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(_AbbreviatingFormatter(_FILE_FORMAT, datefmt=_TIME_FORMAT))
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
