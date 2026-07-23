@@ -107,7 +107,7 @@
   },
   "resourceMonitor": {
     "title": "Resource monitoring",
-    "hint": "Periodically records backend CPU and memory usage to its own log file (logs/resource_usage.log) — helps pinpoint when, and during which job, memory starts climbing before a crash.",
+    "hint": "Periodically records backend CPU and memory usage into logs/backend.log (marked with 📊) — helps pinpoint when, and during which job, memory starts climbing before a crash.",
     "enabled": "Enable periodic logging",
     "intervalSeconds": "Log interval (seconds)",
     "intervalHint": "A shorter interval gives a more detailed picture but increases log volume and polling overhead. Download the file from the log viewer."

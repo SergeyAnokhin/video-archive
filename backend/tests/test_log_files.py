@@ -1,6 +1,8 @@
 """Log file listing/download tests (chat request): the backend runs on a
-Kubernetes PVC the user has no direct disk access to, so `backend.log`/
-`resource_usage.log` need to be downloadable through the UI instead.
+Kubernetes PVC the user has no direct disk access to, so `backend.log` (and
+any rotated backups) need to be downloadable through the UI instead. Uses
+arbitrary sample filenames since listing/download is generic over whatever
+is in `LOG_DIR`.
 """
 
 from __future__ import annotations

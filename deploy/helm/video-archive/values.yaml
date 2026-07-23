@@ -30,12 +30,12 @@ backend:
   # only respond by starving the whole *node*, not the pod's own cgroup).
   # `limits.memory` is a starter value with headroom above the ~5.9Gi RSS
   # observed via k9s during a heavy convert/preview job -- verify against
-  # `kubectl describe node ubuntu-server` (Allocatable) and tune once
-  # `resource_usage.log` (see app/resource_monitor.py) shows the real
-  # steady-state profile.
+  # `kubectl describe node ubuntu-server` (Allocatable) and tune once the
+  # resource-monitor samples in backend.log (see app/resource_monitor.py)
+  # show the real steady-state profile.
   resources:
     requests: { memory: 512Mi, cpu: 250m }
-    limits: { memory: 5Gi }
+    limits: { memory: 7Gi }
   # Mutable state (SQLite DB, secrets.env, preview cache, detection models,
   # logs) — mounted at stateDir, injected as VIDEO_ARCHIVE_STATE_DIR.
   stateDir: /data/state

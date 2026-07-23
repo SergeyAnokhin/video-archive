@@ -5,8 +5,9 @@ reap_orphaned_jobs`), silently killing whatever job was running. There was
 no way to see the memory trend leading up to a restart without cluster disk
 access, so this samples `app.routers.system_stats.get_system_stats()` (same
 whole-process-tree CPU/memory figures the frontend gauge already uses) on a
-user-configurable interval and writes it to its own rotating log file
-(`RESOURCE_LOG_FILE`, downloadable via `app.routers.log_files`).
+user-configurable interval and logs it into the regular `backend.log`
+(downloadable via `app.routers.log_files`), prefixed with 📊 so samples are
+easy to pick out visually from the rest of the log.
 
 Runs as a single daemon thread, mirroring `app.jobs.worker._Lane`'s
 start/stop/loop shape. The interval (and enabled flag) are re-read from the
@@ -61,7 +62,7 @@ class ResourceMonitor:
     def _sample(self) -> None:
         stats = get_system_stats()
         _logger.info(
-            "cpu_percent=%.1f memory_rss_mb=%.1f memory_percent=%.1f smb_bytes_transferred_total=%d",
+            "📊 cpu_percent=%.1f memory_rss_mb=%.1f memory_percent=%.1f smb_bytes_transferred_total=%d",
             stats["cpu_percent"],
             stats["memory_rss_bytes"] / (1024 * 1024),
             stats["memory_percent"],

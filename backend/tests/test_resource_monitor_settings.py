@@ -1,6 +1,6 @@
 """Resource-monitor settings singleton tests (chat request): whether/how
 often the backend samples its own CPU/memory (see `app/resource_monitor.py`)
-into `logs/resource_usage.log`.
+into `logs/backend.log`.
 """
 
 from __future__ import annotations

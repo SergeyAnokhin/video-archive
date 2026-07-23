@@ -1,9 +1,10 @@
 """Raw log file listing/download (chat request): the backend runs on a
-Kubernetes PVC the user has no direct disk access to, so `backend.log` and
-`resource_usage.log` (see `app.resource_monitor`) are otherwise unreachable
-after an OOM restart wipes the in-memory state. Lists whatever is actually
-in `LOG_DIR` rather than hardcoding filenames, so rotated backups and any
-future log file dropped there are downloadable with no further changes.
+Kubernetes PVC the user has no direct disk access to, so `backend.log`
+(including resource-monitor samples, see `app.resource_monitor`) is
+otherwise unreachable after an OOM restart wipes the in-memory state. Lists
+whatever is actually in `LOG_DIR` rather than hardcoding filenames, so
+rotated backups and any future log file dropped there are downloadable with
+no further changes.
 """
 
 from __future__ import annotations
