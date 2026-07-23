@@ -80,6 +80,85 @@
   background: var(--color-surface-raised);
 }
 
+.log-viewer__view-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.log-viewer__view-tab {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-3);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.log-viewer__view-tab:hover {
+  background: var(--color-surface-raised);
+}
+
+.log-viewer__view-tab--active {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.log-viewer__files {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-size: 13px;
+}
+
+.log-viewer__file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.log-viewer__file-row:last-child {
+  border-bottom: none;
+}
+
+.log-viewer__file-name {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--color-text);
+}
+
+.log-viewer__file-meta {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.log-viewer__file-download {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+}
+
+.log-viewer__file-download:hover {
+  background: var(--color-surface-raised);
+}
+
 .log-viewer__filters {
   display: flex;
   flex-wrap: wrap;

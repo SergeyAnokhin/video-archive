@@ -479,6 +479,18 @@ export interface PerformanceSettings {
   updated_at: string
 }
 
+export interface ResourceMonitorSettings {
+  enabled: boolean
+  interval_seconds: number
+  updated_at: string
+}
+
+export interface LogFile {
+  name: string
+  size_bytes: number
+  modified_at: number
+}
+
 export interface BackendHealthSettings {
   slow_timeout_seconds: number
   offline_timeout_seconds: number

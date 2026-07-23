@@ -12,6 +12,7 @@ from app.jobs import service as jobs_service
 from app.jobs.worker import JobWorker
 from app.logging_config import configure_logging
 from app.request_logging import RequestLoggingMiddleware
+from app.resource_monitor import ResourceMonitor
 from app.routers import (
     app_info,
     app_settings,
@@ -25,6 +26,7 @@ from app.routers import (
     health,
     interface_settings,
     jobs,
+    log_files,
     logs,
     performance_settings,
     playback,
@@ -32,6 +34,7 @@ from app.routers import (
     preview_layouts,
     preview_settings,
     providers,
+    resource_monitor_settings,
     source,
     sources,
     system_stats,
@@ -50,6 +53,7 @@ from app.routers import (
 configure_logging()
 
 _worker = JobWorker()
+_resource_monitor = ResourceMonitor()
 
 
 @asynccontextmanager
@@ -74,7 +78,9 @@ async def lifespan(app: FastAPI):
     # so the existing Restart button becomes available for it.
     jobs_service.reap_orphaned_jobs(get_engine())
     _worker.start()
+    _resource_monitor.start()
     yield
+    _resource_monitor.stop()
     _worker.stop()
 
 
@@ -103,7 +109,9 @@ app.include_router(playback.router, prefix="/api")
 app.include_router(playback_settings.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
+app.include_router(log_files.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(backup_settings.router, prefix="/api")
 app.include_router(performance_settings.router, prefix="/api")
+app.include_router(resource_monitor_settings.router, prefix="/api")
 app.include_router(app_settings.router, prefix="/api")

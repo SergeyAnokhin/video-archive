@@ -32,6 +32,13 @@ LOG_DIR = (
     else Path(__file__).resolve().parent.parent.parent / "logs"
 )
 LOG_FILE = LOG_DIR / "backend.log"
+# Chat request: diagnose Kubernetes OOM restarts that were silently killing
+# in-progress jobs (`app.jobs.service.reap_orphaned_jobs`) by sampling
+# CPU/memory on an interval (see `app/resource_monitor.py`) into its own
+# file, rotated far less aggressively than `backend.log` -- a ~30 minute
+# OOM cycle needs more than backend.log's ~10 minute retention to show up.
+RESOURCE_LOG_FILE = LOG_DIR / "resource_usage.log"
+RESOURCE_MONITOR_LOGGER_NAME = "app.resource_monitor"
 
 _TIME_FORMAT = "%H:%M:%S"
 # Console drops the level word entirely (user request: it stretched every
@@ -127,6 +134,19 @@ def configure_logging() -> None:
     root.setLevel(logging.INFO)
     root.addHandler(console_handler)
     root.addHandler(file_handler)
+
+    # Own handler + own rotation schedule, and `propagate = False` so it
+    # never also lands in `backend.log`/the console -- one sample line per
+    # interval would otherwise add noise to the general-purpose log without
+    # the longer retention it actually needs (see RESOURCE_LOG_FILE above).
+    resource_log_handler = _WindowsSafeTimedRotatingFileHandler(
+        RESOURCE_LOG_FILE, when="H", interval=1, backupCount=48, encoding="utf-8"
+    )
+    resource_log_handler.setFormatter(_AbbreviatingFormatter(_FILE_FORMAT, datefmt=_TIME_FORMAT))
+    resource_logger = logging.getLogger(RESOURCE_MONITOR_LOGGER_NAME)
+    resource_logger.setLevel(logging.INFO)
+    resource_logger.propagate = False
+    resource_logger.addHandler(resource_log_handler)
 
     # `app.request_logging`'s middleware replaces uvicorn's own access log
     # with a quieter, more informative one (see there for the format and the

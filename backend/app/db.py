@@ -785,6 +785,21 @@ MIGRATIONS: dict[int, list[str]] = {
     42: [
         "ALTER TABLE sources ADD COLUMN verify_ssl INTEGER NOT NULL DEFAULT 1",
     ],
+    # Post-V1: resource-usage monitoring singleton (chat request -- diagnose
+    # backend OOM restarts on Kubernetes by sampling CPU/memory at a
+    # user-configurable interval into their own rotating log file, see
+    # `app/resource_monitor.py` / `app/resource_monitor_settings.py`). Same
+    # singleton convention as performance_settings.
+    43: [
+        """
+        CREATE TABLE IF NOT EXISTS resource_monitor_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            enabled INTEGER NOT NULL DEFAULT 1,
+            interval_seconds INTEGER NOT NULL DEFAULT 30,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -890,6 +905,11 @@ def init_db() -> int:
             from app.backend_health_settings import seed_default_settings as seed_default_backend_health_settings
 
             seed_default_backend_health_settings(conn)
+
+        if current_version < 43 <= SCHEMA_VERSION:
+            from app.resource_monitor_settings import seed_default_settings as seed_default_resource_monitor_settings
+
+            seed_default_resource_monitor_settings(conn)
 
     return SCHEMA_VERSION
 

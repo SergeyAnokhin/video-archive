@@ -1,8 +1,8 @@
-import { Check, Copy, Maximize2, Minimize2, X } from 'lucide-react'
+import { Check, Copy, Download, Maximize2, Minimize2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { tryApi } from '../api/client'
-import type { LogEvent } from '../types/api'
+import type { LogEvent, LogFile } from '../types/api'
 import './LogViewerModal.css'
 
 interface LogViewerModalProps {
@@ -12,6 +12,48 @@ interface LogViewerModalProps {
 
 const LEVELS = ['debug', 'info', 'warning', 'error'] as const
 const MAX_EVENTS = 500
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function LogFilesPanel() {
+  const { t } = useTranslation()
+  const [files, setFiles] = useState<LogFile[] | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      const data = await tryApi<{ files: LogFile[] }>('/api/log-files')
+      if (data) setFiles(data.files)
+    })()
+  }, [])
+
+  return (
+    <div className="log-viewer__files">
+      {files === null && <p className="log-viewer__empty">{t('logs.filesLoading')}</p>}
+      {files !== null && files.length === 0 && <p className="log-viewer__empty">{t('logs.filesEmpty')}</p>}
+      {files !== null &&
+        files.map((file) => (
+          <div key={file.name} className="log-viewer__file-row">
+            <span className="log-viewer__file-name">{file.name}</span>
+            <span className="log-viewer__file-meta">
+              {formatFileSize(file.size_bytes)} · {new Date(file.modified_at * 1000).toLocaleString()}
+            </span>
+            <a
+              className="log-viewer__file-download"
+              href={`/api/log-files/${encodeURIComponent(file.name)}`}
+              download={file.name}
+              title={t('logs.download')}
+            >
+              <Download size={14} />
+            </a>
+          </div>
+        ))}
+    </div>
+  )
+}
 
 // `service.log_event()` (backend) prepends this to the message text itself
 // so it also shows up in the console/copy-all output; stripped back off
@@ -36,6 +78,7 @@ function formatElapsed(createdAt: string, baselineMs: number | null): string {
 
 export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalProps) {
   const { t } = useTranslation()
+  const [viewMode, setViewMode] = useState<'events' | 'files'>('events')
   const [jobIdFilter, setJobIdFilter] = useState(initialJobId ?? '')
   const [fileIdFilter, setFileIdFilter] = useState('')
   const [levelFilter, setLevelFilter] = useState('')
@@ -157,74 +200,101 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
           </div>
         </div>
 
-        <div className="log-viewer__filters">
-          <input
-            className="log-viewer__filter-input"
-            placeholder={t('logs.filterJob')}
-            value={jobIdFilter}
-            onChange={(event) => setJobIdFilter(event.target.value)}
-          />
-          <div className="log-viewer__filter-with-clear">
-            <input
-              className="log-viewer__filter-input"
-              placeholder={t('logs.filterFile')}
-              value={fileIdFilter}
-              onChange={(event) => setFileIdFilter(event.target.value)}
-            />
-            {fileIdFilter && (
-              <button
-                type="button"
-                className="log-viewer__filter-clear"
-                aria-label={t('logs.clearFilter')}
-                title={t('logs.clearFilter')}
-                onClick={() => setFileIdFilter('')}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-          <select
-            className="log-viewer__filter-select"
-            value={levelFilter}
-            onChange={(event) => setLevelFilter(event.target.value)}
+        <div className="log-viewer__view-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'events'}
+            className={`log-viewer__view-tab${viewMode === 'events' ? ' log-viewer__view-tab--active' : ''}`}
+            onClick={() => setViewMode('events')}
           >
-            <option value="">{t('logs.filterLevelAll')}</option>
-            {LEVELS.map((level) => (
-              <option key={level} value={level}>
-                {t(`logs.level.${level}`)}
-              </option>
-            ))}
-          </select>
+            {t('logs.viewEvents')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'files'}
+            className={`log-viewer__view-tab${viewMode === 'files' ? ' log-viewer__view-tab--active' : ''}`}
+            onClick={() => setViewMode('files')}
+          >
+            {t('logs.viewFiles')}
+          </button>
         </div>
 
-        <div className="log-viewer__list" ref={listRef}>
-          {events.length === 0 && <p className="log-viewer__empty">{t('logs.empty')}</p>}
-          {events.map((event) => {
-            const fileIndex = typeof event.payload?.file_index === 'number' ? event.payload.file_index : null
-            const isActiveFileFilter = fileIndex !== null && fileIdFilter === event.file_id
-            return (
-              <div key={event.id} className={`log-viewer__row log-viewer__row--${event.level}`}>
-                <span
-                  className="log-viewer__time"
-                  title={`${new Date(event.created_at).toLocaleString()} · ${event.level.toUpperCase()}`}
-                >
-                  {formatElapsed(event.created_at, baselineMs)}
-                </span>
-                {fileIndex !== null && (
+        {viewMode === 'events' && (
+          <>
+            <div className="log-viewer__filters">
+              <input
+                className="log-viewer__filter-input"
+                placeholder={t('logs.filterJob')}
+                value={jobIdFilter}
+                onChange={(event) => setJobIdFilter(event.target.value)}
+              />
+              <div className="log-viewer__filter-with-clear">
+                <input
+                  className="log-viewer__filter-input"
+                  placeholder={t('logs.filterFile')}
+                  value={fileIdFilter}
+                  onChange={(event) => setFileIdFilter(event.target.value)}
+                />
+                {fileIdFilter && (
                   <button
                     type="button"
-                    className={`log-viewer__file-badge${isActiveFileFilter ? ' log-viewer__file-badge--active' : ''}`}
-                    title={t('logs.filterByFile')}
-                    onClick={() => setFileIdFilter(isActiveFileFilter ? '' : (event.file_id ?? ''))}
+                    className="log-viewer__filter-clear"
+                    aria-label={t('logs.clearFilter')}
+                    title={t('logs.clearFilter')}
+                    onClick={() => setFileIdFilter('')}
                   >
-                    #{fileIndex}
+                    <X size={12} />
                   </button>
                 )}
-                <span className="log-viewer__message">{stripFileIndexPrefix(event.message)}</span>
               </div>
-            )
-          })}
-        </div>
+              <select
+                className="log-viewer__filter-select"
+                value={levelFilter}
+                onChange={(event) => setLevelFilter(event.target.value)}
+              >
+                <option value="">{t('logs.filterLevelAll')}</option>
+                {LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {t(`logs.level.${level}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="log-viewer__list" ref={listRef}>
+              {events.length === 0 && <p className="log-viewer__empty">{t('logs.empty')}</p>}
+              {events.map((event) => {
+                const fileIndex = typeof event.payload?.file_index === 'number' ? event.payload.file_index : null
+                const isActiveFileFilter = fileIndex !== null && fileIdFilter === event.file_id
+                return (
+                  <div key={event.id} className={`log-viewer__row log-viewer__row--${event.level}`}>
+                    <span
+                      className="log-viewer__time"
+                      title={`${new Date(event.created_at).toLocaleString()} · ${event.level.toUpperCase()}`}
+                    >
+                      {formatElapsed(event.created_at, baselineMs)}
+                    </span>
+                    {fileIndex !== null && (
+                      <button
+                        type="button"
+                        className={`log-viewer__file-badge${isActiveFileFilter ? ' log-viewer__file-badge--active' : ''}`}
+                        title={t('logs.filterByFile')}
+                        onClick={() => setFileIdFilter(isActiveFileFilter ? '' : (event.file_id ?? ''))}
+                      >
+                        #{fileIndex}
+                      </button>
+                    )}
+                    <span className="log-viewer__message">{stripFileIndexPrefix(event.message)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {viewMode === 'files' && <LogFilesPanel />}
       </div>
     </div>
   )

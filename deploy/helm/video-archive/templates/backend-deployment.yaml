@@ -58,6 +58,10 @@ spec:
           env:
             - name: VIDEO_ARCHIVE_STATE_DIR
               value: {{ .Values.backend.stateDir | quote }}
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: state
               mountPath: {{ .Values.backend.stateDir }}

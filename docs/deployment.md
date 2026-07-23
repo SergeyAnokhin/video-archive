@@ -30,6 +30,12 @@ Notes that follow from this:
 - **The video library comes from the app's own `smb` source type.** In a pod, a `local` source would point at the container filesystem — useless. Connect the Synology share (`//192.168.1.91/<share>`) as an `smb` source from Settings; the backend speaks SMB directly (`smbprotocol`), so the SMB CSI driver is **not** required for this app.
 - **Detection models** (~39 MB) auto-download into the state volume on first preview generation and persist across pod restarts.
 
+## Resource limits and diagnosing OOM restarts
+
+`backend.resources` in [`values.yaml`](../deploy/helm/video-archive/values.yaml) (`requests: {memory: 512Mi, cpu: 250m}`, `limits: {memory: 6Gi}`, no CPU limit — a convert job's own ffmpeg processes legitimately want every core) sets `resources:` on the backend container in [`backend-deployment.yaml`](../deploy/helm/video-archive/templates/backend-deployment.yaml). Before this was added the container had no limit at all, so an out-of-memory condition starved the whole **node** instead of triggering a clean, isolated cgroup kill of just this pod — `kubectl describe pod` still reports it as `OOMKilled`/exit 137 either way. The `6Gi` limit is a starting point (headroom above the ~5.9Gi RSS observed via `k9s` during a heavy convert/preview job); re-check it against `kubectl describe node <node>`'s Allocatable memory and the sampler below before trusting it long-term.
+
+A restarted backend fails every job that was `running` at the time (`jobs.service.reap_orphaned_jobs()` — correct behavior, not a bug: nothing else could still be driving that job forward once the process that owned it is gone). To see *why* memory climbed before such a restart, `app/resource_monitor.py` periodically samples CPU/memory (Settings → Performance → "Resource monitoring", `GET/PUT /api/resource-monitor-settings`) into its own longer-retention log file, downloadable from the Log Viewer's "Log files" tab (`GET /api/log-files[/{filename}]`, `app/routers/log_files.py`) without needing `kubectl`/PVC access at all.
+
 ## Backend node placement — soft preference, not a hard pin
 
 `backend.preferComputeNode` in [`values.yaml`](../deploy/helm/video-archive/values.yaml) (default `true`):
@@ -108,3 +114,4 @@ helm template video-archive deploy/helm/video-archive -n video-archive   # local
 | `/api` calls 404 through the ingress | something re-introduced StripPrefix — the backend serves routes under `/api` already; the ingress must forward `/api` as-is |
 | ArgoCD `OutOfSync` forever | it tracks `deploy`, not `main` — check the Actions run pushed the bump |
 | App up but library empty | expected on first run — connect an `smb` source in Settings (cluster state is separate from local) |
+| Jobs fail with "Interrupted: the backend restarted while this job was running." | check `kubectl -n video-archive describe pod` for `Restart Count`/`Last State: OOMKilled` — a real pod restart, not a false positive; see "Resource limits and diagnosing OOM restarts" above |

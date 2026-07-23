@@ -105,6 +105,13 @@
     "hardwareDecode": "Decode (preview, conversion)",
     "hardwareStatusHint": "Shows whether Intel QSV/VAAPI hardware acceleration is detected on this backend, not whether it's in use right now — actual usage shows up in the job log (🚀 messages)."
   },
+  "resourceMonitor": {
+    "title": "Resource monitoring",
+    "hint": "Periodically records backend CPU and memory usage to its own log file (logs/resource_usage.log) — helps pinpoint when, and during which job, memory starts climbing before a crash.",
+    "enabled": "Enable periodic logging",
+    "intervalSeconds": "Log interval (seconds)",
+    "intervalHint": "A shorter interval gives a more detailed picture but increases log volume and polling overhead. Download the file from the log viewer."
+  },
   "networkAccess": {
     "title": "Network",
     "hint": "Open this app from a phone on the same network. The backend and every file always stay on this PC -- the phone only shows the interface and streams video from it.",
@@ -719,7 +726,12 @@
       "warning": "Warning",
       "error": "Error"
     },
-    "empty": "No log events yet."
+    "empty": "No log events yet.",
+    "viewEvents": "Events",
+    "viewFiles": "Log files",
+    "filesLoading": "Loading file list…",
+    "filesEmpty": "No log files yet.",
+    "download": "Download"
   },
   "indicators": {
     "conversionIncomplete": "Not all videos converted yet ({{converted}}/{{total}})",
