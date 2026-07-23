@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 from app.logging_config import LOG_DIR
 
@@ -54,4 +54,10 @@ def list_log_files() -> dict:
 @router.get("/log-files/{filename}")
 def download_log_file(filename: str):
     path = _resolve_log_file(filename)
-    return FileResponse(path, filename=path.name, media_type="text/plain")
+    # `backend.log` is actively appended to while being downloaded, so
+    # FileResponse's stat()-then-stream approach can send more bytes than
+    # the Content-Length it computed up front, crashing uvicorn. Reading
+    # the whole file up front makes Content-Length match the actual body.
+    data = path.read_bytes()
+    headers = {"Content-Disposition": f'attachment; filename="{path.name}"'}
+    return Response(content=data, media_type="text/plain", headers=headers)

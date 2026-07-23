@@ -35,7 +35,7 @@ backend:
   # steady-state profile.
   resources:
     requests: { memory: 512Mi, cpu: 250m }
-    limits: { memory: 6Gi }
+    limits: { memory: 5Gi }
   # Mutable state (SQLite DB, secrets.env, preview cache, detection models,
   # logs) — mounted at stateDir, injected as VIDEO_ARCHIVE_STATE_DIR.
   stateDir: /data/state
