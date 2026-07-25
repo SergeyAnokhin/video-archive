@@ -49,11 +49,11 @@ def test_sibling_relative_path():
 
 
 def test_preview_gif_relative_path():
-    # Flattened into PREVIEW_GIF_DIR, directory separators encoded so the
-    # name alone still shows the source folder/file it belongs to.
+    # Mirrored under PREVIEW_GIF_DIR at the same subfolder depth as the
+    # source video (same layout folder previews already use).
     assert (
         preview_gif_relative_path("Foscam/2026/05/06/alarm.mp4")
-        == f"{PREVIEW_GIF_DIR}/Foscam__2026__05__06__alarm.gif"
+        == f"{PREVIEW_GIF_DIR}/Foscam/2026/05/06/alarm.gif"
     )
     assert preview_gif_relative_path("clip.mp4") == f"{PREVIEW_GIF_DIR}/clip.gif"
     # Two different source files never collide.

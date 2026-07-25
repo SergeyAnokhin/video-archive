@@ -350,6 +350,10 @@ class SMBBackend:
     def remote_mkdir(self, rel_path: str) -> None:
         self._with_retry(smbclient.mkdir, self._unc(rel_path))
 
+    def ensure_dir(self, rel_path: str) -> None:
+        if rel_path not in ("", "."):
+            self._with_retry(smbclient.makedirs, self._unc(rel_path), exist_ok=True)
+
     def remote_rmdir(self, rel_path: str) -> None:
         self._with_retry(smbclient.rmdir, self._unc(rel_path))
 

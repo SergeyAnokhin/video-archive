@@ -7,7 +7,7 @@ of job types, run it to completion, repeat) so at most one CPU-bound job and
 one network-bound job run at the same time:
 
 - the CPU lane: rescan/rescan_with_media_info/convert/preview/cleanup/
-  optimize_db/backup/restore --
+  migrate_legacy_previews/optimize_db/backup/restore --
   all local ffmpeg/PIL/disk work, so running two of these at once would just
   contend for the same CPU/disk instead of going faster.
 - the network lane: tag -- calls out to an external AI provider API, so it
@@ -44,6 +44,7 @@ from app.jobs import service
 from app.jobs.backup import run_backup_job
 from app.jobs.cleanup import run_cleanup_job
 from app.jobs.convert import run_convert_job
+from app.jobs.migrate_legacy_previews import run_migrate_legacy_previews_job
 from app.jobs.optimize_db import run_optimize_db_job
 from app.jobs.preview import run_preview_job
 from app.jobs.rescan import run_rescan_job
@@ -61,6 +62,7 @@ _HANDLERS = {
     "preview": run_preview_job,
     "tag": run_tag_job,
     "cleanup": run_cleanup_job,
+    "migrate_legacy_previews": run_migrate_legacy_previews_job,
     "optimize_db": run_optimize_db_job,
     "backup": run_backup_job,
     "restore": run_restore_job,

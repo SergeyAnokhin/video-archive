@@ -91,6 +91,9 @@ class LocalBackend:
     def remote_mkdir(self, rel_path: str) -> None:
         self._abs(rel_path).mkdir()
 
+    def ensure_dir(self, rel_path: str) -> None:
+        self._abs(rel_path).mkdir(parents=True, exist_ok=True)
+
     def remote_rmdir(self, rel_path: str) -> None:
         self._abs(rel_path).rmdir()
 

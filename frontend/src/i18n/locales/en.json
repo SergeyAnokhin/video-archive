@@ -557,6 +557,7 @@
     "fullRescan": "Full rescan",
     "cleanupStale": "Clean up stale records",
     "optimizeDb": "Optimize database",
+    "migratePreviews": "Migrate legacy previews to new layout",
     "actionStarted": "Started as a background job — see Jobs for progress."
   },
   "appSettingsExport": {
@@ -729,6 +730,7 @@
       "preview": "Preview",
       "tag": "Tag",
       "cleanup": "Cleanup",
+      "migrate_legacy_previews": "Migrate legacy previews",
       "optimize_db": "Optimize database",
       "backup": "Backup",
       "restore": "Restore"

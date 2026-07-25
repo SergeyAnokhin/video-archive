@@ -303,6 +303,10 @@ class WebDAVBackend:
         resp = self._request("MKCOL", url)
         resp.raise_for_status()
 
+    def ensure_dir(self, rel_path: str) -> None:
+        if rel_path not in ("", "."):
+            self._ensure_collection(rel_path)
+
     def remote_rmdir(self, rel_path: str) -> None:
         # A plain `DELETE` on a WebDAV collection is typically recursive,
         # unlike `os.rmdir`/`smbclient.rmdir`'s strict "must be empty"

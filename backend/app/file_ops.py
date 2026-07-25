@@ -137,6 +137,7 @@ def move_file(engine, file_id: str, target_directory: str):
         old_gif_rel = preview_gif_relative_path(row.relative_path)
         new_gif_rel = preview_gif_relative_path(new_rel)
         if access.exists(old_gif_rel):
+            access.ensure_dir(str(PurePosixPath(new_gif_rel).parent))
             access.remote_rename(old_gif_rel, new_gif_rel)
 
         conn.execute(

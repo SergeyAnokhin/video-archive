@@ -563,6 +563,17 @@ def cleanup_stale_records():
     return service.create_job(engine, job_type="cleanup", scope_type="maintenance", scope_ref=None, parameters={})
 
 
+@router.post("/jobs/migrate-legacy-previews")
+def migrate_legacy_previews():
+    engine = get_engine()
+    with engine.connect() as conn:
+        get_active_source_or_404(conn)
+
+    return service.create_job(
+        engine, job_type="migrate_legacy_previews", scope_type="maintenance", scope_ref=None, parameters={}
+    )
+
+
 @router.post("/jobs/optimize-database")
 def optimize_database():
     engine = get_engine()

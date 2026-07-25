@@ -41,12 +41,13 @@ PREVIEW_GIF_DIR = f"{TECHNICAL_FOLDER_NAME}/previews"
 
 
 def preview_gif_relative_path(rel_path: str) -> str:
-    """Deterministic path for `rel_path`'s animated GIF preview, flattened
-    into `PREVIEW_GIF_DIR`: the full relative path (directories included)
-    with `/` replaced by `__`, so the file name alone still shows which
-    folder/video it belongs to, while staying unique across the source."""
-    encoded = PurePosixPath(rel_path).with_suffix(".gif").as_posix().replace("/", "__")
-    return f"{PREVIEW_GIF_DIR}/{encoded}"
+    """Deterministic path for `rel_path`'s animated GIF preview, mirrored
+    under `PREVIEW_GIF_DIR` at the same subfolder depth as the source video
+    (same layout as `folder_gif_relative_path()`), so per-video previews are
+    organized the same way folder previews already are instead of being
+    dumped flat into one directory."""
+    mirrored = PurePosixPath(rel_path).with_suffix(".gif").as_posix()
+    return f"{PREVIEW_GIF_DIR}/{mirrored}"
 
 
 def folder_gif_relative_path(directory_relative_path: str) -> str:

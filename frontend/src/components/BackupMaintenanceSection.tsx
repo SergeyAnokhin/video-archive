@@ -1,4 +1,4 @@
-import { Database, Eraser, RefreshCw, RotateCcw, Save, ScanLine, Trash2 } from 'lucide-react'
+import { Database, Eraser, FolderTree, RefreshCw, RotateCcw, Save, ScanLine, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useJobs } from '../context/JobsContext'
@@ -234,6 +234,14 @@ export function BackupMaintenanceSection() {
           disabled={maintenanceBusy !== null}
         >
           <Database size={14} /> {t('backupMaintenance.optimizeDb')}
+        </button>
+        <button
+          type="button"
+          className="settings-modal__option"
+          onClick={() => void runMaintenance('migrate_previews', '/api/jobs/migrate-legacy-previews')}
+          disabled={maintenanceBusy !== null}
+        >
+          <FolderTree size={14} /> {t('backupMaintenance.migratePreviews')}
         </button>
       </div>
       {maintenanceMessage && <p className="settings-modal__hint">{maintenanceMessage}</p>}

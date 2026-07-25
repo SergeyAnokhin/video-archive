@@ -82,6 +82,9 @@ class SourceAccess:
     def remote_mkdir(self, rel_path: str) -> None:
         self._backend.remote_mkdir(rel_path)
 
+    def ensure_dir(self, rel_path: str) -> None:
+        self._backend.ensure_dir(rel_path)
+
     def remote_rmdir(self, rel_path: str) -> None:
         self._backend.remote_rmdir(rel_path)
 

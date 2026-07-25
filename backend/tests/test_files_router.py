@@ -383,7 +383,7 @@ def test_move_file_also_moves_preview_assets(engine, source):
         assert res.status_code == 200
 
     assert (source["root"] / "dest" / "clip.jpg").exists()
-    assert (previews_dir / "dest__clip.gif").exists()
+    assert (previews_dir / "dest" / "clip.gif").exists()
 
 
 def test_move_file_rejects_destination_collision(engine, source):

@@ -138,3 +138,58 @@ def test_pause_and_resume_endpoints_over_http(tmp_path, monkeypatch):
         r = client.post(f"/api/jobs/{opt_job['id']}/pause")
         assert r.status_code == 409
         assert r.json()["detail"]["error"]["code"] == "job_not_pausable"
+
+
+def test_migrate_legacy_previews_job_lifecycle_over_http(tmp_path, monkeypatch):
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        engine = db_module.get_engine()
+        source_id = _insert_source_and_folder(engine, tmp_path / "source")
+        now = datetime.now(timezone.utc).isoformat()
+        with engine.begin() as conn:
+            clips_dir_id = str(uuid.uuid4())
+            conn.execute(
+                text(
+                    "INSERT INTO directories (id, source_id, relative_path, name, parent_relative_path, "
+                    "has_folder_preview, last_scanned_at, created_at, updated_at) "
+                    "VALUES (:id, :sid, 'clips', 'clips', '', 0, :now, :now, :now)"
+                ),
+                {"id": clips_dir_id, "sid": source_id, "now": now},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO files (id, source_id, directory_id, relative_path, file_name, extension, "
+                    "size_bytes, discovered_at, last_scanned_at, is_video_supported, has_preview_asset, "
+                    "created_at, updated_at) "
+                    "VALUES (:id, :sid, :did, 'clips/clip_0.mp4', 'clip_0.mp4', 'mp4', 1, :now, :now, 1, 0, "
+                    ":now, :now)"
+                ),
+                {"id": str(uuid.uuid4()), "sid": source_id, "did": clips_dir_id, "now": now},
+            )
+
+        legacy_gif = tmp_path / "source" / ".video-archive" / "previews" / "clips__clip_0.gif"
+        legacy_gif.parent.mkdir(parents=True, exist_ok=True)
+        legacy_gif.write_bytes(b"legacy gif bytes")
+        new_gif = tmp_path / "source" / ".video-archive" / "previews" / "clips" / "clip_0.gif"
+
+        r = client.post("/api/jobs/migrate-legacy-previews")
+        assert r.status_code == 200
+        job = r.json()
+        assert job["job_type"] == "migrate_legacy_previews"
+
+        deadline_statuses = {"completed", "failed", "cancelled"}
+        import time
+
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            r = client.get(f"/api/jobs/{job['id']}")
+            if r.json()["status"] in deadline_statuses:
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("job did not finish via HTTP in time")
+        assert r.json()["status"] == "completed"
+        assert not legacy_gif.exists()
+        assert new_gif.read_bytes() == b"legacy gif bytes"

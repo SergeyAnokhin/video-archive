@@ -586,10 +586,11 @@ def test_preview_job_skip_processed_rule(engine, source):
     assert collage.stat().st_mtime == first_mtime
 
 
-def test_preview_job_skip_processed_adopts_untracked_existing_collage(engine, source):
-    """User report: a collage already sitting on the source (e.g. a prior
-    run interrupted after writing the file but before recording it in the
-    DB) must be adopted -- flag backfilled -- instead of paid for again."""
+def test_preview_job_skip_processed_adopts_untracked_existing_assets(engine, source):
+    """User report: a collage+GIF already sitting on the source (e.g. a
+    prior run interrupted after writing the files but before recording it in
+    the DB) must be adopted -- flag backfilled -- instead of paid for
+    again."""
     video_path = source["root"] / "clips" / "movie.mp4"
     make_video(video_path, duration=2.0, size="320x240")
     scan_source(engine, source["id"], source["root"])
@@ -597,6 +598,10 @@ def test_preview_job_skip_processed_adopts_untracked_existing_collage(engine, so
     collage = source["root"] / "clips" / "movie.jpg"
     collage.write_bytes(b"not a real jpeg, just needs to exist")
     stray_mtime = collage.stat().st_mtime
+
+    gif = source["root"] / preview_gif_relative_path("clips/movie.mp4")
+    gif.parent.mkdir(parents=True, exist_ok=True)
+    gif.write_bytes(b"not a real gif, just needs to exist")
 
     with engine.connect() as conn:
         file_row = conn.execute(text("SELECT * FROM files WHERE relative_path = 'clips/movie.mp4'")).fetchone()
@@ -613,6 +618,30 @@ def test_preview_job_skip_processed_adopts_untracked_existing_collage(engine, so
     with engine.connect() as conn:
         updated = conn.execute(text("SELECT * FROM files WHERE id = :id"), {"id": file_row.id}).fetchone()
     assert updated.has_preview_asset == 1
+
+
+def test_preview_job_skip_processed_regenerates_when_gif_missing(engine, source):
+    """A file with a collage but no GIF (e.g. left over from the
+    flat-to-hierarchical GIF path migration, or a GIF deleted independently
+    of the collage) must not be skipped -- `_process_preview_file()` always
+    regenerates both assets together, so a file missing either one gets both
+    rewritten rather than permanently leaving the GIF missing."""
+    video_path = source["root"] / "clips" / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+    scan_source(engine, source["id"], source["root"])
+
+    collage = source["root"] / "clips" / "movie.jpg"
+    collage.write_bytes(b"not a real jpeg, just needs to exist")
+    stray_mtime = collage.stat().st_mtime
+
+    job = service.create_job(engine, "preview", "source", None, {"path": "", "skip_processed": True})
+    service.start_job(engine, job["id"])
+    status, message = preview_job.run_preview_job(engine, job)
+
+    assert status == "completed"
+    assert "1 of 1" in message
+    assert collage.stat().st_mtime != stray_mtime
+    assert (source["root"] / preview_gif_relative_path("clips/movie.mp4")).exists()
 
 
 def test_preview_job_excludes_test_artifacts(engine, source):
