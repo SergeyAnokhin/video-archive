@@ -46,14 +46,17 @@ const HISTORY_30M = {
 describe('ResourceHistoryChartSection', () => {
   afterEach(() => {
     cleanup()
-    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('loads the default 4h range and renders the latest values in the legend', async () => {
-    global.fetch = fetchRouter({
-      'GET /api/resource-monitor-settings': () => jsonResponse(SETTINGS),
-      'GET /api/resource-monitor-history?range=4h': () => jsonResponse(HISTORY_4H),
-    })
+    vi.stubGlobal(
+      'fetch',
+      fetchRouter({
+        'GET /api/resource-monitor-settings': () => jsonResponse(SETTINGS),
+        'GET /api/resource-monitor-history?range=4h': () => jsonResponse(HISTORY_4H),
+      }),
+    )
 
     render(<ResourceHistoryChartSection />)
 
@@ -68,7 +71,7 @@ describe('ResourceHistoryChartSection', () => {
       'GET /api/resource-monitor-history?range=4h': () => jsonResponse(HISTORY_4H),
       'GET /api/resource-monitor-history?range=30m': () => jsonResponse(HISTORY_30M),
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
 
     render(<ResourceHistoryChartSection />)
     await waitFor(() => screen.getByText('15%'))
@@ -80,11 +83,14 @@ describe('ResourceHistoryChartSection', () => {
   })
 
   it('shows the no-data hint when there are no samples yet', async () => {
-    global.fetch = fetchRouter({
-      'GET /api/resource-monitor-settings': () => jsonResponse(SETTINGS),
-      'GET /api/resource-monitor-history?range=4h': () =>
-        jsonResponse({ range_seconds: 14400, network_scale_bytes_per_sec: 0, points: [] }),
-    })
+    vi.stubGlobal(
+      'fetch',
+      fetchRouter({
+        'GET /api/resource-monitor-settings': () => jsonResponse(SETTINGS),
+        'GET /api/resource-monitor-history?range=4h': () =>
+          jsonResponse({ range_seconds: 14400, network_scale_bytes_per_sec: 0, points: [] }),
+      }),
+    )
 
     render(<ResourceHistoryChartSection />)
 
