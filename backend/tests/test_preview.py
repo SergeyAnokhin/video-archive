@@ -24,7 +24,7 @@ from app.media import folder_gif_relative_path, preview_gif_relative_path
 from app.sampling import sample_interior_timestamps
 from app.scan import scan_source
 
-from .conftest import make_video
+from .conftest import make_image, make_video
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -564,6 +564,28 @@ def test_preview_job_directory_scope_recursive_with_folder_previews(engine, sour
     assert directories[""] is True
     assert directories["clips"] is True
     assert directories["clips/nested"] is True
+
+
+def test_preview_job_directory_scope_generates_folder_preview_for_images_only(engine, source):
+    """User report: a folder containing only standalone images (no videos)
+    never got a folder-preview.gif at all -- candidate selection was
+    filtered to `is_video_supported = 1` only."""
+    make_image(source["root"] / "photos" / "a.jpg", color=(200, 0, 0))
+    make_image(source["root"] / "photos" / "b.jpg", color=(0, 200, 0))
+    scan_source(engine, source["id"], source["root"])
+
+    job = service.create_job(engine, "preview", "source", None, {"path": "", "skip_processed": True})
+    service.start_job(engine, job["id"])
+    status, message = preview_job.run_preview_job(engine, job)
+
+    assert status == "completed"
+    assert (source["root"] / folder_gif_relative_path("photos")).exists()
+
+    with engine.connect() as conn:
+        has_preview = conn.execute(
+            text("SELECT has_folder_preview FROM directories WHERE relative_path = 'photos'")
+        ).scalar()
+    assert has_preview == 1
 
 
 def test_preview_job_skip_processed_rule(engine, source):

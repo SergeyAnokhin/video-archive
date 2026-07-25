@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from app import detection
 from app.conversion import build_ffmpeg_command, effective_max_dimension, encode_variant_suffix
@@ -25,7 +26,7 @@ from app.media import (
     sibling_relative_path,
     variant_base_stem,
 )
-from app.preview import diverse_video_frame_plan, select_frames_for_tiles
+from app.preview import diverse_video_frame_plan, pick_image_segments, select_frames_for_tiles
 from app.preview_layouts import compute_layout_tiles
 from app.preview_settings import effective_aspect_ratio
 
@@ -360,6 +361,38 @@ def test_diverse_video_frame_plan_edge_cases():
     assert diverse_video_frame_plan([], 4) == []
     assert diverse_video_frame_plan(["a.mp4"], 3) == ["a.mp4", "a.mp4", "a.mp4"]
     assert diverse_video_frame_plan(["a.mp4", "b.mp4"], 0) == []
+
+
+def test_diverse_video_frame_plan_mixes_images_with_videos():
+    # Candidate selection (app/jobs/preview.py) no longer filters to videos
+    # only (user report: image-only folders got no folder preview at all) --
+    # this function itself is path-type-agnostic, so a mix of videos and
+    # standalone images is spread across just like an all-video list.
+    plan = diverse_video_frame_plan(["a.mp4", "photo.jpg"], 4)
+    assert plan == ["a.mp4", "photo.jpg", "a.mp4", "photo.jpg"]
+
+
+# --- preview: standalone-image folder-preview segments ---------------------
+
+
+def test_pick_image_segments_decodes_and_repeats_frame(tmp_path):
+    image_path = tmp_path / "photo.jpg"
+    Image.new("RGB", (64, 48), (10, 20, 30)).save(image_path)
+
+    segments = pick_image_segments(image_path, 3)
+
+    assert len(segments) == 3
+    for segment in segments:
+        assert len(segment) == 1
+        assert segment[0].shape[:2] == (48, 64)
+
+
+def test_pick_image_segments_edge_cases(tmp_path):
+    assert pick_image_segments(tmp_path / "photo.jpg", 0) == []
+
+    bad_path = tmp_path / "not-an-image.jpg"
+    bad_path.write_bytes(b"not a real image")
+    assert pick_image_segments(bad_path, 2) == []
 
 
 # --- detection math: greedy NMS and embedding distance ---------------------

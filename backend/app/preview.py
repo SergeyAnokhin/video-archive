@@ -690,7 +690,7 @@ def generate_file_preview(
     return info, images
 
 
-# --- folder preview (animated GIF, diverse across videos/subfolders) ------
+# --- folder preview (animated GIF, diverse across videos/images/subfolders) -
 
 
 def evenly_spaced_sample(items: list, count: int) -> list:
@@ -728,12 +728,15 @@ def _group_by_next_path_segment(rel_paths: list[str]) -> dict[str, list[str]]:
 
 
 def diverse_video_frame_plan(video_paths: list[str], frame_count: int) -> list[str]:
-    """Choose `frame_count` videos (relative paths, repeats allowed) for a
-    folder's animated GIF preview (user request): recursively split the
-    frame budget evenly across sibling subfolders before splitting across
-    sibling videos, so the animation mixes frames from different
-    subfolders/videos instead of clustering on one source. `video_paths`
-    must be relative to the folder being previewed (not the source root)."""
+    """Choose `frame_count` candidate files -- videos and/or standalone
+    images (relative paths, repeats allowed) -- for a folder's animated GIF
+    preview (user request): recursively split the frame budget evenly across
+    sibling subfolders before splitting across sibling files, so the
+    animation mixes frames from different subfolders/videos/images instead
+    of clustering on one source. Video vs. image is irrelevant here -- the
+    caller (`app/jobs/preview.py`) decides how to turn each chosen path into
+    a segment. `video_paths` must be relative to the folder being previewed
+    (not the source root)."""
     if frame_count <= 0 or not video_paths:
         return []
 
@@ -802,6 +805,25 @@ def pick_representative_frames(video_path: Path, count: int) -> list:
         return []
     timestamps = sample_interior_timestamps(info["duration"], count)
     return [img for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]
+
+
+def pick_image_segments(image_path: Path, count: int) -> list[list]:
+    """Like `pick_representative_segments()`, but for a standalone image file
+    (folder-preview candidate, user request: image-only folders previously
+    got no folder-preview.gif at all since candidate selection was
+    video-only). A photo has no timestamps or motion to sample, so every
+    position in the plan simply repeats the same decoded frame -- the
+    surrounding video segments (or other images) in the plan are what give
+    the GIF its variety. Same Windows non-ASCII-path-safe decode as
+    `extract_frame_image()` (`cv2.imread()` silently fails on paths with
+    non-ASCII characters)."""
+    if count <= 0:
+        return []
+    data = np.fromfile(str(image_path), dtype=np.uint8)
+    frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if frame is None:
+        return []
+    return [[frame] for _ in range(count)]
 
 
 def pick_representative_segments(

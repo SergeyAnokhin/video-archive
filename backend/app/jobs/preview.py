@@ -8,9 +8,9 @@ Handles both scopes:
   supported video under the subtree (skip-processed rule, always excluding
   test-mode artifacts), then
   refreshes `folder-preview.gif` for the target directory and every
-  descendant directory that contains at least one supported video
-  (Specification §9.5) — an animated GIF cycling
-  through frames drawn from different videos/subfolders for diversity
+  descendant directory that contains at least one supported video or
+  standalone image (Specification §9.5) — an animated GIF cycling
+  through frames drawn from different videos/images/subfolders for diversity
   (`preview.diverse_video_frame_plan()`, user request), not a static
   collage.
 - **file**: generates a `<name>.jpg` collage plus GIF for one video; always
@@ -406,9 +406,11 @@ def _generate_folder_previews(
     engine, job: dict, source_id: str, access: SourceAccess, relative_path: str, settings: dict
 ) -> tuple[int, str | None]:
     """Refresh folder-preview.gif for the target directory and every
-    descendant directory that contains at least one supported video
-    (Specification §9.5). Returns `(updated_count, stop_status)`, where
-    `stop_status` is `None`/`"cancelled"`/`"paused"`."""
+    descendant directory that contains at least one supported video or
+    standalone image (Specification §9.5; image-only folders, user request
+    -- previously skipped entirely since candidate selection was video-only).
+    Returns `(updated_count, stop_status)`, where `stop_status` is
+    `None`/`"cancelled"`/`"paused"`."""
     with engine.connect() as conn:
         dir_clauses = ["source_id = :sid"]
         dir_params: dict = {"sid": source_id}
@@ -473,13 +475,16 @@ def _generate_folder_previews(
                 local_paths[rel] = path
             return local_paths[rel]
 
-        def get_segments(rel: str, count: int) -> list:
+        def get_segments(rel: str, count: int, is_image: bool) -> list:
             key = (rel, count)
             if key not in segments_cache:
-                raw_segments = preview.pick_representative_segments(
-                    get_local_path(rel), count, mode=animated_source_mode,
-                    segment_seconds=animated_segment_seconds, seek_mode=frame_seek_mode,
-                )
+                if is_image:
+                    raw_segments = preview.pick_image_segments(get_local_path(rel), count)
+                else:
+                    raw_segments = preview.pick_representative_segments(
+                        get_local_path(rel), count, mode=animated_source_mode,
+                        segment_seconds=animated_segment_seconds, seek_mode=frame_seek_mode,
+                    )
                 segments_cache[key] = [
                     [preview.shrink_frame(frame, gif_max_width) for frame in segment]
                     for segment in raw_segments
@@ -493,28 +498,29 @@ def _generate_folder_previews(
 
             with engine.connect() as conn:
                 if directory.relative_path:
-                    video_rows = conn.execute(
+                    media_rows = conn.execute(
                         text(
-                            "SELECT relative_path, file_name FROM files "
-                            "WHERE source_id = :sid AND is_video_supported = 1 AND relative_path LIKE :prefix "
-                            "ORDER BY relative_path"
+                            "SELECT relative_path, file_name, is_image_supported FROM files "
+                            "WHERE source_id = :sid AND (is_video_supported = 1 OR is_image_supported = 1) "
+                            "AND relative_path LIKE :prefix ORDER BY relative_path"
                         ),
                         {"sid": source_id, "prefix": f"{directory.relative_path}/%"},
                     ).all()
                 else:
-                    video_rows = conn.execute(
+                    media_rows = conn.execute(
                         text(
-                            "SELECT relative_path, file_name FROM files "
-                            "WHERE source_id = :sid AND is_video_supported = 1 ORDER BY relative_path"
+                            "SELECT relative_path, file_name, is_image_supported FROM files "
+                            "WHERE source_id = :sid AND (is_video_supported = 1 OR is_image_supported = 1) "
+                            "ORDER BY relative_path"
                         ),
                         {"sid": source_id},
                     ).all()
 
-            candidate_rels = [
-                row.relative_path for row in video_rows if not is_test_artifact(row.file_name)
-            ]
+            candidate_rows = [row for row in media_rows if not is_test_artifact(row.file_name)]
+            candidate_rels = [row.relative_path for row in candidate_rows]
             if not candidate_rels:
                 continue
+            is_image_by_rel = {row.relative_path: bool(row.is_image_supported) for row in candidate_rows}
 
             # Frame plan is computed on paths relative to *this* directory (not
             # the source root) so `diverse_video_frame_plan()` groups by the
@@ -532,11 +538,13 @@ def _generate_folder_previews(
 
             service.log_event(
                 engine, job["id"], None, "info", "job_item_progress",
-                f"Building folder preview for {dir_label}: {len(plan)} segment(s) from {len(path_counts)} video(s)",
+                f"Building folder preview for {dir_label}: {len(plan)} segment(s) from {len(path_counts)} file(s)",
             )
             try:
                 t0 = time.monotonic()
-                segments_by_rel = {rel: get_segments(rel, count) for rel, count in path_counts.items()}
+                segments_by_rel = {
+                    rel: get_segments(rel, count, is_image_by_rel[rel]) for rel, count in path_counts.items()
+                }
                 cursors: dict[str, int] = {rel: 0 for rel in path_counts}
                 images = []
                 segment_sizes = []
