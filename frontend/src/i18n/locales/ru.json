@@ -442,8 +442,6 @@
     "like": "Хороший тег",
     "dislike": "Плохой тег",
     "pricePerMillion": "${{input}} вход / ${{output}} выход за 1М токенов",
-    "priceRowIn": "вход ${{value}}",
-    "priceRowOut": "выход ${{value}}",
     "priceUnavailable": "Цена не задана",
     "priceSource": {
       "manual": "вручную",

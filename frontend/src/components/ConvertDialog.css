@@ -21,6 +21,7 @@
 
 .convert-dialog--wide {
   width: min(720px, 100%);
+  max-height: 92vh;
 }
 
 .convert-dialog__title {

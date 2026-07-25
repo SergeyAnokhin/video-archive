@@ -48,8 +48,9 @@ function ModelRow({ entry, prices }: { entry: ProviderEntry; prices: ModelPricin
       <span className="tag-lab-model-picker__price">
         {price?.input_per_million != null && price.output_per_million != null ? (
           <>
-            <span>{t('tagLab.priceRowIn', { value: price.input_per_million })}</span>
-            <span>{t('tagLab.priceRowOut', { value: price.output_per_million })}</span>
+            <span className="tag-lab-model-picker__price-in">${price.input_per_million}</span>
+            <span className="tag-lab-model-picker__price-slash">/</span>
+            <span className="tag-lab-model-picker__price-out">${price.output_per_million}</span>
           </>
         ) : (
           <span className="tag-lab-model-picker__price-empty">{t('tagLab.priceUnavailable')}</span>
@@ -59,10 +60,19 @@ function ModelRow({ entry, prices }: { entry: ProviderEntry; prices: ModelPricin
   )
 }
 
+interface ListPosition {
+  top: number
+  left: number
+  width: number
+  maxHeight: number
+}
+
 export function TagLabModelPicker({ entries, prices, value, onChange, disabled }: TagLabModelPickerProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const [listPosition, setListPosition] = useState<ListPosition | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const toggleRef = useRef<HTMLButtonElement | null>(null)
   const selectedEntry = entries.find((entry) => entry.id === value) ?? null
 
   useEffect(() => {
@@ -83,9 +93,38 @@ export function TagLabModelPicker({ entries, prices, value, onChange, disabled }
     }
   }, [open])
 
+  // Fixed positioning (computed here, relative to the viewport) instead of
+  // absolute-inside-the-modal (user request -- the modal body scrolls, so an
+  // absolutely positioned list got clipped by it and grew its own inner
+  // scrollbar on top of the modal's, producing two visible scrollbars for
+  // one dropdown). Recomputed on scroll/resize so it tracks the toggle.
+  useEffect(() => {
+    if (!open) return
+    function updatePosition() {
+      const rect = toggleRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const margin = 8
+      const spaceBelow = window.innerHeight - rect.bottom - margin
+      setListPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: Math.max(120, spaceBelow),
+      })
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
+
   return (
     <div className="tag-lab-model-picker" ref={containerRef}>
       <button
+        ref={toggleRef}
         type="button"
         className="tag-lab-model-picker__toggle convert-dialog__input"
         aria-haspopup="listbox"
@@ -101,8 +140,17 @@ export function TagLabModelPicker({ entries, prices, value, onChange, disabled }
         <ChevronDown size={14} className="tag-lab-model-picker__chevron" />
       </button>
 
-      {open && (
-        <div className="tag-lab-model-picker__list" role="listbox">
+      {open && listPosition && (
+        <div
+          className="tag-lab-model-picker__list"
+          role="listbox"
+          style={{
+            top: listPosition.top,
+            left: listPosition.left,
+            width: listPosition.width,
+            maxHeight: listPosition.maxHeight,
+          }}
+        >
           {entries.map((entry) => (
             <button
               key={entry.id}
