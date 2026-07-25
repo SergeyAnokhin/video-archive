@@ -800,6 +800,17 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Post-V1 (chat request 2026-07-25 -- slow preview generation on
+    # underpowered hardware): `frame_seek_mode` toggles ffmpeg frame
+    # extraction between "keyframe" (adds `-noaccurate_seek`, ~10x faster,
+    # frame lands on the nearest keyframe instead of the exact timestamp)
+    # and "accurate" (prior behavior). Defaults to "keyframe" for new/
+    # existing installs since the near-duplicate similarity match
+    # (`app/similarity.py`) already tolerates a few seconds of drift between
+    # sampled frames; switchable back per-install if that ever isn't true.
+    44: [
+        "ALTER TABLE preview_settings ADD COLUMN frame_seek_mode TEXT NOT NULL DEFAULT 'keyframe'",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

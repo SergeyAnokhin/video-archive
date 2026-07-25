@@ -162,6 +162,7 @@ def _generate_one_file(
                 animated_source_mode=settings["animated_source_mode"],
                 animated_segment_seconds=settings["animated_segment_seconds"],
                 animated_transition=settings["animated_transition"],
+                frame_seek_mode=settings["frame_seek_mode"],
                 max_workers=max_workers,
                 on_stage=on_stage,
             )
@@ -186,7 +187,7 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     service.log_event(
         engine, job["id"], None, "info", "job_parameters",
         f"Parameters: scope={scope_desc}, layout='{layout['name']}' ({layout['grid_rows']}x{layout['grid_cols']}), "
-        f"workers={worker_count}",
+        f"workers={worker_count}, frame_seek={settings['frame_seek_mode']}",
     )
 
     with engine.connect() as conn:
@@ -410,6 +411,7 @@ def _generate_folder_previews(
     animated_segment_seconds = settings["animated_segment_seconds"]
     animated_transition = settings["animated_transition"]
     gif_max_width = settings["gif_max_width"]
+    frame_seek_mode = settings["frame_seek_mode"]
     updated = 0
 
     # Once per sweep, not once per directory (post-V1, user request "make it
@@ -461,7 +463,7 @@ def _generate_folder_previews(
             if key not in segments_cache:
                 raw_segments = preview.pick_representative_segments(
                     get_local_path(rel), count, mode=animated_source_mode,
-                    segment_seconds=animated_segment_seconds,
+                    segment_seconds=animated_segment_seconds, seek_mode=frame_seek_mode,
                 )
                 segments_cache[key] = [
                     [preview.shrink_frame(frame, gif_max_width) for frame in segment]

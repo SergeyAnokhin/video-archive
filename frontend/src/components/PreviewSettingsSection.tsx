@@ -7,6 +7,7 @@ import type {
   AnimatedTransition,
   AspectRatioMode,
   EnlargedTile,
+  FrameSeekMode,
   LayoutTile,
   PreviewLayoutPreset,
   PreviewSettings,
@@ -20,6 +21,7 @@ const ASPECT_RATIOS: AspectRatioMode[] = ['standard', 'phone-portrait', 'phone-l
 const QUICK_SLOT_NAMES = ['Quick 1', 'Quick 2', 'Quick 3']
 const ANIMATED_SOURCE_MODES: AnimatedSourceMode[] = ['frame', 'clip']
 const ANIMATED_TRANSITIONS: AnimatedTransition[] = ['cut', 'crossfade']
+const FRAME_SEEK_MODES: FrameSeekMode[] = ['keyframe', 'accurate']
 
 function effectiveAspectRatio(settings: PreviewSettings): number {
   switch (settings.aspect_ratio) {
@@ -307,6 +309,22 @@ export function PreviewSettingsSection() {
       {activeTab === 'animated' && settings && (
         <>
           <p className="settings-modal__hint">{t('previewSettings.animatedIntro')}</p>
+
+          <label className="settings-modal__label">
+            {t('previewSettings.frameSeekMode')}
+            <select
+              className="settings-modal__input"
+              value={settings.frame_seek_mode}
+              onChange={(event) => void updateSettings({ frame_seek_mode: event.target.value as FrameSeekMode })}
+            >
+              {FRAME_SEEK_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(`previewSettings.frameSeekModeOption.${mode}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="settings-modal__hint">{t('previewSettings.frameSeekModeHint')}</p>
 
           <div className="settings-modal__row">
             <label className="settings-modal__label">

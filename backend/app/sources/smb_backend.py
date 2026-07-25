@@ -54,7 +54,11 @@ from app.sources import smb_stats, windows_unc
 from app.sources.entries import Entry, EntryStat
 
 _RETRYABLE = (SMBException, ConnectionError, TimeoutError, OSError)
-_CHUNK_SIZE = 512 * 1024
+# 4 MiB (user request, chat 2026-07-25 -- slow preview generation on a
+# high-latency SMB share): fewer round-trips per file than the prior 512 KiB
+# chunk size, without materially changing peak memory (still one chunk in
+# flight at a time per read loop).
+_CHUNK_SIZE = 4 * 1024 * 1024
 
 # `smbclient` caches one connection per host in a process-wide registry, so
 # every `SMBBackend` instance for the same host actually shares a single

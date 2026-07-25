@@ -57,6 +57,17 @@ CLIP_MAX_FRAMES = 24
 CROSSFADE_STEPS = 5
 CROSSFADE_FRAME_DURATION_MS = 40
 
+# Downscale target for collage/animated-preview frame extraction (user
+# request, chat 2026-07-25 -- slow preview generation on underpowered
+# hardware): >= both `CANVAS_WIDTH`'s per-tile width and `gif_max_width`'s
+# default, so nothing downstream (collage tile, GIF frame, face/person
+# detection) loses visible resolution. Only applied where extraction is
+# explicitly passed `max_width=` (collage/animated-preview call sites) --
+# other callers (AI tagging, similarity signatures computed independently
+# of a preview, single-thumbnail picking) keep extracting at source
+# resolution, unchanged.
+EXTRACT_MAX_WIDTH = 1280
+
 
 class PreviewError(Exception):
     """Raised when a preview cannot be produced at all (no probeable video
@@ -92,7 +103,20 @@ def _hwaccel_download_filter(backend: str | None) -> str | None:
     return "hwdownload,format=nv12"
 
 
-def extract_frame_image(video_path: Path, timestamp: float):
+def extract_frame_image(
+    video_path: Path, timestamp: float, *, seek_mode: str = "accurate", max_width: int | None = None
+):
+    """`seek_mode="keyframe"` (Preview Settings `frame_seek_mode`, user
+    request) adds `-noaccurate_seek`: ffmpeg returns the nearest keyframe
+    instead of decoding forward to the exact `timestamp`, which on a
+    keyframe-sparse source is the difference between a ~1s and a ~20s+
+    extraction. Default stays `"accurate"` (prior behavior, exact timestamp)
+    since callers outside preview generation (AI tagging, standalone
+    similarity signatures) don't opt into the tradeoff. `max_width` (used by
+    collage/animated-preview callers only, see `EXTRACT_MAX_WIDTH`) scales
+    the frame down during ffmpeg's own decode instead of after, which is
+    also what makes the downstream JPEG encode/decode and face/person
+    detection cheaper."""
     ffmpeg_bin = conversion.ffmpeg_path()
     if not ffmpeg_bin:
         return None
@@ -104,10 +128,18 @@ def extract_frame_image(video_path: Path, timestamp: float):
     try:
         for backend in backends_to_try:
             args = [ffmpeg_bin, "-y", *_hwaccel_input_args(backend)]
-            args += ["-ss", f"{timestamp:.3f}", "-i", str(video_path)]
+            args += ["-ss", f"{timestamp:.3f}"]
+            if seek_mode == "keyframe":
+                args += ["-noaccurate_seek"]
+            args += ["-i", str(video_path)]
+            filters = []
             download_filter = _hwaccel_download_filter(backend)
             if download_filter:
-                args += ["-vf", download_filter]
+                filters.append(download_filter)
+            if max_width:
+                filters.append(f"scale='min(iw,{max_width})':-2")
+            if filters:
+                args += ["-vf", ",".join(filters)]
             args += ["-frames:v", "1", "-q:v", "2", str(tmp_path)]
             # A hardware-decode attempt failing (unsupported codec, driver
             # hiccup, GPU contention) falls through to software silently --
@@ -141,6 +173,8 @@ def extract_clip_frames(
     *,
     fps: float = CLIP_SAMPLE_FPS,
     max_frames: int = CLIP_MAX_FRAMES,
+    seek_mode: str = "accurate",
+    max_width: int | None = None,
 ) -> list:
     """Sample a burst of frames from a short video segment starting at
     `start_timestamp` ("clip" animated-preview source mode, user request):
@@ -149,7 +183,8 @@ def extract_clip_frames(
     the animated preview real motion for this position instead of a still.
     Returns as many decoded frames as ffmpeg produced (possibly fewer than
     expected near the end of the video, possibly empty on failure) --
-    callers must tolerate a short/empty result."""
+    callers must tolerate a short/empty result. `seek_mode`/`max_width`: see
+    `extract_frame_image()`."""
     ffmpeg_bin = conversion.ffmpeg_path()
     if not ffmpeg_bin:
         return []
@@ -162,11 +197,19 @@ def extract_clip_frames(
     try:
         for backend in backends_to_try:
             args = [ffmpeg_bin, "-y", *_hwaccel_input_args(backend)]
-            args += ["-ss", f"{max(0.0, start_timestamp):.3f}", "-i", str(video_path)]
+            args += ["-ss", f"{max(0.0, start_timestamp):.3f}"]
+            if seek_mode == "keyframe":
+                args += ["-noaccurate_seek"]
+            args += ["-i", str(video_path)]
             args += ["-t", f"{max(0.05, duration_seconds):.3f}"]
+            filters = []
             download_filter = _hwaccel_download_filter(backend)
-            vf = f"{download_filter},fps={fps}" if download_filter else f"fps={fps}"
-            args += ["-vf", vf, "-frames:v", str(max_frames), "-q:v", "2", str(tmp_dir / "f%04d.jpg")]
+            if download_filter:
+                filters.append(download_filter)
+            filters.append(f"fps={fps}")
+            if max_width:
+                filters.append(f"scale='min(iw,{max_width})':-2")
+            args += ["-vf", ",".join(filters), "-frames:v", str(max_frames), "-q:v", "2", str(tmp_dir / "f%04d.jpg")]
             try:
                 result = subprocess.run(args, capture_output=True, timeout=30, check=False)
             except (OSError, subprocess.SubprocessError):
@@ -399,6 +442,24 @@ def render_collage(
 # --- animated GIF preview ---------------------------------------------------
 
 
+_GIF_PALETTE_THUMB_SIZE = 32
+
+
+def _build_shared_gif_palette(frames: list, colors: int):
+    """One `colors`-color palette shared by every output frame (user
+    request, chat 2026-07-25 -- slow preview generation): built from a small
+    thumbnail of each frame pasted into one strip, so quantizing it costs
+    roughly one frame's worth of work regardless of how many frames the GIF
+    actually has, instead of a full-resolution ADAPTIVE search per frame."""
+    strip = Image.new(
+        "RGB", (_GIF_PALETTE_THUMB_SIZE * len(frames), _GIF_PALETTE_THUMB_SIZE)
+    )
+    for index, frame in enumerate(frames):
+        thumb = frame.resize((_GIF_PALETTE_THUMB_SIZE, _GIF_PALETTE_THUMB_SIZE), Image.BILINEAR)
+        strip.paste(thumb, (index * _GIF_PALETTE_THUMB_SIZE, 0))
+    return strip.quantize(colors=colors)
+
+
 def render_gif(
     images: list,
     dest_path: Path,
@@ -469,7 +530,12 @@ def render_gif(
                 output_frames.append(Image.blend(last_frame, next_frame, alpha))
                 durations.append(CROSSFADE_FRAME_DURATION_MS)
 
-    palette_frames = [frame.convert("P", palette=Image.ADAPTIVE, colors=colors) for frame in output_frames]
+    # One shared palette built from all frames (previously: a separate
+    # ADAPTIVE palette computed per frame -- expensive at 100+ frames and
+    # prone to visible color flicker between frames since each one picked
+    # its own best-fit colors independently).
+    shared_palette = _build_shared_gif_palette(output_frames, colors)
+    palette_frames = [frame.quantize(palette=shared_palette, dither=Image.FLOYDSTEINBERG) for frame in output_frames]
 
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     palette_frames[0].save(
@@ -479,7 +545,6 @@ def render_gif(
         append_images=palette_frames[1:],
         duration=durations,
         loop=0,
-        optimize=True,
     )
 
 
@@ -498,6 +563,7 @@ def generate_file_preview(
     animated_source_mode: str = "frame",
     animated_segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
     animated_transition: str = "cut",
+    frame_seek_mode: str = "keyframe",
     max_workers: int = 1,
     on_stage: Callable[[str], None] | None = None,
 ) -> tuple[dict, list]:
@@ -524,7 +590,13 @@ def generate_file_preview(
     preview rendering, collage rendering) so a caller with job/log access
     (`app/jobs/preview.py`) can surface per-file progress -- otherwise a
     multi-minute file sits silent between "started" and "completed",
-    hiding which stage is actually slow."""
+    hiding which stage is actually slow.
+
+    `frame_seek_mode` (Preview Settings `frame_seek_mode`, user request) is
+    passed straight to `extract_frame_image()`/`extract_clip_frames()` --
+    see there for what "keyframe" trades off against the default "accurate".
+    All frame extraction here also uses `EXTRACT_MAX_WIDTH` regardless of
+    this setting."""
 
     def stage(message: str) -> None:
         if on_stage is not None:
@@ -551,7 +623,13 @@ def generate_file_preview(
     stage(f"Extracting {len(tiles)} collage frame(s)")
     timestamps = sample_interior_timestamps(info["duration"], len(tiles))
     images = fill_missing_frames(
-        _map_parallel(lambda ts: extract_frame_image(video_path, ts), timestamps, max_workers)
+        _map_parallel(
+            lambda ts: extract_frame_image(
+                video_path, ts, seek_mode=frame_seek_mode, max_width=EXTRACT_MAX_WIDTH
+            ),
+            timestamps,
+            max_workers,
+        )
     )
     if not any(img is not None for img in images):
         raise PreviewError("Could not extract any frames from the source video.")
@@ -568,7 +646,10 @@ def generate_file_preview(
             # the clip burst comes back empty (e.g. too close to EOF).
             def _extract_segment(pair: tuple[float, object]) -> list:
                 timestamp, fallback = pair
-                burst = extract_clip_frames(video_path, timestamp, animated_segment_seconds)
+                burst = extract_clip_frames(
+                    video_path, timestamp, animated_segment_seconds,
+                    seek_mode=frame_seek_mode, max_width=EXTRACT_MAX_WIDTH,
+                )
                 return burst if burst else ([fallback] if fallback is not None else [])
 
             gif_images: list = []
@@ -729,6 +810,7 @@ def pick_representative_segments(
     *,
     mode: str = "frame",
     segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
+    seek_mode: str = "keyframe",
 ) -> list[list]:
     """Like `pick_representative_frames`, but returns one *segment* (a list
     of 1+ frames) per position instead of a single frame, so the folder
@@ -736,7 +818,12 @@ def pick_representative_segments(
     short clip burst ("clip" mode) per video (Preview Settings
     `animated_source_mode`, user request). Falls back to a single still
     frame at the same timestamp whenever a clip burst extraction comes back
-    empty (e.g. too close to EOF)."""
+    empty (e.g. too close to EOF). `seek_mode` (Preview Settings
+    `frame_seek_mode`, user request) applies to the `count > 1` extraction
+    loop below; the `count == 1` best-of-3 pick reuses
+    `_pick_representative_frame_and_timestamp()`, which always extracts at
+    source resolution/exact timestamp (a single video's folder preview, not
+    the hot multi-frame path this setting targets)."""
     if count <= 0:
         return []
 
@@ -745,7 +832,7 @@ def pick_representative_segments(
         if timestamp is None:
             return []
         if mode == "clip":
-            burst = extract_clip_frames(video_path, timestamp, segment_seconds)
+            burst = extract_clip_frames(video_path, timestamp, segment_seconds, seek_mode=seek_mode)
             if burst:
                 return [burst]
         return [[frame]] if frame is not None else []
@@ -757,10 +844,12 @@ def pick_representative_segments(
     segments: list[list] = []
     for timestamp in timestamps:
         if mode == "clip":
-            burst = extract_clip_frames(video_path, timestamp, segment_seconds)
+            burst = extract_clip_frames(
+                video_path, timestamp, segment_seconds, seek_mode=seek_mode, max_width=EXTRACT_MAX_WIDTH
+            )
             if burst:
                 segments.append(burst)
                 continue
-        frame = extract_frame_image(video_path, timestamp)
+        frame = extract_frame_image(video_path, timestamp, seek_mode=seek_mode, max_width=EXTRACT_MAX_WIDTH)
         segments.append([frame] if frame is not None else [])
     return segments

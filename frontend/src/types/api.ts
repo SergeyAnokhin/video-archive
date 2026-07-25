@@ -297,6 +297,7 @@ export interface PreviewLayoutPreset {
 
 export type AnimatedSourceMode = 'frame' | 'clip'
 export type AnimatedTransition = 'cut' | 'crossfade'
+export type FrameSeekMode = 'keyframe' | 'accurate'
 
 export interface PreviewSettings {
   aspect_ratio: AspectRatioMode
@@ -308,6 +309,7 @@ export interface PreviewSettings {
   animated_source_mode: AnimatedSourceMode
   animated_segment_seconds: number
   animated_transition: AnimatedTransition
+  frame_seek_mode: FrameSeekMode
   updated_at: string
 }
 

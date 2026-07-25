@@ -462,6 +462,12 @@
       "cut": "No transition (hard cut)",
       "crossfade": "Smooth (crossfade)"
     },
+    "frameSeekMode": "Frame extraction",
+    "frameSeekModeHint": "\"Fast\" grabs the nearest keyframe instead of the exact second — preview generation speeds up several times over, at the cost of the frame landing a few seconds off the intended position. Similar-video matching tolerates that drift and usually keeps finding duplicates.",
+    "frameSeekModeOption": {
+      "keyframe": "Fast (nearest keyframe)",
+      "accurate": "Accurate (slower, previous behavior)"
+    },
     "brush": "Tile brush",
     "brushSmall": "Small tile",
     "brushEnlarged2": "Enlarged 2×2",

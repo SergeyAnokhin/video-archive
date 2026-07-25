@@ -131,19 +131,25 @@ def test_preview_settings_get_and_put(tmp_path, monkeypatch):
         assert r.json()["folder_preview_frame_count"] == 4
         assert r.json()["gif_max_width"] == 640
         assert r.json()["gif_colors"] == 64
+        assert r.json()["frame_seek_mode"] == "keyframe"
 
         r = client.put(
             "/api/preview-settings",
             json={"aspect_ratio": "custom", "aspect_ratio_custom_width": 16, "aspect_ratio_custom_height": 10,
-                  "folder_preview_frame_count": 6, "gif_max_width": 320, "gif_colors": 32},
+                  "folder_preview_frame_count": 6, "gif_max_width": 320, "gif_colors": 32,
+                  "frame_seek_mode": "accurate"},
         )
         assert r.status_code == 200
         assert r.json()["aspect_ratio"] == "custom"
         assert r.json()["folder_preview_frame_count"] == 6
         assert r.json()["gif_max_width"] == 320
         assert r.json()["gif_colors"] == 32
+        assert r.json()["frame_seek_mode"] == "accurate"
 
         r = client.put("/api/preview-settings", json={"aspect_ratio": "not-a-real-ratio"})
+        assert r.status_code == 422
+
+        r = client.put("/api/preview-settings", json={"aspect_ratio": "standard", "frame_seek_mode": "bogus"})
         assert r.status_code == 422
 
 

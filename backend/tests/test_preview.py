@@ -118,6 +118,70 @@ def test_extract_clip_frames_falls_back_to_software_when_hw_decode_fails(tmp_pat
     assert "-hwaccel" not in calls[1]
 
 
+def _capture_ffmpeg_args(monkeypatch):
+    real_run = subprocess.run
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(preview.subprocess, "run", fake_run)
+    return calls
+
+
+def test_extract_frame_image_accurate_mode_omits_noaccurate_seek(tmp_path, monkeypatch):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+    calls = _capture_ffmpeg_args(monkeypatch)
+
+    image = preview.extract_frame_image(video_path, 1.0)
+    assert image is not None
+    assert "-noaccurate_seek" not in calls[0]
+
+
+def test_extract_frame_image_keyframe_mode_adds_noaccurate_seek(tmp_path, monkeypatch):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=2.0, size="320x240")
+    calls = _capture_ffmpeg_args(monkeypatch)
+
+    image = preview.extract_frame_image(video_path, 1.0, seek_mode="keyframe")
+    assert image is not None
+    assert "-noaccurate_seek" in calls[0]
+
+
+def test_extract_frame_image_max_width_downscales_and_adds_scale_filter(tmp_path, monkeypatch):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=2.0, size="640x480")
+    calls = _capture_ffmpeg_args(monkeypatch)
+
+    image = preview.extract_frame_image(video_path, 1.0, max_width=320)
+    assert image is not None
+    assert image.shape[1] <= 320
+    vf_index = calls[0].index("-vf")
+    assert "scale=" in calls[0][vf_index + 1]
+
+
+def test_extract_clip_frames_keyframe_mode_and_max_width(tmp_path, monkeypatch):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="640x480")
+    calls = _capture_ffmpeg_args(monkeypatch)
+
+    # `conftest.make_video()`'s synthetic source is a fixed 5fps/single-keyframe
+    # encode -- a short window right at that keyframe (e.g. duration=0.5s used
+    # elsewhere in this file) can starve ffmpeg's frame-threaded mjpeg encoder
+    # of real frames (observed: "Could not open encoder before EOF", a real
+    # ffmpeg quirk reproduced only on this degenerate fixture, not on actual
+    # footage -- see manual verification against `test-data/VideoArchive`). A
+    # longer window avoids it while still exercising `-noaccurate_seek`.
+    frames = preview.extract_clip_frames(video_path, 0.5, 1.5, fps=8.0, seek_mode="keyframe", max_width=320)
+    assert len(frames) >= 2
+    assert all(frame.shape[1] <= 320 for frame in frames)
+    assert "-noaccurate_seek" in calls[0]
+    vf_index = calls[0].index("-vf")
+    assert "scale=" in calls[0][vf_index + 1]
+
+
 # --- layout geometry ------------------------------------------------------
 
 
@@ -299,6 +363,66 @@ def test_pick_representative_frames_multi_spreads_across_interior(tmp_path):
     assert len(frames) == 3
 
 
+def test_build_shared_gif_palette_limits_color_count():
+    frames = [Image.new("RGB", (40, 40), color) for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]]
+    palette_image = preview._build_shared_gif_palette(frames, colors=8)
+    assert palette_image.mode == "P"
+    assert len(palette_image.getpalette()) // 3 <= 8
+
+
+def test_render_gif_many_frames_uses_shared_palette(tmp_path, monkeypatch):
+    # Regression guard for the per-frame-palette cost this replaced (user
+    # request, chat 2026-07-25): `_build_shared_gif_palette()` should be
+    # called once regardless of frame count, and every frame quantized
+    # against its result -- not a separate ADAPTIVE search per frame.
+    import numpy as np
+
+    colors_bgr = [(0, 0, 255), (0, 255, 0), (255, 0, 0)] * 20
+    frames = [np.full((40, 40, 3), color, dtype=np.uint8) for color in colors_bgr]
+
+    build_calls = []
+    real_build = preview._build_shared_gif_palette
+
+    def spy(frames_arg, colors_arg):
+        build_calls.append(len(frames_arg))
+        return real_build(frames_arg, colors_arg)
+
+    monkeypatch.setattr(preview, "_build_shared_gif_palette", spy)
+
+    dest_path = tmp_path / "many.gif"
+    preview.render_gif(frames, dest_path, 4 / 3, colors=16)
+
+    assert dest_path.exists()
+    assert build_calls == [len(frames)]
+    with Image.open(dest_path) as img:
+        assert img.is_animated
+        assert img.n_frames >= 2
+
+
+def test_generate_file_preview_passes_frame_seek_mode_through(tmp_path, monkeypatch):
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    layout = _layout_from_preset(preview_layouts._BUILTIN_PRESETS[0])
+    dest_path = tmp_path / "movie.jpg"
+
+    seen_modes = []
+    real_extract = preview.extract_frame_image
+
+    def spy(video_path, timestamp, **kwargs):
+        seen_modes.append(kwargs.get("seek_mode"))
+        return real_extract(video_path, timestamp, **kwargs)
+
+    monkeypatch.setattr(preview, "extract_frame_image", spy)
+
+    preview.generate_file_preview(
+        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, frame_seek_mode="accurate"
+    )
+
+    assert seen_modes
+    assert all(mode == "accurate" for mode in seen_modes)
+
+
 def test_render_gif_crops_frames_to_aspect_ratio(tmp_path):
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=2.0, size="320x240")
@@ -359,11 +483,10 @@ def test_render_gif_clip_segments_hold_for_configured_duration(tmp_path):
     assert dest_path.exists()
     with Image.open(dest_path) as img:
         assert img.is_animated
-        # Pillow's GIF writer (optimize=True) can collapse consecutive
-        # frames that end up pixel-identical (the synthetic test source
-        # repeats frames when sampled faster than its own low framerate),
-        # so this only checks that more than one frame survived -- i.e.
-        # the clip burst produced motion, not a single static image.
+        # The synthetic test source repeats frames when sampled faster than
+        # its own low framerate, so this only checks that more than one
+        # frame survived -- i.e. the clip burst produced motion, not a
+        # single static image.
         assert img.n_frames >= 2
 
 
@@ -613,6 +736,7 @@ def test_preview_settings_singleton_roundtrip(engine):
     assert defaults["animated_source_mode"] == preview_settings.DEFAULT_ANIMATED_SOURCE_MODE
     assert defaults["animated_segment_seconds"] == preview_settings.DEFAULT_ANIMATED_SEGMENT_SECONDS
     assert defaults["animated_transition"] == preview_settings.DEFAULT_ANIMATED_TRANSITION
+    assert defaults["frame_seek_mode"] == preview_settings.DEFAULT_FRAME_SEEK_MODE
 
     updated = preview_settings.update_settings(
         engine,
@@ -624,6 +748,7 @@ def test_preview_settings_singleton_roundtrip(engine):
             "animated_source_mode": "clip",
             "animated_segment_seconds": 0.8,
             "animated_transition": "crossfade",
+            "frame_seek_mode": "accurate",
         },
     )
     assert updated["aspect_ratio"] == "ultra-wide"
@@ -633,4 +758,5 @@ def test_preview_settings_singleton_roundtrip(engine):
     assert updated["animated_source_mode"] == "clip"
     assert updated["animated_segment_seconds"] == 0.8
     assert updated["animated_transition"] == "crossfade"
+    assert updated["frame_seek_mode"] == "accurate"
     assert preview_settings.get_settings(engine) == updated

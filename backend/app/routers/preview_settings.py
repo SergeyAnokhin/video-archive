@@ -25,6 +25,7 @@ class PreviewSettingsRequest(BaseModel):
     animated_source_mode: Literal["frame", "clip"] = service.DEFAULT_ANIMATED_SOURCE_MODE
     animated_segment_seconds: float = service.DEFAULT_ANIMATED_SEGMENT_SECONDS
     animated_transition: Literal["cut", "crossfade"] = service.DEFAULT_ANIMATED_TRANSITION
+    frame_seek_mode: Literal["keyframe", "accurate"] = service.DEFAULT_FRAME_SEEK_MODE
 
 
 @router.get("/preview-settings")

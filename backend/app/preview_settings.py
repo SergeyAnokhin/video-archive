@@ -45,6 +45,15 @@ DEFAULT_ANIMATED_SEGMENT_SECONDS = 0.45
 ANIMATED_TRANSITIONS = ("cut", "crossfade")
 DEFAULT_ANIMATED_TRANSITION = "cut"
 
+# ffmpeg frame-extraction seek strategy (user request, chat 2026-07-25 --
+# slow preview generation on underpowered hardware): "keyframe" adds
+# `-noaccurate_seek` for a large speedup at the cost of landing on the
+# nearest keyframe instead of the exact sampled timestamp; "accurate"
+# restores the prior exact-timestamp behavior. See `app/preview.py`'s
+# `extract_frame_image()`/`extract_clip_frames()`.
+FRAME_SEEK_MODES = ("keyframe", "accurate")
+DEFAULT_FRAME_SEEK_MODE = "keyframe"
+
 # Aspect ratio (width / height) for the fixed presets; "custom" uses the
 # stored custom width/height instead (Specification §9.2).
 # "phone-landscape" (19.5:9, wide/short) is the default, user request: it
@@ -73,6 +82,7 @@ def _row_to_dict(row) -> dict:
         "animated_source_mode": row.animated_source_mode,
         "animated_segment_seconds": row.animated_segment_seconds,
         "animated_transition": row.animated_transition,
+        "frame_seek_mode": row.frame_seek_mode,
         "updated_at": row.updated_at,
     }
 
@@ -99,6 +109,7 @@ def update_settings(engine, data: dict) -> dict:
                     animated_source_mode = :animated_source_mode,
                     animated_segment_seconds = :animated_segment_seconds,
                     animated_transition = :animated_transition,
+                    frame_seek_mode = :frame_seek_mode,
                     updated_at = :now
                 WHERE id = 1
                 """
@@ -113,6 +124,7 @@ def update_settings(engine, data: dict) -> dict:
                 "animated_source_mode": data.get("animated_source_mode", DEFAULT_ANIMATED_SOURCE_MODE),
                 "animated_segment_seconds": data.get("animated_segment_seconds", DEFAULT_ANIMATED_SEGMENT_SECONDS),
                 "animated_transition": data.get("animated_transition", DEFAULT_ANIMATED_TRANSITION),
+                "frame_seek_mode": data.get("frame_seek_mode", DEFAULT_FRAME_SEEK_MODE),
                 "now": now,
             },
         )
