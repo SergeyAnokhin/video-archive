@@ -201,6 +201,11 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     return _run_directory_scope(engine, job, access, params, layout, aspect_ratio, settings, worker_count)
 
 
+def _format_duration(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes}:{secs:02d}"
+
+
 def _run_file_scope(
     engine,
     job: dict,
@@ -224,6 +229,7 @@ def _run_file_scope(
     service.log_event(
         engine, job["id"], row.id, "info", "job_item_started", f"Generating preview for {row.relative_path}"
     )
+    started_at = time.monotonic()
     try:
         # Only one file here: spend the full configured parallelism on this
         # file's own independent frame extractions instead (see
@@ -234,7 +240,8 @@ def _run_file_scope(
         _mark_file_previewed(engine, row.id, info)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
-            engine, job["id"], row.id, "info", "job_item_completed", f"Preview generated for {row.relative_path}"
+            engine, job["id"], row.id, "info", "job_item_completed",
+            f"Preview generated for {row.relative_path} ({_format_duration(time.monotonic() - started_at)})",
         )
         return "completed", "Preview generated."
     except Exception as exc:  # noqa: BLE001 - failure is reported through the job, not raised further
@@ -260,6 +267,7 @@ def _process_preview_file(
     service.log_event(
         engine, job_id, row.id, "info", "job_item_started", f"Generating preview for {row.relative_path}"
     )
+    started_at = time.monotonic()
     try:
         # Several files already run side by side here, so each one keeps its
         # own frame extraction sequential (max_workers=1, the default) --
@@ -271,7 +279,8 @@ def _process_preview_file(
         _mark_file_previewed(engine, row.id, info)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
         service.log_event(
-            engine, job_id, row.id, "info", "job_item_completed", f"Preview generated for {row.relative_path}"
+            engine, job_id, row.id, "info", "job_item_completed",
+            f"Preview generated for {row.relative_path} ({_format_duration(time.monotonic() - started_at)})",
         )
         return True
     except Exception as exc:  # noqa: BLE001 - one file's failure must not abort the job
