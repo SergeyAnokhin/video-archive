@@ -13,6 +13,7 @@ import { BackupMaintenanceSection } from './BackupMaintenanceSection'
 import { InterfaceSection } from './InterfaceSection'
 import { PerformanceSettingsSection } from './PerformanceSettingsSection'
 import { ResourceMonitorSettingsSection } from './ResourceMonitorSettingsSection'
+import { LogRotationSettingsSection } from './LogRotationSettingsSection'
 import { NetworkAccessSection } from './NetworkAccessSection'
 import { BackendHealthSettingsSection } from './BackendHealthSettingsSection'
 import './SettingsModal.css'
@@ -72,6 +73,7 @@ function PerformanceTabSection() {
     <>
       <PerformanceSettingsSection />
       <ResourceMonitorSettingsSection />
+      <LogRotationSettingsSection />
     </>
   )
 }

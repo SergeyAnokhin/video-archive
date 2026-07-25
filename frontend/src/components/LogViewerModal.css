@@ -144,7 +144,8 @@
   text-align: right;
 }
 
-.log-viewer__file-download {
+.log-viewer__file-download,
+.log-viewer__file-delete {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -153,10 +154,25 @@
   min-height: var(--touch-target-min);
   color: var(--color-text);
   border-radius: var(--radius-sm);
+  border: none;
+  background: none;
+  cursor: pointer;
 }
 
-.log-viewer__file-download:hover {
+.log-viewer__file-download:hover,
+.log-viewer__file-delete:hover {
   background: var(--color-surface-raised);
+}
+
+.log-viewer__file-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.log-viewer__file-error {
+  color: var(--color-danger);
+  font-size: 12px;
+  padding: 0 var(--space-2) var(--space-2);
 }
 
 .log-viewer__filters {

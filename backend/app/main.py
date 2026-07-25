@@ -10,7 +10,8 @@ from app.hardware_accel import check_hardware_accel
 from app.hardware_decode import check_hardware_decode, log_status as log_hardware_decode_status
 from app.jobs import service as jobs_service
 from app.jobs.worker import JobWorker
-from app.logging_config import configure_logging
+from app.log_rotation_settings import get_settings as get_log_rotation_settings
+from app.logging_config import apply_rotation_settings, configure_logging
 from app.request_logging import RequestLoggingMiddleware
 from app.resource_monitor import ResourceMonitor
 from app.routers import (
@@ -27,6 +28,7 @@ from app.routers import (
     interface_settings,
     jobs,
     log_files,
+    log_rotation_settings,
     logs,
     performance_settings,
     playback,
@@ -59,6 +61,12 @@ _resource_monitor = ResourceMonitor()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # `configure_logging()` ran at import time, before the DB existed, so it
+    # started the file handler from log_rotation_settings' hardcoded
+    # defaults -- sync it to whatever's actually persisted now that init_db
+    # has seeded/loaded the row.
+    _rotation_settings = get_log_rotation_settings(get_engine())
+    apply_rotation_settings(_rotation_settings["max_bytes"], _rotation_settings["backup_count"])
     app.state.app_version = APP_VERSION
     app.state.ffmpeg_status = check_ffmpeg()
     app.state.hardware_accel_status = check_hardware_accel()
@@ -110,6 +118,7 @@ app.include_router(playback_settings.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
 app.include_router(log_files.router, prefix="/api")
+app.include_router(log_rotation_settings.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")
 app.include_router(backup_settings.router, prefix="/api")
 app.include_router(performance_settings.router, prefix="/api")

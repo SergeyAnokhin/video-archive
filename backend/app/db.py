@@ -811,6 +811,20 @@ MIGRATIONS: dict[int, list[str]] = {
     44: [
         "ALTER TABLE preview_settings ADD COLUMN frame_seek_mode TEXT NOT NULL DEFAULT 'keyframe'",
     ],
+    # Configurable log rotation (chat request): `backend.log` used to rotate
+    # on a hardcoded 5-minute timer with one backup -- this lets the user
+    # set a size threshold and how many backups to keep instead, see
+    # `app/log_rotation_settings.py` / `app/logging_config.py`.
+    45: [
+        """
+        CREATE TABLE IF NOT EXISTS log_rotation_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            max_bytes INTEGER NOT NULL DEFAULT 5242880,
+            backup_count INTEGER NOT NULL DEFAULT 5,
+            updated_at TEXT NOT NULL
+        )
+        """,
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)
@@ -921,6 +935,11 @@ def init_db() -> int:
             from app.resource_monitor_settings import seed_default_settings as seed_default_resource_monitor_settings
 
             seed_default_resource_monitor_settings(conn)
+
+        if current_version < 45 <= SCHEMA_VERSION:
+            from app.log_rotation_settings import seed_default_settings as seed_default_log_rotation_settings
+
+            seed_default_log_rotation_settings(conn)
 
     return SCHEMA_VERSION
 

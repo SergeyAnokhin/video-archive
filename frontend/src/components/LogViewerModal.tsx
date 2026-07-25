@@ -1,7 +1,7 @@
-import { Check, Copy, Download, Maximize2, Minimize2, X } from 'lucide-react'
+import { Check, Copy, Download, Maximize2, Minimize2, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { tryApi } from '../api/client'
+import { api, ApiError, tryApi } from '../api/client'
 import type { LogEvent, LogFile } from '../types/api'
 import './LogViewerModal.css'
 
@@ -22,13 +22,31 @@ function formatFileSize(bytes: number): string {
 function LogFilesPanel() {
   const { t } = useTranslation()
   const [files, setFiles] = useState<LogFile[] | null>(null)
+  const [busyName, setBusyName] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function loadFiles() {
+    const data = await tryApi<{ files: LogFile[] }>('/api/log-files')
+    if (data) setFiles(data.files)
+  }
 
   useEffect(() => {
-    void (async () => {
-      const data = await tryApi<{ files: LogFile[] }>('/api/log-files')
-      if (data) setFiles(data.files)
-    })()
+    void loadFiles()
   }, [])
+
+  async function handleDelete(file: LogFile) {
+    if (!window.confirm(t('logs.confirmDelete', { name: file.name }))) return
+    setBusyName(file.name)
+    setError(null)
+    try {
+      await api(`/api/log-files/${encodeURIComponent(file.name)}`, { method: 'DELETE' })
+      await loadFiles()
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 409 ? t('logs.deleteActiveFileError') : t('logs.deleteError'))
+    } finally {
+      setBusyName(null)
+    }
+  }
 
   return (
     <div className="log-viewer__files">
@@ -49,8 +67,19 @@ function LogFilesPanel() {
             >
               <Download size={14} />
             </a>
+            <button
+              type="button"
+              className="log-viewer__file-delete"
+              onClick={() => void handleDelete(file)}
+              disabled={busyName === file.name}
+              aria-label={t('logs.delete')}
+              title={t('logs.delete')}
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         ))}
+      {error && <p className="log-viewer__file-error">{error}</p>}
     </div>
   )
 }

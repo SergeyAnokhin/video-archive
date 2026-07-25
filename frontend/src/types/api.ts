@@ -481,6 +481,12 @@ export interface PerformanceSettings {
   updated_at: string
 }
 
+export interface LogRotationSettings {
+  max_bytes: number
+  backup_count: number
+  updated_at: string
+}
+
 export interface ResourceMonitorSettings {
   enabled: boolean
   interval_seconds: number

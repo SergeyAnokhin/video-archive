@@ -14,8 +14,10 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+from app.log_rotation_settings import DEFAULT_BACKUP_COUNT, DEFAULT_MAX_BYTES
 
 # Deliberately *outside* `backend/` (repo root instead): `uvicorn --reload`
 # watches the whole `backend/` tree (package.json's `--reload-exclude "*.db*"`
@@ -88,7 +90,7 @@ class _ColorConsoleFormatter(_AbbreviatingFormatter):
         return time_str
 
 
-class _WindowsSafeTimedRotatingFileHandler(TimedRotatingFileHandler):
+class _WindowsSafeRotatingFileHandler(RotatingFileHandler):
     """Skip a rollover instead of raising if the file is still locked.
 
     `--reload` briefly runs old and new worker processes back to back, both
@@ -96,7 +98,7 @@ class _WindowsSafeTimedRotatingFileHandler(TimedRotatingFileHandler):
     other process's rename in `doRollover` fail with `PermissionError`. It's
     already non-fatal (stdlib's `emit` catches it and just prints "Logging
     error"), but the traceback is noisy -- swallow it and retry at the next
-    interval instead.
+    write instead.
     """
 
     def doRollover(self) -> None:
@@ -104,6 +106,22 @@ class _WindowsSafeTimedRotatingFileHandler(TimedRotatingFileHandler):
             super().doRollover()
         except PermissionError:
             pass
+
+
+_file_handler: _WindowsSafeRotatingFileHandler | None = None
+
+
+def apply_rotation_settings(max_bytes: int, backup_count: int) -> None:
+    """Push a `log_rotation_settings` change onto the live handler.
+
+    `RotatingFileHandler` only reads `maxBytes`/`backupCount` off `self` at
+    each rollover check, so mutating them in place takes effect on the very
+    next log line -- no restart needed. No-op if `configure_logging()`
+    hasn't run yet (shouldn't happen outside of tests).
+    """
+    if _file_handler is not None:
+        _file_handler.maxBytes = max_bytes
+        _file_handler.backupCount = backup_count
 
 
 def configure_logging() -> None:
@@ -122,18 +140,22 @@ def configure_logging() -> None:
         _ColorConsoleFormatter(_CONSOLE_FORMAT, datefmt=_TIME_FORMAT, use_color=sys.stderr.isatty())
     )
 
-    # Rotates every 5 minutes, one backup kept -- the file always holds the
-    # last 5-10 minutes of activity (enough to diagnose an error just seen
-    # in the console) without growing unbounded over a long dev session.
-    file_handler = _WindowsSafeTimedRotatingFileHandler(
-        LOG_FILE, when="M", interval=5, backupCount=1, encoding="utf-8"
+    # Rotates once the file passes a size threshold, keeping a configurable
+    # number of backups (user-adjustable via `/api/log-rotation-settings`,
+    # see `app/log_rotation_settings.py`) -- starts from the hardcoded
+    # defaults since this runs at import time, before `init_db()` has a
+    # chance to load the persisted values (`main.py`'s `lifespan()` calls
+    # `apply_rotation_settings()` with the DB values once it's up).
+    global _file_handler
+    _file_handler = _WindowsSafeRotatingFileHandler(
+        LOG_FILE, maxBytes=DEFAULT_MAX_BYTES, backupCount=DEFAULT_BACKUP_COUNT, encoding="utf-8"
     )
-    file_handler.setFormatter(_AbbreviatingFormatter(_FILE_FORMAT, datefmt=_TIME_FORMAT))
+    _file_handler.setFormatter(_AbbreviatingFormatter(_FILE_FORMAT, datefmt=_TIME_FORMAT))
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(console_handler)
-    root.addHandler(file_handler)
+    root.addHandler(_file_handler)
 
     # `app.request_logging`'s middleware replaces uvicorn's own access log
     # with a quieter, more informative one (see there for the format and the

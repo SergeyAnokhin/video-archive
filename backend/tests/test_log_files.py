@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 import app.db as db_module
+from app.logging_config import LOG_FILE
 from app.main import app
 from app.routers import log_files
 
@@ -63,3 +64,51 @@ def test_download_log_file_rejects_path_traversal(tmp_path, monkeypatch):
 
         r = client.get("/api/log-files/missing.log")
         assert r.status_code == 404
+
+
+def test_delete_log_file(tmp_path, monkeypatch):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    monkeypatch.setattr(log_files, "LOG_DIR", log_dir)
+    (log_dir / "resource_usage.log").write_text("cpu_percent=1.0", encoding="utf-8")
+
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.delete("/api/log-files/resource_usage.log")
+        assert r.status_code == 200
+        assert r.json() == {"deleted": "resource_usage.log"}
+
+        assert client.get("/api/log-files").json()["files"] == []
+
+
+def test_delete_log_file_refuses_active_log(tmp_path, monkeypatch):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    monkeypatch.setattr(log_files, "LOG_DIR", log_dir)
+    (log_dir / LOG_FILE.name).write_text("hello", encoding="utf-8")
+
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.delete(f"/api/log-files/{LOG_FILE.name}")
+        assert r.status_code == 409
+        assert (log_dir / LOG_FILE.name).exists()
+
+
+def test_delete_log_file_rejects_path_traversal(tmp_path, monkeypatch):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    monkeypatch.setattr(log_files, "LOG_DIR", log_dir)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("should not be deletable", encoding="utf-8")
+
+    monkeypatch.setattr(db_module, "DATABASE_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(db_module, "_engine", None)
+
+    with TestClient(app) as client:
+        r = client.delete("/api/log-files/..%2Fsecret.txt")
+        assert r.status_code in (400, 404)
+        assert secret.exists()

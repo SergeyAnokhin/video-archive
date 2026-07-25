@@ -112,6 +112,12 @@
     "intervalSeconds": "Log interval (seconds)",
     "intervalHint": "A shorter interval gives a more detailed picture but increases log volume and polling overhead. Download the file from the log viewer."
   },
+  "logRotation": {
+    "title": "Log rotation",
+    "hint": "backend.log switches to a new file once it reaches the size below; older copies are kept up to the count below. Changes apply immediately, no restart needed.",
+    "maxSizeMb": "Max file size (MB)",
+    "backupCount": "Backups to keep"
+  },
   "networkAccess": {
     "title": "Network",
     "hint": "Open this app from a phone on the same network. The backend and every file always stay on this PC -- the phone only shows the interface and streams video from it.",
@@ -737,7 +743,11 @@
     "viewFiles": "Log files",
     "filesLoading": "Loading file list…",
     "filesEmpty": "No log files yet.",
-    "download": "Download"
+    "download": "Download",
+    "delete": "Delete",
+    "confirmDelete": "Delete file {{name}}?",
+    "deleteActiveFileError": "Can't delete the active log file — it's in use by the backend.",
+    "deleteError": "Failed to delete the file."
   },
   "indicators": {
     "conversionIncomplete": "Not all videos converted yet ({{converted}}/{{total}})",

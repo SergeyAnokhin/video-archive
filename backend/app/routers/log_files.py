@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
-from app.logging_config import LOG_DIR
+from app.logging_config import LOG_DIR, LOG_FILE
 
 router = APIRouter()
 
@@ -62,3 +62,18 @@ def download_log_file(filename: str):
     data = path.read_bytes()
     headers = {"Content-Disposition": f'attachment; filename="{path.name}"'}
     return Response(content=data, media_type="text/plain", headers=headers)
+
+
+@router.delete("/log-files/{filename}")
+def delete_log_file(filename: str) -> dict:
+    path = _resolve_log_file(filename)
+    # The active log is held open by the running process; deleting it out
+    # from under the handler fails with PermissionError on Windows (and just
+    # orphans the handle on POSIX, silently losing new lines) -- refuse it
+    # with a clear error instead of a confusing 500. Matched by filename
+    # rather than the resolved LOG_FILE path since LOG_DIR itself can vary
+    # (VIDEO_ARCHIVE_STATE_DIR, tests).
+    if path.name == LOG_FILE.name:
+        raise HTTPException(status_code=409, detail="Cannot delete the active log file")
+    path.unlink()
+    return {"deleted": filename}
