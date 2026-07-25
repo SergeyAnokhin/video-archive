@@ -12,6 +12,7 @@ import { AppSettingsExportSection } from './AppSettingsExportSection'
 import { BackupMaintenanceSection } from './BackupMaintenanceSection'
 import { InterfaceSection } from './InterfaceSection'
 import { PerformanceSettingsSection } from './PerformanceSettingsSection'
+import { ResourceHistoryChartSection } from './ResourceHistoryChartSection'
 import { ResourceMonitorSettingsSection } from './ResourceMonitorSettingsSection'
 import { LogRotationSettingsSection } from './LogRotationSettingsSection'
 import { NetworkAccessSection } from './NetworkAccessSection'
@@ -71,6 +72,7 @@ function NetworkSettingsSection() {
 function PerformanceTabSection() {
   return (
     <>
+      <ResourceHistoryChartSection />
       <PerformanceSettingsSection />
       <ResourceMonitorSettingsSection />
       <LogRotationSettingsSection />

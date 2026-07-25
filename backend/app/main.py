@@ -36,6 +36,7 @@ from app.routers import (
     preview_layouts,
     preview_settings,
     providers,
+    resource_monitor_history,
     resource_monitor_settings,
     source,
     sources,
@@ -123,4 +124,5 @@ app.include_router(backups.router, prefix="/api")
 app.include_router(backup_settings.router, prefix="/api")
 app.include_router(performance_settings.router, prefix="/api")
 app.include_router(resource_monitor_settings.router, prefix="/api")
+app.include_router(resource_monitor_history.router, prefix="/api")
 app.include_router(app_settings.router, prefix="/api")

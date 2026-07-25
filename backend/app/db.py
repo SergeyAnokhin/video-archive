@@ -825,6 +825,24 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Post-V1 (chat request 2026-07-25 -- Settings -> Performance CPU/memory/
+    # network history chart): resource_monitor's samples were log-only
+    # (`app/resource_monitor.py`); this stores them so a time range can be
+    # queried back out for the chart. Retention is capped at 24h by
+    # `app/resource_monitor_history.py`'s own pruning on every write -- no
+    # seed data needed, unlike the settings singletons above.
+    46: [
+        """
+        CREATE TABLE IF NOT EXISTS resource_monitor_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL NOT NULL,
+            cpu_percent REAL NOT NULL,
+            memory_percent REAL NOT NULL,
+            network_bytes_per_sec REAL NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_resource_monitor_samples_timestamp ON resource_monitor_samples (timestamp)",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

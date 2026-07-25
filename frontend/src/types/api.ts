@@ -493,6 +493,19 @@ export interface ResourceMonitorSettings {
   updated_at: string
 }
 
+export interface ResourceHistoryPoint {
+  timestamp: number
+  cpu_percent: number
+  memory_percent: number
+  network_percent: number
+}
+
+export interface ResourceHistory {
+  range_seconds: number
+  network_scale_bytes_per_sec: number
+  points: ResourceHistoryPoint[]
+}
+
 export interface LogFile {
   name: string
   size_bytes: number

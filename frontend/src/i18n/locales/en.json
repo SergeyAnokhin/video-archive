@@ -105,6 +105,20 @@
     "hardwareDecode": "Decode (preview, conversion)",
     "hardwareStatusHint": "Shows whether Intel QSV/VAAPI hardware acceleration is detected on this backend, not whether it's in use right now — actual usage shows up in the job log (🚀 messages)."
   },
+  "resourceHistoryChart": {
+    "title": "Resource usage history",
+    "hint": "CPU, memory, and network usage sampled at the interval set below (\"Resource monitoring\" → log interval). Longer ranges group samples together and plot the highest value seen in each group, so brief spikes stay visible instead of being averaged away.",
+    "rangeLabel": "Range",
+    "range30m": "30 min",
+    "range4h": "4 hours",
+    "range12h": "12 hours",
+    "range24h": "24 hours",
+    "legendCpu": "CPU",
+    "legendMemory": "Memory",
+    "legendNetwork": "Network",
+    "networkTooltip": "Relative to the highest network throughput seen in the last 24h ({{value}}/s)",
+    "noData": "No samples yet — enable resource monitoring below, or wait for the next sample."
+  },
   "resourceMonitor": {
     "title": "Resource monitoring",
     "hint": "Periodically records backend CPU and memory usage into logs/backend.log (marked with 📊) — helps pinpoint when, and during which job, memory starts climbing before a crash.",
