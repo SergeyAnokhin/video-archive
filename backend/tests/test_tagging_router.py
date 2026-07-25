@@ -404,6 +404,33 @@ def test_provider_entries_import_round_trips_export_and_skips_unknown_types(tmp_
         assert all(e["has_api_key"] for e in all_entries)
 
 
+def test_provider_entries_export_and_import_round_trip_model_pricing(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        client.put(
+            "/api/settings/model-pricing",
+            json={
+                "provider_type": "gemini",
+                "model_name": "gemini-custom",
+                "input_per_million": 1.23,
+                "output_per_million": 4.56,
+            },
+        )
+        exported = client.get("/api/settings/provider-entries/export").json()
+        assert any(p["model_name"] == "gemini-custom" for p in exported["model_pricing"])
+
+        r = client.post(
+            "/api/settings/provider-entries/import",
+            json={"entries": [], "model_pricing": exported["model_pricing"]},
+        )
+        assert r.status_code == 200
+        assert r.json()["prices_imported"] == len(exported["model_pricing"])
+
+        prices = client.get("/api/settings/model-pricing").json()["prices"]
+        restored = next(p for p in prices if p["model_name"] == "gemini-custom")
+        assert restored["input_per_million"] == 1.23
+        assert restored["output_per_million"] == 4.56
+
+
 def test_provider_entries_model_listing_endpoints_over_http(tmp_path, monkeypatch):
     monkeypatch.setattr(
         registry, "list_models_for_provider_type", lambda provider_type, api_key: ["model-a", "model-b"]

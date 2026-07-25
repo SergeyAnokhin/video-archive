@@ -9,6 +9,12 @@ warning before triggering the download. `POST .../import` reads that same
 export shape back in, creating one new entry per item (invalid
 `provider_type` values are skipped, not fatal, since a hand-edited file
 shouldn't abort the whole batch).
+
+The export/import also carries `model_pricing` (user request -- re-entering
+per-model $/1M-token prices by hand after a restore was too tedious):
+`model_pricing` rows are keyed by `(provider_type, model_name)`, not by
+provider entry, so they're exported/imported as their own list alongside
+`entries` and upserted independently of entry creation.
 """
 
 from __future__ import annotations
@@ -58,8 +64,17 @@ class ProviderEntryImportItem(BaseModel):
     api_key: str | None = None
 
 
+class ModelPricingImportItem(BaseModel):
+    provider_type: str
+    model_name: str
+    input_per_million: float | None = None
+    output_per_million: float | None = None
+    source: str = "manual"
+
+
 class ProviderEntriesImportRequest(BaseModel):
     entries: list[ProviderEntryImportItem]
+    model_pricing: list[ModelPricingImportItem] = []
 
 
 class ReorderRequest(BaseModel):
@@ -220,6 +235,7 @@ def export_provider_entries():
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "app_version": APP_VERSION,
         "entries": entries,
+        "model_pricing": model_pricing.list_prices(engine),
     }
     return Response(
         content=json.dumps(payload, indent=2),
@@ -238,4 +254,15 @@ def import_provider_entries(body: ProviderEntriesImportRequest):
             created.append(service.create_entry(engine, item.model_dump()))
         except service.UnknownProviderTypeError:
             skipped += 1
-    return {"entries": created, "skipped": skipped}
+
+    prices_imported = 0
+    for price in body.model_pricing:
+        if price.input_per_million is None or price.output_per_million is None:
+            continue
+        model_pricing.upsert_price(
+            engine, price.provider_type, price.model_name,
+            price.input_per_million, price.output_per_million, price.source,
+        )
+        prices_imported += 1
+
+    return {"entries": created, "skipped": skipped, "prices_imported": prices_imported}

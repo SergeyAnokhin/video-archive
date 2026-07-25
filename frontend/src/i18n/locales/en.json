@@ -435,10 +435,11 @@
     "applying": "Applying…",
     "statsLikeRatioTooltip": "Share of liked tags among all liked/disliked tags from this model's runs (ignores tags with no vote).",
     "statsLikeRatioValue": "{{percent}}%",
+    "statsPercentValue": "{{percent}}%",
     "statsNoData": "no data yet",
-    "statsUnchangedTooltip": "Runs applied exactly as suggested, with no tags added or removed.",
-    "statsChangedTooltip": "Runs applied with edits — tags added and/or removed before applying.",
-    "statsNotAppliedTooltip": "Runs whose suggestion was never applied.",
+    "statsUnchangedTooltip": "Share of runs applied exactly as suggested, with no tags added or removed, out of all runs.",
+    "statsChangedTooltip": "Share of runs applied with edits — tags added and/or removed before applying, out of all runs.",
+    "statsTotalRunsTooltip": "Total number of attempts (runs) with this model.",
     "like": "Good tag",
     "dislike": "Bad tag",
     "pricePerMillion": "${{input}} in / ${{output}} out per 1M tokens",
@@ -622,6 +623,7 @@
     "importConfirm": "This will add provider entries from the selected file, including any API keys it contains. Continue?",
     "importResult": "Imported {{count}} provider(s).",
     "importResultWithSkipped": "Imported {{count}} provider(s), skipped {{skipped}} with an unknown provider type.",
+    "importResultPrices": "Updated {{count}} model price(s).",
     "importError": "Could not import provider entries. Make sure the file is a valid export."
   },
   "providers": {

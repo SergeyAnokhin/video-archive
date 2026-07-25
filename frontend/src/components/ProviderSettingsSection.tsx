@@ -114,16 +114,24 @@ export function ProviderSettingsSection() {
     if (!window.confirm(t('providerSettings.importConfirm'))) return
     try {
       const parsed = JSON.parse(await file.text())
-      const json = await api<{ entries: ProviderEntry[]; skipped: number }>('/api/settings/provider-entries/import', {
-        method: 'POST',
-        body: { entries: parsed.entries ?? [] },
-      })
+      const json = await api<{ entries: ProviderEntry[]; skipped: number; prices_imported: number }>(
+        '/api/settings/provider-entries/import',
+        {
+          method: 'POST',
+          body: { entries: parsed.entries ?? [], model_pricing: parsed.model_pricing ?? [] },
+        },
+      )
       await refresh()
-      window.alert(
+      await refreshPrices()
+      const base =
         json.skipped > 0
           ? t('providerSettings.importResultWithSkipped', { count: json.entries.length, skipped: json.skipped })
-          : t('providerSettings.importResult', { count: json.entries.length }),
-      )
+          : t('providerSettings.importResult', { count: json.entries.length })
+      const message =
+        json.prices_imported > 0
+          ? `${base} ${t('providerSettings.importResultPrices', { count: json.prices_imported })}`
+          : base
+      window.alert(message)
     } catch {
       window.alert(t('providerSettings.importError'))
     }

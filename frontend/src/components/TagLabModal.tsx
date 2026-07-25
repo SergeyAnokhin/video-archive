@@ -137,9 +137,16 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     }
   }
 
+  async function refreshRatings() {
+    const json = await tryApi<{ ratings: ModelStats[] }>('/api/settings/model-ratings')
+    if (json) {
+      setRatings(json.ratings)
+    }
+  }
+
   useEffect(() => {
     void refreshPrices()
-    tryApi<{ ratings: ModelStats[] }>('/api/settings/model-ratings').then((json) => setRatings(json?.ratings ?? []))
+    void refreshRatings()
   }, [])
 
   const selectedEntry = entries.find((entry) => entry.id === entryId) ?? null
@@ -211,6 +218,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
             source: 'model',
           })),
       )
+      void refreshRatings()
     } catch (err) {
       setRunError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -284,6 +292,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
         }
         return next
       })
+      void refreshRatings()
     } catch {
       // Best-effort -- a failed vote just leaves the button unchanged.
     }
@@ -344,6 +353,7 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
           ),
         },
       })
+      void refreshRatings()
       onApplied()
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : String(err))
@@ -390,13 +400,23 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
                 : t('tagLab.statsNoData')}
             </span>
             <span title={t('tagLab.statsUnchangedTooltip')}>
-              ✅ {selectedStats?.applied_unchanged_count ?? 0}
+              ✅{' '}
+              {selectedStats && selectedStats.runs_total > 0
+                ? t('tagLab.statsPercentValue', {
+                    percent: Math.round((selectedStats.applied_unchanged_count / selectedStats.runs_total) * 100),
+                  })
+                : t('tagLab.statsNoData')}
             </span>
             <span title={t('tagLab.statsChangedTooltip')}>
-              ✏️ {selectedStats?.applied_changed_count ?? 0}
+              ✏️{' '}
+              {selectedStats && selectedStats.runs_total > 0
+                ? t('tagLab.statsPercentValue', {
+                    percent: Math.round((selectedStats.applied_changed_count / selectedStats.runs_total) * 100),
+                  })
+                : t('tagLab.statsNoData')}
             </span>
-            <span title={t('tagLab.statsNotAppliedTooltip')}>
-              🚫 {selectedStats?.not_applied_count ?? 0}
+            <span title={t('tagLab.statsTotalRunsTooltip')}>
+              🔁 {selectedStats?.runs_total ?? 0}
             </span>
           </p>
         )}
