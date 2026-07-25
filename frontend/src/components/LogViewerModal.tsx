@@ -13,6 +13,33 @@ interface LogViewerModalProps {
 const LEVELS = ['debug', 'info', 'warning', 'error'] as const
 const MAX_EVENTS = 500
 
+// Cycled by file_index so each file gets a consistent, visually distinct
+// badge color even without clicking to filter. Text color is derived from
+// luminance so it stays readable against whichever color lands.
+const FILE_BADGE_COLORS = [
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#14b8a6',
+  '#3b82f6',
+  '#8b5cf6',
+  '#ec4899',
+]
+
+function fileBadgeTextColor(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.6 ? '#000000' : '#ffffff'
+}
+
+function fileBadgeColors(fileIndex: number): { background: string; color: string } {
+  const background = FILE_BADGE_COLORS[fileIndex % FILE_BADGE_COLORS.length]
+  return { background, color: fileBadgeTextColor(background) }
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -309,6 +336,7 @@ export function LogViewerModal({ onClose, initialJobId = null }: LogViewerModalP
                       <button
                         type="button"
                         className={`log-viewer__file-badge${isActiveFileFilter ? ' log-viewer__file-badge--active' : ''}`}
+                        style={fileBadgeColors(fileIndex)}
                         title={t('logs.filterByFile')}
                         onClick={() => setFileIdFilter(isActiveFileFilter ? '' : (event.file_id ?? ''))}
                       >

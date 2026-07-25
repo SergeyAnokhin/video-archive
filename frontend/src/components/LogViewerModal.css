@@ -287,9 +287,8 @@
 }
 
 .log-viewer__file-badge--active {
-  background: var(--color-accent);
-  border-color: transparent;
-  color: var(--color-accent-contrast);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 .log-viewer__row--warning .log-viewer__time {
