@@ -121,10 +121,10 @@
   },
   "resourceMonitor": {
     "title": "Resource monitoring",
-    "hint": "Periodically records backend CPU and memory usage into logs/backend.log (marked with 📊) — helps pinpoint when, and during which job, memory starts climbing before a crash.",
-    "enabled": "Enable periodic logging",
-    "intervalSeconds": "Log interval (seconds)",
-    "intervalHint": "A shorter interval gives a more detailed picture but increases log volume and polling overhead. Download the file from the log viewer."
+    "hint": "Periodically measures backend CPU, memory, and network usage. History for the chart above is always recorded, regardless of the toggle below — it only controls the extra line written to logs/backend.log (marked with 📊), which helps pinpoint when, and during which job, memory starts climbing before a crash.",
+    "enabled": "Also write to log (backend.log)",
+    "intervalSeconds": "Sampling interval (seconds)",
+    "intervalHint": "A shorter interval gives a more detailed picture but increases log volume (if logging is enabled) and polling overhead. Download the file from the log viewer."
   },
   "logRotation": {
     "title": "Log rotation",

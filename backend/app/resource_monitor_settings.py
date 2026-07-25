@@ -1,10 +1,13 @@
-"""Global resource-usage monitoring settings singleton (chat request):
-whether the backend periodically samples its own CPU/memory (see
-`app/resource_monitor.py`) and how often. Added to diagnose Kubernetes OOM
-restarts that were silently killing in-progress jobs -- the sampler logs
-into `logs/backend.log` (see `app/resource_monitor.py`) so the trend
-leading up to a restart is visible without cluster disk access. Same
-singleton pattern as `performance_settings`.
+"""Global resource-usage monitoring settings singleton (chat request): how
+often the backend samples its own CPU/memory (see `app/resource_monitor.py`)
+and whether each sample is also logged into `logs/backend.log`. Sampling
+itself always runs at `interval_seconds` and always feeds the Settings ->
+Performance history chart (`app/resource_monitor_history.py`); `enabled`
+only toggles the extra log line -- added to diagnose Kubernetes OOM
+restarts that were silently killing in-progress jobs, `enabled` was later
+narrowed to just the log so users could quiet `backend.log` without losing
+history (chat request 2026-07-25). Same singleton pattern as
+`performance_settings`.
 """
 
 from __future__ import annotations

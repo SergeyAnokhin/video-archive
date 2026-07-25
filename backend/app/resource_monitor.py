@@ -5,19 +5,21 @@ reap_orphaned_jobs`), silently killing whatever job was running. There was
 no way to see the memory trend leading up to a restart without cluster disk
 access, so this samples `app.routers.system_stats.get_system_stats()` (same
 whole-process-tree CPU/memory figures the frontend gauge already uses) on a
-user-configurable interval and logs it into the regular `backend.log`
-(downloadable via `app.routers.log_files`), prefixed with 📊 so samples are
-easy to pick out visually from the rest of the log.
+user-configurable interval.
 
-Each sample is also written to `resource_monitor_samples`
+Every sample is written to `resource_monitor_samples`
 (`app.resource_monitor_history`) for the Settings -> Performance history
-chart. `smb_bytes_transferred_total` is a cumulative counter, so the
-per-second network rate is derived here from the delta against the previous
-sample, mirroring how the frontend's own live gauge derives it
-(`frontend/src/utils/backendStats.ts`).
+chart, unconditionally -- the `enabled` setting only gates the extra
+`backend.log` line (prefixed with 📊, downloadable via `app.routers.
+log_files`), so history keeps recording at the configured interval even
+when logging is turned off (chat request 2026-07-25: users wanted to quiet
+the log without losing the chart data). `smb_bytes_transferred_total` is a
+cumulative counter, so the per-second network rate is derived here from the
+delta against the previous sample, mirroring how the frontend's own live
+gauge derives it (`frontend/src/utils/backendStats.ts`).
 
 Runs as a single daemon thread, mirroring `app.jobs.worker._Lane`'s
-start/stop/loop shape. The interval (and enabled flag) are re-read from the
+start/stop/loop shape. The interval and enabled flag are re-read from the
 database every tick so a change made in Settings takes effect on the next
 tick without a backend restart.
 """
@@ -64,20 +66,21 @@ class ResourceMonitor:
         while not self._stop_event.is_set():
             settings = settings_service.get_settings(engine)
             now = time.monotonic()
-            if settings["enabled"] and now - last_sample >= settings["interval_seconds"]:
-                self._sample(engine)
+            if now - last_sample >= settings["interval_seconds"]:
+                self._sample(engine, log_enabled=settings["enabled"])
                 last_sample = now
             self._stop_event.wait(_POLL_INTERVAL_SECONDS)
 
-    def _sample(self, engine) -> None:
+    def _sample(self, engine, log_enabled: bool) -> None:
         stats = get_system_stats()
-        _logger.info(
-            "📊 cpu_percent=%.1f memory_rss_mb=%.1f memory_percent=%.1f smb_bytes_transferred_total=%d",
-            stats["cpu_percent"],
-            stats["memory_rss_bytes"] / (1024 * 1024),
-            stats["memory_percent"],
-            stats["smb_bytes_transferred_total"],
-        )
+        if log_enabled:
+            _logger.info(
+                "📊 cpu_percent=%.1f memory_rss_mb=%.1f memory_percent=%.1f smb_bytes_transferred_total=%d",
+                stats["cpu_percent"],
+                stats["memory_rss_bytes"] / (1024 * 1024),
+                stats["memory_percent"],
+                stats["smb_bytes_transferred_total"],
+            )
 
         timestamp = stats["timestamp"]
         network_bytes_per_sec = 0.0
