@@ -10,7 +10,7 @@
 .resource-history-chart__legend {
   position: absolute;
   top: calc(var(--space-2) + 4px);
-  right: calc(var(--space-2) + 4px);
+  left: calc(var(--space-2) + 4px);
   z-index: 1;
   display: flex;
   flex-wrap: wrap;

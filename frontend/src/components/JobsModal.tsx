@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { tryApi } from '../api/client'
 import { useJobs } from '../context/JobsContext'
-import type { JobItem, JobStatus, JobSummary } from '../types/api'
+import type { JobItem, JobStatus, JobSummary, PerformanceSettings } from '../types/api'
 import { estimateEtaSeconds, type ProgressSample } from '../utils/eta'
 import { basename, dirname, formatElapsed, formatElapsedCompact, type DurationUnitLabels } from '../utils/format'
 import { BatchSubmissionsModal } from './BatchSubmissionsModal'
@@ -37,7 +37,10 @@ interface JobsModalProps {
 const SECTION_ORDER: JobStatus[] = ['running', 'paused', 'queued', 'failed', 'cancelled', 'completed']
 const EMPTY_ITEMS: JobItem[] = []
 const DONE_ITEM_STATUSES = new Set(['completed', 'failed', 'skipped', 'cancelled'])
-const ETA_WINDOW_MS = 5 * 60 * 1000
+// Fallback until Settings -> Performance's `eta_window_minutes` loads (or for
+// a backend that hasn't picked up that field yet); matches the field's own
+// backend default (`performance_settings.DEFAULT_ETA_WINDOW_MINUTES`).
+const DEFAULT_ETA_WINDOW_MS = 5 * 60 * 1000
 
 // Mirrors `PAUSABLE_JOB_TYPES` in `backend/app/jobs/service.py`: only job
 // types with a per-item loop can honor a pause request between items --
@@ -61,6 +64,14 @@ export function JobsModal({ onClose, onNavigate }: JobsModalProps) {
   const [logJobId, setLogJobId] = useState<string | null>(null)
   const [busyJobId, setBusyJobId] = useState<string | null>(null)
   const [showBatchSubmissions, setShowBatchSubmissions] = useState(false)
+  const [etaWindowMs, setEtaWindowMs] = useState(DEFAULT_ETA_WINDOW_MS)
+
+  useEffect(() => {
+    void (async () => {
+      const settings = await tryApi<PerformanceSettings>('/api/performance-settings')
+      if (settings) setEtaWindowMs(settings.eta_window_minutes * 60 * 1000)
+    })()
+  }, [])
 
   async function handleCancel(jobId: string) {
     setBusyJobId(jobId)
@@ -193,6 +204,7 @@ export function JobsModal({ onClose, onNavigate }: JobsModalProps) {
                     onRemove={() => handleRemove(job.id)}
                     onViewLog={() => setLogJobId(job.id)}
                     onNavigate={onNavigate ? handleNavigate : undefined}
+                    etaWindowMs={etaWindowMs}
                   />
                 ))}
               </div>
@@ -220,11 +232,19 @@ export function JobsModal({ onClose, onNavigate }: JobsModalProps) {
   )
 }
 
-/** Tracks (time, done) samples for the last `ETA_WINDOW_MS` while running, so
+/** Tracks (time, done) samples for the last `windowMs` while running, so
  * `estimateEtaSeconds()` can extrapolate from the recent completion rate
- * instead of the average over the whole lifetime. `key` identifies what's
- * being tracked (a job id, an item id, ...) -- history resets when it changes. */
-function useEtaSeconds(key: string, isRunning: boolean, done: number, total: number | null): number | null {
+ * instead of the average over the whole lifetime -- `windowMs` comes from
+ * Settings -> Performance's `eta_window_minutes` (JobsModal fetches it once
+ * and passes it down). `key` identifies what's being tracked (a job id, an
+ * item id, ...) -- history resets when it changes. */
+function useEtaSeconds(
+  key: string,
+  isRunning: boolean,
+  done: number,
+  total: number | null,
+  windowMs: number,
+): number | null {
   const historyRef = useRef<ProgressSample[]>([])
   const keyRef = useRef(key)
 
@@ -241,11 +261,11 @@ function useEtaSeconds(key: string, isRunning: boolean, done: number, total: num
     if (!lastEntry || lastEntry.done !== done) {
       history.push({ time: now, done })
     }
-    const cutoff = now - ETA_WINDOW_MS
+    const cutoff = now - windowMs
     while (history.length > 1 && history[0].time < cutoff) {
       history.shift()
     }
-  }, [isRunning, done])
+  }, [isRunning, done, windowMs])
 
   if (!isRunning || total === null) return null
   return estimateEtaSeconds(historyRef.current, done, total)
@@ -276,6 +296,7 @@ interface JobRowProps {
   onRemove: () => void
   onViewLog: () => void
   onNavigate?: (path: string) => void
+  etaWindowMs: number
 }
 
 function JobRow({
@@ -289,6 +310,7 @@ function JobRow({
   onRemove,
   onViewLog,
   onNavigate,
+  etaWindowMs,
 }: JobRowProps) {
   const { t } = useTranslation()
   const canCancel = job.status === 'queued' || job.status === 'running' || job.status === 'paused'
@@ -319,12 +341,13 @@ function JobRow({
     : undefined
   const progressPct = total && total > 0 ? Math.min(100, Math.round((done / total) * 100)) : null
 
-  const etaSeconds = useEtaSeconds(job.id, isRunning, done, total)
+  const etaSeconds = useEtaSeconds(job.id, isRunning, done, total, etaWindowMs)
   const itemEtaSeconds = useEtaSeconds(
     currentItem?.id ?? '',
     isRunning && currentItem?.progress_pct != null,
     currentItem?.progress_pct ?? 0,
     100,
+    etaWindowMs,
   )
   const runningElapsedSeconds = useElapsedSeconds(job.started_at, isRunning)
 

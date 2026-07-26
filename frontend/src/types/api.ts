@@ -478,6 +478,7 @@ export interface BackupSettings {
 
 export interface PerformanceSettings {
   parallel_workers: number
+  eta_window_minutes: number
   updated_at: string
 }
 

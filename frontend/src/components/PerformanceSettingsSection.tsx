@@ -27,11 +27,13 @@ export function PerformanceSettingsSection() {
     })()
   }, [])
 
-  async function handleWorkersChange(value: number) {
-    setSettings((prev) => (prev ? { ...prev, parallel_workers: value } : prev))
+  async function updateSettings(patch: Partial<PerformanceSettings>) {
+    if (!settings) return
+    const merged = { ...settings, ...patch }
+    setSettings(merged)
     const saved = await tryApi<PerformanceSettings>('/api/performance-settings', {
       method: 'PUT',
-      body: { parallel_workers: value },
+      body: merged,
     })
     if (saved) setSettings(saved)
   }
@@ -50,10 +52,25 @@ export function PerformanceSettingsSection() {
             min={1}
             max={16}
             value={settings.parallel_workers}
-            onChange={(event) => void handleWorkersChange(Number(event.target.value))}
+            onChange={(event) => void updateSettings({ parallel_workers: Number(event.target.value) })}
           />
         </label>
       )}
+
+      {settings && (
+        <label className="settings-modal__label">
+          {t('performanceSettings.etaWindowMinutes')}
+          <input
+            className="settings-modal__input"
+            type="number"
+            min={1}
+            max={180}
+            value={settings.eta_window_minutes}
+            onChange={(event) => void updateSettings({ eta_window_minutes: Number(event.target.value) })}
+          />
+        </label>
+      )}
+      {settings && <p className="settings-modal__hint">{t('performanceSettings.etaWindowHint')}</p>}
 
       {backendStatus.phase === 'ready' && (
         <div className="settings-modal__row">

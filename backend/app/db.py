@@ -843,6 +843,13 @@ MIGRATIONS: dict[int, list[str]] = {
         """,
         "CREATE INDEX IF NOT EXISTS idx_resource_monitor_samples_timestamp ON resource_monitor_samples (timestamp)",
     ],
+    # Post-V1 (chat request 2026-07-26): the job ETA estimate's sliding
+    # rate-measurement window (`app/performance_settings.py`,
+    # `frontend/src/utils/eta.ts`) was a hardcoded 5 minutes; this makes it a
+    # user setting alongside `parallel_workers` in the same singleton.
+    47: [
+        "ALTER TABLE performance_settings ADD COLUMN eta_window_minutes INTEGER NOT NULL DEFAULT 5",
+    ],
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

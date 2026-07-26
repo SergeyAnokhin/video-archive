@@ -100,6 +100,8 @@
     "title": "Performance",
     "parallelWorkers": "Parallel processing (files/variants at once)",
     "hint": "How many files (bulk convert/preview jobs) or tuning variants are processed at the same time. For a single file, the same number is used to extract preview frames in parallel.",
+    "etaWindowMinutes": "Time-remaining estimate window (minutes)",
+    "etaWindowHint": "The job time-remaining estimate is based on the completion rate over just this many recent minutes, not the whole job. A job younger than this window uses its full elapsed time instead; once it runs longer than the window, only the most recent window is used.",
     "hardwareStatusTitle": "Hardware acceleration",
     "hardwareEncode": "Encode (conversion)",
     "hardwareDecode": "Decode (preview, conversion)",
