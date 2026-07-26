@@ -1,11 +1,12 @@
 import { ChevronDown } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ModelPricing, ProviderEntry } from '../types/api'
+import type { ModelPricing, ModelStats, ProviderEntry } from '../types/api'
 
 interface TagLabModelPickerProps {
   entries: ProviderEntry[]
   prices: ModelPricing[]
+  ratings: ModelStats[]
   value: string
   onChange: (id: string) => void
   disabled: boolean
@@ -21,6 +22,16 @@ function priceFor(entry: ProviderEntry, prices: ModelPricing[]): ModelPricing | 
     : undefined
 }
 
+function statsKey(providerType: string, modelName: string | null): string {
+  return `${providerType}:${modelName ?? ''}`
+}
+
+function statsFor(entry: ProviderEntry, ratings: ModelStats[]): ModelStats | undefined {
+  return entry.vision_model
+    ? ratings.find((row) => statsKey(row.provider_type, row.model_name) === statsKey(entry.provider_type, entry.vision_model))
+    : undefined
+}
+
 // Row content shared between the closed toggle and each open-list option
 // (user request -- stop always appending "(provider/model)" after the name:
 // that repeated the exact same text whenever display_name was still the
@@ -30,19 +41,49 @@ function priceFor(entry: ProviderEntry, prices: ModelPricing[]): ModelPricing | 
 // genuinely custom display name, and price sits in its own right-aligned
 // column. A native <option> can't carry per-part colors or a column layout,
 // hence a custom popover instead of <select> below.
-function ModelRow({ entry, prices }: { entry: ProviderEntry; prices: ModelPricing[] }) {
+function ModelRow({ entry, prices, ratings }: { entry: ProviderEntry; prices: ModelPricing[]; ratings: ModelStats[] }) {
   const { t } = useTranslation()
   const hasCustomName = entry.display_name !== defaultLabelFor(entry)
   const price = priceFor(entry, prices)
+  const stats = statsFor(entry, ratings)
 
   return (
     <span className="tag-lab-model-picker__row">
-      <span className="tag-lab-model-picker__name">
-        {hasCustomName && <span className="tag-lab-model-picker__custom-name">{entry.display_name}</span>}
-        <span className="tag-lab-model-picker__pair">
-          <span className="tag-lab-model-picker__provider">{entry.provider_type}</span>
-          <span className="tag-lab-model-picker__slash">/</span>
-          <span className="tag-lab-model-picker__model">{entry.vision_model ?? '?'}</span>
+      <span className="tag-lab-model-picker__name-group">
+        <span className="tag-lab-model-picker__name">
+          {hasCustomName && <span className="tag-lab-model-picker__custom-name">{entry.display_name}</span>}
+          <span className="tag-lab-model-picker__pair">
+            <span className="tag-lab-model-picker__provider">{entry.provider_type}</span>
+            <span className="tag-lab-model-picker__slash">/</span>
+            <span className="tag-lab-model-picker__model">{entry.vision_model ?? '?'}</span>
+          </span>
+        </span>
+        <span className="tag-lab-model-picker__stats">
+          <span title={t('tagLab.statsLikeRatioTooltip')}>
+            👍{' '}
+            {stats && stats.likes + stats.dislikes > 0
+              ? t('tagLab.statsLikeRatioValue', {
+                  percent: Math.round((stats.likes / (stats.likes + stats.dislikes)) * 100),
+                })
+              : t('tagLab.statsNoData')}
+          </span>
+          <span title={t('tagLab.statsUnchangedTooltip')}>
+            ✅{' '}
+            {stats && stats.runs_total > 0
+              ? t('tagLab.statsPercentValue', {
+                  percent: Math.round((stats.applied_unchanged_count / stats.runs_total) * 100),
+                })
+              : t('tagLab.statsNoData')}
+          </span>
+          <span title={t('tagLab.statsChangedTooltip')}>
+            ✏️{' '}
+            {stats && stats.runs_total > 0
+              ? t('tagLab.statsPercentValue', {
+                  percent: Math.round((stats.applied_changed_count / stats.runs_total) * 100),
+                })
+              : t('tagLab.statsNoData')}
+          </span>
+          <span title={t('tagLab.statsTotalRunsTooltip')}>🔁 {stats?.runs_total ?? 0}</span>
         </span>
       </span>
       <span className="tag-lab-model-picker__price">
@@ -67,7 +108,7 @@ interface ListPosition {
   maxHeight: number
 }
 
-export function TagLabModelPicker({ entries, prices, value, onChange, disabled }: TagLabModelPickerProps) {
+export function TagLabModelPicker({ entries, prices, ratings, value, onChange, disabled }: TagLabModelPickerProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [listPosition, setListPosition] = useState<ListPosition | null>(null)
@@ -129,11 +170,12 @@ export function TagLabModelPicker({ entries, prices, value, onChange, disabled }
         className="tag-lab-model-picker__toggle convert-dialog__input"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={t('tagLab.modelLabel')}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
         {selectedEntry ? (
-          <ModelRow entry={selectedEntry} prices={prices} />
+          <ModelRow entry={selectedEntry} prices={prices} ratings={ratings} />
         ) : (
           <span className="tag-lab-model-picker__placeholder">{t('providerSettings.noModelSelected')}</span>
         )}
@@ -163,7 +205,7 @@ export function TagLabModelPicker({ entries, prices, value, onChange, disabled }
                 setOpen(false)
               }}
             >
-              <ModelRow entry={entry} prices={prices} />
+              <ModelRow entry={entry} prices={prices} ratings={ratings} />
             </button>
           ))}
         </div>

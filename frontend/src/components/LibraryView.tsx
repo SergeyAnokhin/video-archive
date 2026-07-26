@@ -339,6 +339,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
   const playingIndex = playingFile ? visibleFiles.findIndex((f) => f.id === playingFile.id) : -1
   const infoIndex = infoFile ? visibleFiles.findIndex((f) => f.id === infoFile.id) : -1
+  const tagLabIndex = tagLabFile ? visibleFiles.findIndex((f) => f.id === tagLabFile.id) : -1
 
   function handleMoved() {
     setPlayingFile(null)
@@ -360,6 +361,13 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     const target = visibleFiles[infoIndex + offset]
     if (target) {
       setInfoFile(target)
+    }
+  }
+
+  function goToTagLabOffset(offset: number) {
+    const target = visibleFiles[tagLabIndex + offset]
+    if (target) {
+      setTagLabFile(target)
     }
   }
 
@@ -914,6 +922,10 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
             setTagLabFile(null)
             setReloadTick((tick) => tick + 1)
           }}
+          hasPrev={tagLabIndex > 0}
+          hasNext={tagLabIndex >= 0 && tagLabIndex < visibleFiles.length - 1}
+          onPrev={() => goToTagLabOffset(-1)}
+          onNext={() => goToTagLabOffset(1)}
         />
       )}
       {infoFile && (

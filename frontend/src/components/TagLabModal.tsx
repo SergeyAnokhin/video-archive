@@ -1,4 +1,4 @@
-import { Pencil, Play, Plus, Tags, ThumbsDown, ThumbsUp, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pencil, Play, Plus, Tags, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, ApiError, tryApi } from '../api/client'
@@ -23,6 +23,10 @@ interface TagLabModalProps {
   file: FileEntry
   onClose: () => void
   onApplied: () => void
+  hasPrev?: boolean
+  hasNext?: boolean
+  onPrev?: () => void
+  onNext?: () => void
 }
 
 interface SelectedTag {
@@ -35,10 +39,6 @@ interface SelectedTag {
 
 function normalizeName(name: string): string {
   return name.trim().toLowerCase()
-}
-
-function statsKey(providerType: string, modelName: string | null): string {
-  return `${providerType}:${modelName ?? ''}`
 }
 
 // Defensive client-side ceiling on top of the backend's own
@@ -72,7 +72,7 @@ function RawResponseDetails({ rawResponse, rawFullResponse }: { rawResponse?: st
   )
 }
 
-export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
+export function TagLabModal({ file, onClose, onApplied, hasPrev, hasNext, onPrev, onNext }: TagLabModalProps) {
   const { t } = useTranslation()
   const [tagOptions, setTagOptions] = useState<Tag[]>([])
   const [entries, setEntries] = useState<ProviderEntry[]>([])
@@ -149,10 +149,26 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
     void refreshRatings()
   }, [])
 
-  const selectedEntry = entries.find((entry) => entry.id === entryId) ?? null
-  const selectedStats = selectedEntry
-    ? ratings.find((row) => statsKey(row.provider_type, row.model_name) === statsKey(selectedEntry.provider_type, selectedEntry.vision_model))
-    : undefined
+  // Navigating to prev/next (user request) reuses this same mounted
+  // component with a new `file`, so the previous file's run state must be
+  // cleared -- otherwise its tags/result would still be showing under the
+  // new file's name. The selected model (`entryId`) is a user preference,
+  // not tied to the file, so it's deliberately left alone.
+  useEffect(() => {
+    setRunning(false)
+    setRunError(null)
+    setRunErrorRaw(null)
+    setResult(null)
+    setPreparing(null)
+    setSelectedTags([])
+    setTagVotes({})
+    setTagInput('')
+    setApplying(false)
+    setApplyError(null)
+    setZoomedImage(null)
+    setEditingPrice(false)
+  }, [file.id])
+
   const currentPrice = result
     ? prices.find((row) => row.provider_type === result.provider_type && row.model_name === result.model_name)
     : undefined
@@ -371,54 +387,60 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
         aria-label={t('tagLab.title')}
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 className="convert-dialog__title">
-          <Tags size={18} /> {t('tagLab.title')}
-        </h2>
-        <p className="convert-dialog__hint">{file.file_name}</p>
+        <div className="tag-lab__header">
+          <h2 className="convert-dialog__title tag-lab__title">
+            <Tags size={18} /> {t('tagLab.title')}
+            <span className="tag-lab__title-filename">{file.file_name}</span>
+          </h2>
+          <div className="tag-lab__header-controls">
+            {(hasPrev || hasNext) && (
+              <div className="tag-lab__nav-group">
+                <button
+                  type="button"
+                  className="tag-lab__nav"
+                  aria-label={t('playbackModal.previous')}
+                  title={t('playbackModal.previous')}
+                  onClick={onPrev}
+                  disabled={!hasPrev || !onPrev}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="tag-lab__nav"
+                  aria-label={t('playbackModal.next')}
+                  title={t('playbackModal.next')}
+                  onClick={onNext}
+                  disabled={!hasNext || !onNext}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              className="tag-lab__close"
+              aria-label={t('playbackModal.close')}
+              title={t('playbackModal.close')}
+              onClick={onClose}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
 
-        <label className="convert-dialog__label">
-          {t('tagLab.modelLabel')}
+        <div className="convert-dialog__label">
           <TagLabModelPicker
             entries={entries}
             prices={prices}
+            ratings={ratings}
             value={entryId}
             onChange={setEntryId}
             disabled={entries.length === 0}
           />
-        </label>
+        </div>
         {entriesLoaded && entries.length === 0 && (
           <p className="convert-dialog__hint convert-dialog__hint--warning">{t('tagLab.modelEmptyHint')}</p>
-        )}
-        {selectedEntry && (
-          <p className="tag-lab__model-stats">
-            <span title={t('tagLab.statsLikeRatioTooltip')}>
-              👍{' '}
-              {selectedStats && selectedStats.likes + selectedStats.dislikes > 0
-                ? t('tagLab.statsLikeRatioValue', {
-                    percent: Math.round((selectedStats.likes / (selectedStats.likes + selectedStats.dislikes)) * 100),
-                  })
-                : t('tagLab.statsNoData')}
-            </span>
-            <span title={t('tagLab.statsUnchangedTooltip')}>
-              ✅{' '}
-              {selectedStats && selectedStats.runs_total > 0
-                ? t('tagLab.statsPercentValue', {
-                    percent: Math.round((selectedStats.applied_unchanged_count / selectedStats.runs_total) * 100),
-                  })
-                : t('tagLab.statsNoData')}
-            </span>
-            <span title={t('tagLab.statsChangedTooltip')}>
-              ✏️{' '}
-              {selectedStats && selectedStats.runs_total > 0
-                ? t('tagLab.statsPercentValue', {
-                    percent: Math.round((selectedStats.applied_changed_count / selectedStats.runs_total) * 100),
-                  })
-                : t('tagLab.statsNoData')}
-            </span>
-            <span title={t('tagLab.statsTotalRunsTooltip')}>
-              🔁 {selectedStats?.runs_total ?? 0}
-            </span>
-          </p>
         )}
 
         <div className="convert-dialog__actions">
@@ -628,8 +650,8 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
           </div>
         )}
 
-        <div className="convert-dialog__actions">
-          {result && (
+        {result && (
+          <div className="convert-dialog__actions">
             <button
               type="button"
               className="convert-dialog__button convert-dialog__button--primary"
@@ -638,11 +660,8 @@ export function TagLabModal({ file, onClose, onApplied }: TagLabModalProps) {
             >
               {applying ? t('tagLab.applying') : t('tagLab.apply')}
             </button>
-          )}
-          <button type="button" className="convert-dialog__button" onClick={onClose}>
-            <X size={14} /> {t('convertDialog.cancel')}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {zoomedImage && (
