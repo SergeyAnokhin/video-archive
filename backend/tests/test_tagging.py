@@ -52,6 +52,26 @@ def test_create_tag_rejects_duplicate_key(engine):
         tags_service.create_tag(engine, {"display_name": " beach "})
 
 
+def test_create_tag_promotes_invisible_ad_hoc_tag_instead_of_rejecting(engine):
+    # A name typed directly onto a file lands in neither managed pool
+    # (both flags False) and is invisible in both Settings lists -- adding
+    # the same name through Settings' user-defined editor must promote that
+    # row rather than reporting a confusing "already exists" for a tag the
+    # user can't see anywhere (user report).
+    ad_hoc = tags_service.get_or_create_tag(engine, "Tunning Hard")
+    assert ad_hoc["is_ai_vocabulary"] is False
+    assert ad_hoc["is_user_defined"] is False
+
+    promoted = tags_service.create_tag(
+        engine, {"display_name": "tunning hard", "is_ai_vocabulary": False, "is_user_defined": True}
+    )
+    assert promoted["id"] == ad_hoc["id"]
+    assert promoted["is_user_defined"] is True
+
+    assert [t["display_name"] for t in tags_service.list_tags(engine, category="user")] == ["Tunning Hard"]
+    assert tags_service.list_tags(engine) == []  # AI vocabulary pool untouched
+
+
 def test_list_tags_prefix_query_for_autocomplete(engine):
     tags_service.create_tag(engine, {"display_name": "Birthday"})
     tags_service.create_tag(engine, {"display_name": "Beach"})

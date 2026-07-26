@@ -86,7 +86,7 @@ npm.cmd run dev
 ```
 
 - Frontend: `http://127.0.0.1:5173`
-- Backend: `http://127.0.0.1:8000` (health at `/api/health`, app info at `/api/app/info`)
+- Backend: `http://127.0.0.1:8010` (health at `/api/health`, app info at `/api/app/info`)
 
 Both dev servers listen on `0.0.0.0`, not just loopback, so the app is also reachable from another device on the same network (e.g. a phone) or connected to it via the phone's own hotspot — open Settings → Network for the address(es) to use and setup instructions for both cases. There is no authentication, so this reachability is scoped to trusted local/private networks only.
 

@@ -7,7 +7,7 @@ Part of the [code map](code-map.md). **Update this file whenever frontend files 
 | Path | Role |
 | --- | --- |
 | [`frontend/package.json`](../frontend/package.json) | Scripts (`dev`, `build`, `lint`, `preview`, `test` — vitest) and deps (React, i18next, react-i18next, `lucide-react`). |
-| [`frontend/vite.config.ts`](../frontend/vite.config.ts) | Dev server on `5173` (`PORT` override), host `0.0.0.0`; proxies `/api` to the backend on `127.0.0.1:8000` (`BACKEND_PORT` override). |
+| [`frontend/vite.config.ts`](../frontend/vite.config.ts) | Dev server on `5173` (`PORT` override), host `0.0.0.0`; proxies `/api` to the backend on `127.0.0.1:8010` (`BACKEND_PORT` override). |
 | [`frontend/index.html`](../frontend/index.html) | HTML shell; `data-theme` on the root selects the active theme variable set. |
 | [`frontend/src/main.tsx`](../frontend/src/main.tsx) | Entry point; wires global styles and i18n before rendering `App`. |
 | [`frontend/src/App.tsx`](../frontend/src/App.tsx) | Root component: `InterfaceSettingsProvider` (outermost) → `PreviewVisibilityProvider` → `AppLayout`. |

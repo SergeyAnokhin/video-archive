@@ -8,7 +8,7 @@ Video Archive is a local-first, Windows-targeted web application: a Vite + React
 frontend (Vite dev server :5173)
    |  /api proxy
    v
-backend (FastAPI :8000)
+backend (FastAPI :8010)
    |-- routers/            HTTP API (thin; validation + delegation)
    |-- jobs/               background job handlers + two-lane worker (CPU + network)
    |-- sources/            uniform file-access layer (local | smb | webdav)

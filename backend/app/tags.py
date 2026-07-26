@@ -181,34 +181,59 @@ def _get_by_key(conn, tag_key: str):
 
 def create_tag(engine, data: dict) -> dict:
     tag_key = normalize_tag_key(data["display_name"])
-    tag_id = str(uuid.uuid4())
     now = _now()
 
     with engine.begin() as conn:
-        if _get_by_key(conn, tag_key) is not None:
+        existing = _get_by_key(conn, tag_key)
+        if existing is not None and (existing.is_ai_vocabulary or existing.is_user_defined):
             raise DuplicateTagError(f"Tag already exists: {data['display_name']}")
-        conn.execute(
-            text(
-                """
-                INSERT INTO tag_catalog
-                    (id, tag_key, display_name, is_active, is_ai_vocabulary, is_user_defined,
-                     sort_order, color, created_at, updated_at)
-                VALUES (:id, :tag_key, :display_name, :is_active, :is_ai_vocabulary, :is_user_defined,
-                        :sort_order, :color, :now, :now)
-                """
-            ),
-            {
-                "id": tag_id,
-                "tag_key": tag_key,
-                "display_name": data["display_name"].strip(),
-                "is_active": bool(data.get("is_active", True)),
-                "is_ai_vocabulary": bool(data.get("is_ai_vocabulary", True)),
-                "is_user_defined": bool(data.get("is_user_defined", False)),
-                "sort_order": data.get("sort_order", 0),
-                "color": data.get("color"),
-                "now": now,
-            },
-        )
+
+        if existing is not None:
+            # Existing row is a pure ad-hoc tag (invisible in both managed
+            # pools -- e.g. typed directly onto a file's free-text tag field)
+            # -- promote it into the requested pool instead of blocking
+            # creation with a confusing "already exists" for a tag the user
+            # can't see in either list (user report).
+            tag_id = existing.id
+            conn.execute(
+                text(
+                    """
+                    UPDATE tag_catalog
+                    SET is_ai_vocabulary = :is_ai_vocabulary, is_user_defined = :is_user_defined, updated_at = :now
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "is_ai_vocabulary": bool(data.get("is_ai_vocabulary", True)),
+                    "is_user_defined": bool(data.get("is_user_defined", False)),
+                    "now": now,
+                    "id": tag_id,
+                },
+            )
+        else:
+            tag_id = str(uuid.uuid4())
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO tag_catalog
+                        (id, tag_key, display_name, is_active, is_ai_vocabulary, is_user_defined,
+                         sort_order, color, created_at, updated_at)
+                    VALUES (:id, :tag_key, :display_name, :is_active, :is_ai_vocabulary, :is_user_defined,
+                            :sort_order, :color, :now, :now)
+                    """
+                ),
+                {
+                    "id": tag_id,
+                    "tag_key": tag_key,
+                    "display_name": data["display_name"].strip(),
+                    "is_active": bool(data.get("is_active", True)),
+                    "is_ai_vocabulary": bool(data.get("is_ai_vocabulary", True)),
+                    "is_user_defined": bool(data.get("is_user_defined", False)),
+                    "sort_order": data.get("sort_order", 0),
+                    "color": data.get("color"),
+                    "now": now,
+                },
+            )
     return get_tag(engine, tag_id)
 
 

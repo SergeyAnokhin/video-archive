@@ -72,7 +72,7 @@ def get_network_info(request: Request) -> dict:
     # header to its target), so it stays right without needing its own env
     # var. The frontend port has no such signal to read from, so it falls
     # back to the same `PORT` env var (default 5173) `vite.config.ts` uses.
-    backend_port = request.url.port or 8000
+    backend_port = request.url.port or 8010
     frontend_port = int(os.environ.get("PORT", 5173))
 
     return {

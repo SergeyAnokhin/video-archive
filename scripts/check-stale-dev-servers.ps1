@@ -11,7 +11,7 @@
 
 $portChecks = @(
     [pscustomobject]@{ Port = 5173; Label = "frontend (vite)" }
-    [pscustomobject]@{ Port = 8000; Label = "backend (uvicorn)" }
+    [pscustomobject]@{ Port = 8010; Label = "backend (uvicorn)" }
 )
 $foundStale = $false
 

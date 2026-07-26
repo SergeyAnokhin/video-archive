@@ -9,7 +9,7 @@
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:backend": "npm run dev --prefix backend",
     "check-dev-servers": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-stale-dev-servers.ps1",
-    "kill-port": "FOR /F \"tokens=5\" %P IN ('netstat -ano ^| findstr :8000') DO taskkill /PID %P /F"
+    "kill-port": "FOR /F \"tokens=5\" %P IN ('netstat -ano ^| findstr :8010') DO taskkill /PID %P /F"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
