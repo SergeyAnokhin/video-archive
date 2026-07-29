@@ -12,7 +12,15 @@ This folder contains the living project documentation — the documents that are
 | [`deployment.md`](deployment.md) | k3s cluster deployment: CI → GHCR → ArgoCD flow, Helm chart, node placement switch, human checklist | Dockerfiles, chart, CI workflow, or cluster setup change |
 | [`webdav-setup.md`](webdav-setup.md) | Configuring a `webdav` source and its NAS side (Synology DSM's WebDAV Server) | WebDAV setup steps or the connection-string convention change |
 
+## Read by symptom, not by default
+
+| File | Contents |
+| --- | --- |
+| [`verification-notes.md`](verification-notes.md) | Environment and tooling pitfalls hit while verifying: orphaned dev servers, wedged reloaders, browser-automation blind spots, live-data hazards, flaky-test shapes. Nothing here is needed to orient in the project — only to get unstuck. |
+
 Project overview and startup instructions live in the root [`README.md`](../README.md).
+
+**When adding to any of these:** follow the [code map's writing rules](code-map.md#writing-rules) — no provenance, one or two sentences per entry, one fact in one place, situational gotchas into `verification-notes.md`. These docs are read at the start of every session, so their size is a recurring cost.
 
 ## Archived
 

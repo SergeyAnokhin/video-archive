@@ -17,7 +17,14 @@ import pytest
 from PIL import Image
 from sqlalchemy import text
 
-from app import performance_settings, preview, preview_layouts, preview_settings
+from app import (
+    performance_settings,
+    preview,
+    preview_frames,
+    preview_layouts,
+    preview_render,
+    preview_settings,
+)
 from app.jobs import preview as preview_job
 from app.jobs import service
 from app.media import folder_gif_relative_path, preview_gif_relative_path
@@ -61,7 +68,7 @@ def test_extract_frame_image_handles_non_ascii_path(tmp_path):
     video_path = video_dir / "clip.mp4"
     make_video(video_path, duration=2.0, size="320x240")
 
-    image = preview.extract_frame_image(video_path, 1.0)
+    image = preview_frames.extract_frame_image(video_path, 1.0)
     assert image is not None
     assert image.shape[:2] == (240, 320)
 
@@ -73,7 +80,7 @@ def test_extract_frame_image_falls_back_to_software_when_hw_decode_fails(tmp_pat
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=2.0, size="320x240")
 
-    monkeypatch.setattr(preview, "_decode_hwaccel_backend", lambda: "qsv")
+    monkeypatch.setattr(preview_frames, "_decode_hwaccel_backend", lambda: "qsv")
 
     real_run = subprocess.run
     calls = []
@@ -84,9 +91,9 @@ def test_extract_frame_image_falls_back_to_software_when_hw_decode_fails(tmp_pat
             return subprocess.CompletedProcess(args, returncode=1, stdout=b"", stderr=b"simulated hw failure")
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr(preview.subprocess, "run", fake_run)
+    monkeypatch.setattr(preview_frames.subprocess, "run", fake_run)
 
-    image = preview.extract_frame_image(video_path, 1.0)
+    image = preview_frames.extract_frame_image(video_path, 1.0)
     assert image is not None
     assert image.shape[:2] == (240, 320)
     assert len(calls) == 2
@@ -98,7 +105,7 @@ def test_extract_clip_frames_falls_back_to_software_when_hw_decode_fails(tmp_pat
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=3.0, size="320x240")
 
-    monkeypatch.setattr(preview, "_decode_hwaccel_backend", lambda: "qsv")
+    monkeypatch.setattr(preview_frames, "_decode_hwaccel_backend", lambda: "qsv")
 
     real_run = subprocess.run
     calls = []
@@ -109,9 +116,9 @@ def test_extract_clip_frames_falls_back_to_software_when_hw_decode_fails(tmp_pat
             return subprocess.CompletedProcess(args, returncode=1, stdout=b"", stderr=b"simulated hw failure")
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr(preview.subprocess, "run", fake_run)
+    monkeypatch.setattr(preview_frames.subprocess, "run", fake_run)
 
-    frames = preview.extract_clip_frames(video_path, 1.0, 0.5, fps=8.0)
+    frames = preview_frames.extract_clip_frames(video_path, 1.0, 0.5, fps=8.0)
     assert len(frames) >= 2
     assert len(calls) == 2
     assert "-hwaccel" in calls[0]
@@ -126,7 +133,7 @@ def _capture_ffmpeg_args(monkeypatch):
         calls.append(args)
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr(preview.subprocess, "run", fake_run)
+    monkeypatch.setattr(preview_frames.subprocess, "run", fake_run)
     return calls
 
 
@@ -135,7 +142,7 @@ def test_extract_frame_image_accurate_mode_omits_noaccurate_seek(tmp_path, monke
     make_video(video_path, duration=2.0, size="320x240")
     calls = _capture_ffmpeg_args(monkeypatch)
 
-    image = preview.extract_frame_image(video_path, 1.0)
+    image = preview_frames.extract_frame_image(video_path, 1.0)
     assert image is not None
     assert "-noaccurate_seek" not in calls[0]
 
@@ -145,7 +152,7 @@ def test_extract_frame_image_keyframe_mode_adds_noaccurate_seek(tmp_path, monkey
     make_video(video_path, duration=2.0, size="320x240")
     calls = _capture_ffmpeg_args(monkeypatch)
 
-    image = preview.extract_frame_image(video_path, 1.0, seek_mode="keyframe")
+    image = preview_frames.extract_frame_image(video_path, 1.0, seek_mode="keyframe")
     assert image is not None
     assert "-noaccurate_seek" in calls[0]
 
@@ -155,7 +162,7 @@ def test_extract_frame_image_max_width_downscales_and_adds_scale_filter(tmp_path
     make_video(video_path, duration=2.0, size="640x480")
     calls = _capture_ffmpeg_args(monkeypatch)
 
-    image = preview.extract_frame_image(video_path, 1.0, max_width=320)
+    image = preview_frames.extract_frame_image(video_path, 1.0, max_width=320)
     assert image is not None
     assert image.shape[1] <= 320
     vf_index = calls[0].index("-vf")
@@ -174,7 +181,7 @@ def test_extract_clip_frames_keyframe_mode_and_max_width(tmp_path, monkeypatch):
     # ffmpeg quirk reproduced only on this degenerate fixture, not on actual
     # footage -- see manual verification against `test-data/VideoArchive`). A
     # longer window avoids it while still exercising `-noaccurate_seek`.
-    frames = preview.extract_clip_frames(video_path, 0.5, 1.5, fps=8.0, seek_mode="keyframe", max_width=320)
+    frames = preview_frames.extract_clip_frames(video_path, 0.5, 1.5, fps=8.0, seek_mode="keyframe", max_width=320)
     assert len(frames) >= 2
     assert all(frame.shape[1] <= 320 for frame in frames)
     assert "-noaccurate_seek" in calls[0]
@@ -273,7 +280,7 @@ def test_generate_file_preview_writes_jpeg_next_to_video(tmp_path):
     assert dest_path.exists()
     with Image.open(dest_path) as img:
         assert img.format == "JPEG"
-        assert img.size[0] == preview.CANVAS_WIDTH
+        assert img.size[0] == preview_render.CANVAS_WIDTH
         assert abs(img.size[0] / img.size[1] - 4 / 3) < 0.01
 
 
@@ -293,7 +300,7 @@ def test_generate_file_preview_also_writes_gif_when_requested(tmp_path):
     with Image.open(gif_path) as img:
         assert img.format == "GIF"
         assert img.is_animated
-        assert img.width <= preview.GIF_MAX_WIDTH
+        assert img.width <= preview_render.GIF_MAX_WIDTH
 
 
 def test_generate_file_preview_honors_custom_gif_max_width(tmp_path):
@@ -365,7 +372,7 @@ def test_pick_representative_frames_multi_spreads_across_interior(tmp_path):
 
 def test_build_shared_gif_palette_limits_color_count():
     frames = [Image.new("RGB", (40, 40), color) for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]]
-    palette_image = preview._build_shared_gif_palette(frames, colors=8)
+    palette_image = preview_render._build_shared_gif_palette(frames, colors=8)
     assert palette_image.mode == "P"
     assert len(palette_image.getpalette()) // 3 <= 8
 
@@ -381,16 +388,16 @@ def test_render_gif_many_frames_uses_shared_palette(tmp_path, monkeypatch):
     frames = [np.full((40, 40, 3), color, dtype=np.uint8) for color in colors_bgr]
 
     build_calls = []
-    real_build = preview._build_shared_gif_palette
+    real_build = preview_render._build_shared_gif_palette
 
     def spy(frames_arg, colors_arg):
         build_calls.append(len(frames_arg))
         return real_build(frames_arg, colors_arg)
 
-    monkeypatch.setattr(preview, "_build_shared_gif_palette", spy)
+    monkeypatch.setattr(preview_render, "_build_shared_gif_palette", spy)
 
     dest_path = tmp_path / "many.gif"
-    preview.render_gif(frames, dest_path, 4 / 3, colors=16)
+    preview_render.render_gif(frames, dest_path, 4 / 3, colors=16)
 
     assert dest_path.exists()
     assert build_calls == [len(frames)]
@@ -407,13 +414,13 @@ def test_generate_file_preview_passes_frame_seek_mode_through(tmp_path, monkeypa
     dest_path = tmp_path / "movie.jpg"
 
     seen_modes = []
-    real_extract = preview.extract_frame_image
+    real_extract = preview_frames.extract_frame_image
 
     def spy(video_path, timestamp, **kwargs):
         seen_modes.append(kwargs.get("seek_mode"))
         return real_extract(video_path, timestamp, **kwargs)
 
-    monkeypatch.setattr(preview, "extract_frame_image", spy)
+    monkeypatch.setattr(preview_frames, "extract_frame_image", spy)
 
     preview.generate_file_preview(
         video_path, dest_path, layout=layout, aspect_ratio=4 / 3, frame_seek_mode="accurate"
@@ -426,10 +433,10 @@ def test_generate_file_preview_passes_frame_seek_mode_through(tmp_path, monkeypa
 def test_render_gif_crops_frames_to_aspect_ratio(tmp_path):
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=2.0, size="320x240")
-    images = [img for img in (preview.extract_frame_image(video_path, 1.0),) if img is not None]
+    images = [img for img in (preview_frames.extract_frame_image(video_path, 1.0),) if img is not None]
 
     dest_path = tmp_path / "folder-preview.gif"
-    preview.render_gif(images, dest_path, 19.5 / 9)
+    preview_render.render_gif(images, dest_path, 19.5 / 9)
 
     assert dest_path.exists()
     with Image.open(dest_path) as img:
@@ -444,7 +451,7 @@ def test_extract_clip_frames_samples_a_burst(tmp_path):
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=3.0, size="320x240")
 
-    frames = preview.extract_clip_frames(video_path, 1.0, 0.5, fps=8.0)
+    frames = preview_frames.extract_clip_frames(video_path, 1.0, 0.5, fps=8.0)
     # ~0.5s at 8fps should yield several frames, not just one still.
     assert len(frames) >= 2
     assert all(frame.shape[:2] == (240, 320) for frame in frames)
@@ -472,13 +479,13 @@ def test_render_gif_clip_segments_hold_for_configured_duration(tmp_path):
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=3.0, size="320x240")
 
-    burst_a = preview.extract_clip_frames(video_path, 0.5, 0.4)
-    burst_b = preview.extract_clip_frames(video_path, 2.0, 0.4)
+    burst_a = preview_frames.extract_clip_frames(video_path, 0.5, 0.4)
+    burst_b = preview_frames.extract_clip_frames(video_path, 2.0, 0.4)
     images = burst_a + burst_b
     segment_sizes = [len(burst_a), len(burst_b)]
 
     dest_path = tmp_path / "clip-preview.gif"
-    preview.render_gif(images, dest_path, 4 / 3, segment_seconds=0.4, segment_sizes=segment_sizes)
+    preview_render.render_gif(images, dest_path, 4 / 3, segment_seconds=0.4, segment_sizes=segment_sizes)
 
     assert dest_path.exists()
     with Image.open(dest_path) as img:
@@ -494,21 +501,21 @@ def test_render_gif_crossfade_inserts_blended_frames(tmp_path):
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=3.0, size="320x240")
     images = [
-        preview.extract_frame_image(video_path, 0.5),
-        preview.extract_frame_image(video_path, 2.5),
+        preview_frames.extract_frame_image(video_path, 0.5),
+        preview_frames.extract_frame_image(video_path, 2.5),
     ]
 
     dest_cut = tmp_path / "cut.gif"
-    preview.render_gif(images, dest_cut, 4 / 3, transition="cut")
+    preview_render.render_gif(images, dest_cut, 4 / 3, transition="cut")
     dest_crossfade = tmp_path / "crossfade.gif"
-    preview.render_gif(images, dest_crossfade, 4 / 3, transition="crossfade")
+    preview_render.render_gif(images, dest_crossfade, 4 / 3, transition="crossfade")
 
     with Image.open(dest_cut) as img:
         cut_frame_count = img.n_frames
     with Image.open(dest_crossfade) as img:
         crossfade_frame_count = img.n_frames
 
-    assert crossfade_frame_count == cut_frame_count + preview.CROSSFADE_STEPS
+    assert crossfade_frame_count == cut_frame_count + preview_render.CROSSFADE_STEPS
 
 
 # --- preview job: file scope -----------------------------------------------

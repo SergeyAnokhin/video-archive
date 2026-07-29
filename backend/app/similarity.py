@@ -24,7 +24,7 @@ from PIL import Image
 from sqlalchemy import text
 
 from app import conversion
-from app.preview import extract_frame_image, fill_missing_frames
+from app.preview_frames import extract_frame_image, fill_missing_frames
 from app.sampling import sample_interior_timestamps
 
 SAMPLE_COUNT = 8

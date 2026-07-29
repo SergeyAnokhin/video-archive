@@ -107,17 +107,15 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const toolbarActionsRef = useRef<HTMLDivElement | null>(null)
   const [toolbarWrapped, setToolbarWrapped] = useState(false)
   const prevActiveJobRef = useRef<JobSummary | null>(null)
-  // Tags edited inside FileInfoPanel must show on the cards as soon as the
-  // panel closes (user request) -- the panel reports each successful tag
-  // mutation here, and the pending flag turns into one refetch on close.
+  // FileInfoPanel reports each successful tag mutation here; the pending
+  // flag turns into one refetch when the panel closes.
   const infoTagsChangedRef = useRef(false)
   // Same batching for tags added via the playback screen's quick tag-add
-  // control (user request) -- see closePlayback()/openInfoFromPlayback().
+  // control -- see closePlayback()/openInfoFromPlayback().
   const playingTagsChangedRef = useRef(false)
   // Per-file job items already completed and folded into this directory's
   // data, so a still-running job's later poll ticks don't re-trigger the
-  // same reload (user request: preview/tag/convert results should appear as
-  // each file finishes, not only once the whole job is done).
+  // same reload.
   const appliedCompletedItemIdsRef = useRef<Set<string>>(new Set())
   // Tracks which folder path the grid was last loaded for, so a same-folder
   // silent reload can be told apart from an actual navigation (see the data
@@ -202,7 +200,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
   // Quick filter is scoped to whatever listing is on screen -- reset it on
   // folder navigation and when a global search takes over, so a stale filter
-  // can't silently hide everything in the new context (user request).
+  // can't silently hide everything in the new context.
   useEffect(() => {
     setQuickFilterOpen(false)
     setQuickFilterText('')
@@ -216,7 +214,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     // Only show the loading state when actually navigating to a different
     // folder -- a same-folder reload (job completion, move/delete, live
     // per-item update) fetches quietly and swaps the grid's data in place,
-    // so cards update without a flash back to "Loading..." (user request).
+    // so cards update without a flash back to "Loading...".
     const isNewLocation = lastLoadedPathRef.current !== path
     lastLoadedPathRef.current = path
     if (isNewLocation) {
@@ -259,7 +257,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   // LibraryView.css), but a long breadcrumb can push the whole action
   // cluster onto its own line well before either breakpoint is crossed --
   // once that happens there's a full row of free width and no reason to
-  // keep them hidden behind "⋮" (user report). Detect the wrap by comparing
+  // keep them hidden behind "⋮". Detect the wrap by comparing
   // the two flex children's offsetTop instead of tracking width in JS.
   useEffect(() => {
     const toolbar = toolbarRef.current
@@ -308,8 +306,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   // A brand-new (or just-switched-to) source's directories/files rows only
   // exist once its background `rescan` job finishes -- until then, even the
   // root path 404s ("directory_not_found"), which is expected here, not a
-  // real error (user report: this used to render as a hard error while the
-  // initial scan was still walking a large SMB share). `reloadTick`'s
+  // real error, not a failure to surface. `reloadTick`'s
   // job-completion effect above retries automatically once the job ends.
   const sourceScanInProgress = activeJob?.job_type === 'rescan' && activeJob.scope_type === 'source'
   const showScanningState = error && errorCode === 'directory_not_found' && sourceScanInProgress
@@ -317,12 +314,12 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   // Next/prev navigation in PlaybackModal/ImageViewerModal/FileInfoPanel
   // walks this directory's own sorted listing while browsing, or the search
   // results' own on-screen order (`searchFiles`, kept in sync by
-  // SearchResults' `onFilesChanged`) while a search is active (user request).
+  // SearchResults' `onFilesChanged`) while a search is active.
   const sortedFiles = activeSearch ? searchFiles : data ? sortFiles(data.files, sortBy) : []
 
   // Quick filter (magnifying-glass button next to the breadcrumb) narrows the
   // on-screen grid client-side by substring match, for both folders and
-  // files (user request). It only ever applies to the normal browsing grid --
+  // files. It only ever applies to the normal browsing grid --
   // the search branch's own list passes through unchanged so activeSearch's
   // existing behavior is untouched.
   const quickFilterQuery = quickFilterText.trim().toLowerCase()
@@ -391,7 +388,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     }
   }
 
-  // Playback screen's quick tag-add button (user request) switches straight
+  // Playback screen's quick tag-add button switches straight
   // into the info panel for the same file instead of stacking a second
   // overlay -- any tag added while still on the playback screen carries
   // forward into the info panel's own batched refresh-on-close.
@@ -412,7 +409,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     }
   }
 
-  // Info panel's collage/thumbnail click (user request) -- the reverse of
+  // Info panel's collage/thumbnail click -- the reverse of
   // openInfoFromPlayback: switch straight into the fullscreen playback/image
   // screen for the same file instead of stacking a second overlay.
   function openPlaybackFromInfo() {

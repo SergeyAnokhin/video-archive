@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image
 
 from app import conversion
-from app.preview import extract_frame_image, fill_missing_frames
+from app.preview_frames import extract_frame_image, fill_missing_frames
 from app.sampling import sample_interior_timestamps
 from app.tagging_settings import DEFAULT_IMAGE_RESOLUTION
 

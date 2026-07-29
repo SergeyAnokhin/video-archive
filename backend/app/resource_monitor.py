@@ -1,27 +1,21 @@
-"""Periodic CPU/memory sampler (chat request): the backend was being
-OOMKilled repeatedly on Kubernetes (`kubectl describe pod` showed a real
-container restart, not a false positive from `app.jobs.service.
-reap_orphaned_jobs`), silently killing whatever job was running. There was
-no way to see the memory trend leading up to a restart without cluster disk
-access, so this samples `app.routers.system_stats.get_system_stats()` (same
-whole-process-tree CPU/memory figures the frontend gauge already uses) on a
-user-configurable interval.
+"""Periodic CPU/memory/network sampler, for diagnosing Kubernetes OOMKills
+that silently kill a running job. Samples
+`app.routers.system_stats.get_system_stats()` (the same whole-process-tree
+figures the frontend gauge uses) on a user-configurable interval.
 
 Every sample is written to `resource_monitor_samples`
 (`app.resource_monitor_history`) for the Settings -> Performance history
 chart, unconditionally -- the `enabled` setting only gates the extra
-`backend.log` line (prefixed with 📊, downloadable via `app.routers.
-log_files`), so history keeps recording at the configured interval even
-when logging is turned off (chat request 2026-07-25: users wanted to quiet
-the log without losing the chart data). `smb_bytes_transferred_total` is a
-cumulative counter, so the per-second network rate is derived here from the
-delta against the previous sample, mirroring how the frontend's own live
-gauge derives it (`frontend/src/utils/backendStats.ts`).
+`backend.log` line (prefixed with 📊, downloadable via
+`app.routers.log_files`), so turning logging off quiets the log without
+losing chart data. `smb_bytes_transferred_total` is a cumulative counter, so
+the per-second network rate is derived here from the delta against the
+previous sample, mirroring `frontend/src/utils/backendStats.ts`.
 
 Runs as a single daemon thread, mirroring `app.jobs.worker._Lane`'s
 start/stop/loop shape. The interval and enabled flag are re-read from the
-database every tick so a change made in Settings takes effect on the next
-tick without a backend restart.
+database every tick, so a Settings change takes effect on the next tick
+without a backend restart.
 """
 
 from __future__ import annotations

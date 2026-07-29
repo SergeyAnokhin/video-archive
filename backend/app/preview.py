@@ -1,271 +1,31 @@
-"""Preview collage generation (Specification §9): frame sampling + local
-detection-based tile selection + PIL collage rendering, used by the
-`preview` job handler (`app/jobs/preview.py`) for both video previews and
-folder previews. Also renders a lightweight animated GIF loop from the same
-sampled frames (`render_gif()`) for grid/list-view hover previews.
+"""Preview generation: frame ranking, tile assignment, and the orchestration
+that turns one video (or one folder) into its JPEG collage and animated GIF.
 
-Frame extraction shells out to ffmpeg per sampled timestamp (small frame
-counts per video, so this stays cheap), automatically using hardware decode
-when `app/hardware_decode.py` finds it available and silently falling back
-to software per call otherwise; detection is always best-effort via
-`app/detection.py` and never blocks a preview from being produced — a frame
-is picked by blur score alone when no face/person model is available.
+Frames come from `app/preview_frames.py`; the collage/GIF are drawn by
+`app/preview_render.py`. Detection (`app/detection.py`) is always best-effort
+and never blocks a preview from being produced -- a frame is picked by blur
+score alone when no face/person model is available.
 """
 
 from __future__ import annotations
 
 import random
-import shutil
-import subprocess
 import time
-import uuid
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
-from app import conversion, detection, hardware_decode
+from app import conversion, detection, hardware_decode, preview_frames, preview_render
+from app.preview_frames import EXTRACT_MAX_WIDTH
 from app.preview_layouts import compute_layout_tiles
+from app.preview_render import GIF_DEFAULT_COLORS, GIF_DEFAULT_SEGMENT_SECONDS, GIF_MAX_WIDTH
 from app.sampling import sample_interior_timestamps
-
-CANVAS_WIDTH = 2048
-JPEG_QUALITY = 85
-MARGIN_PX = 6
-GAP_PX = 4
-CAPTION_HEIGHT_PX = 40
-CAPTION_COLOR = (230, 230, 230)
-
-GIF_MAX_WIDTH = 640
-GIF_DEFAULT_COLORS = 64
-# Default "how long each position is shown" (Preview Settings
-# `animated_segment_seconds`, user request): still-frame hold time in
-# "frame" mode, sampled-clip length in "clip" mode. Matches the fixed hold
-# time the animated preview used before this was configurable.
-GIF_DEFAULT_SEGMENT_SECONDS = 0.45
-GIF_MIN_FRAME_DURATION_MS = 20
-# "clip" source mode: frames-per-second sampled from the short video segment
-# at each position, and a hard cap on how many frames one segment can
-# contribute (guards against a pathologically long `segment_seconds`).
-CLIP_SAMPLE_FPS = 8.0
-CLIP_MAX_FRAMES = 24
-# Crossfade transition (Preview Settings `animated_transition`, user
-# request): a fixed number of alpha-blended frames inserted between
-# consecutive segments, each held briefly, instead of a hard cut.
-CROSSFADE_STEPS = 5
-CROSSFADE_FRAME_DURATION_MS = 40
-
-# Downscale target for collage/animated-preview frame extraction (user
-# request, chat 2026-07-25 -- slow preview generation on underpowered
-# hardware): >= both `CANVAS_WIDTH`'s per-tile width and `gif_max_width`'s
-# default, so nothing downstream (collage tile, GIF frame, face/person
-# detection) loses visible resolution. Only applied where extraction is
-# explicitly passed `max_width=` (collage/animated-preview call sites) --
-# other callers (AI tagging, similarity signatures computed independently
-# of a preview, single-thumbnail picking) keep extracting at source
-# resolution, unchanged.
-EXTRACT_MAX_WIDTH = 1280
-
 
 class PreviewError(Exception):
     """Raised when a preview cannot be produced at all (no probeable video
     stream, or no frame could be extracted)."""
-
-
-# --- frame extraction -----------------------------------------------------
-
-
-def _decode_hwaccel_backend() -> str | None:
-    """Unlike encode, decode output is bit-identical to software decode (see
-    `app/hardware_decode.py`), so callers use this automatically -- no
-    per-profile opt-in. Thin wrapper kept here (post-V1, user request:
-    `app/conversion.py`'s encode input now uses the same hw-decode backend
-    selection, see `hardware_decode.decode_backend()`) so existing callers
-    and tests in this module don't need to change."""
-    return hardware_decode.decode_backend()
-
-
-def _hwaccel_input_args(backend: str | None) -> list[str]:
-    return hardware_decode.hwaccel_input_args(backend)
-
-
-def _hwaccel_download_filter(backend: str | None) -> str | None:
-    """Hardware decode hands back frames in a GPU-specific surface format
-    (`qsv`/`vaapi` pixel format) that the mjpeg encoder can't consume
-    directly -- without this, ffmpeg fails with "Impossible to convert
-    between the formats" and writes nothing. `hwdownload,format=nv12` copies
-    the decoded frame into normal system memory first (verified against a
-    real file: identical pixel output to software decode, just faster)."""
-    if backend is None:
-        return None
-    return "hwdownload,format=nv12"
-
-
-def extract_frame_image(
-    video_path: Path, timestamp: float, *, seek_mode: str = "accurate", max_width: int | None = None
-):
-    """`seek_mode="keyframe"` (Preview Settings `frame_seek_mode`, user
-    request) adds `-noaccurate_seek`: ffmpeg returns the nearest keyframe
-    instead of decoding forward to the exact `timestamp`, which on a
-    keyframe-sparse source is the difference between a ~1s and a ~20s+
-    extraction. Default stays `"accurate"` (prior behavior, exact timestamp)
-    since callers outside preview generation (AI tagging, standalone
-    similarity signatures) don't opt into the tradeoff. `max_width` (used by
-    collage/animated-preview callers only, see `EXTRACT_MAX_WIDTH`) scales
-    the frame down during ffmpeg's own decode instead of after, which is
-    also what makes the downstream JPEG encode/decode and face/person
-    detection cheaper."""
-    ffmpeg_bin = conversion.ffmpeg_path()
-    if not ffmpeg_bin:
-        return None
-
-    hw_backend = _decode_hwaccel_backend()
-    backends_to_try = [hw_backend, None] if hw_backend else [None]
-
-    tmp_path = video_path.parent / f".{video_path.stem}.preview-frame-{uuid.uuid4().hex[:8]}.jpg"
-    try:
-        for backend in backends_to_try:
-            args = [ffmpeg_bin, "-y", *_hwaccel_input_args(backend)]
-            args += ["-ss", f"{timestamp:.3f}"]
-            if seek_mode == "keyframe":
-                args += ["-noaccurate_seek"]
-            args += ["-i", str(video_path)]
-            filters = []
-            download_filter = _hwaccel_download_filter(backend)
-            if download_filter:
-                filters.append(download_filter)
-            if max_width:
-                filters.append(f"scale='min(iw,{max_width})':-2")
-            if filters:
-                args += ["-vf", ",".join(filters)]
-            args += ["-frames:v", "1", "-q:v", "2", str(tmp_path)]
-            # A hardware-decode attempt failing (unsupported codec, driver
-            # hiccup, GPU contention) falls through to software silently --
-            # no log per call, see `app/hardware_decode.py`'s module docstring
-            # for why this needs no per-profile setting like encode has.
-            try:
-                result = subprocess.run(args, capture_output=True, timeout=30, check=False)
-            except (OSError, subprocess.SubprocessError):
-                continue
-            if result.returncode != 0 or not tmp_path.exists():
-                continue
-            # cv2.imread() silently fails (returns None) on Windows when the
-            # path contains non-ASCII characters (e.g. Cyrillic folder
-            # names) -- it shells out to an fopen()-style API that mangles
-            # them. Reading the bytes via Python's own (Unicode-safe) file
-            # I/O and decoding them in memory sidesteps that.
-            data = np.fromfile(str(tmp_path), dtype=np.uint8)
-            image = cv2.imdecode(data, cv2.IMREAD_COLOR)
-            if image is not None:
-                return image
-        return None
-    finally:
-        if tmp_path.exists():
-            tmp_path.unlink()
-
-
-def extract_clip_frames(
-    video_path: Path,
-    start_timestamp: float,
-    duration_seconds: float,
-    *,
-    fps: float = CLIP_SAMPLE_FPS,
-    max_frames: int = CLIP_MAX_FRAMES,
-    seek_mode: str = "accurate",
-    max_width: int | None = None,
-) -> list:
-    """Sample a burst of frames from a short video segment starting at
-    `start_timestamp` ("clip" animated-preview source mode, user request):
-    unlike `extract_frame_image()`'s single `-frames:v 1`, this asks ffmpeg
-    for `fps` frames/second over `duration_seconds` in one invocation, giving
-    the animated preview real motion for this position instead of a still.
-    Returns as many decoded frames as ffmpeg produced (possibly fewer than
-    expected near the end of the video, possibly empty on failure) --
-    callers must tolerate a short/empty result. `seek_mode`/`max_width`: see
-    `extract_frame_image()`."""
-    ffmpeg_bin = conversion.ffmpeg_path()
-    if not ffmpeg_bin:
-        return []
-
-    hw_backend = _decode_hwaccel_backend()
-    backends_to_try = [hw_backend, None] if hw_backend else [None]
-
-    tmp_dir = video_path.parent / f".{video_path.stem}.preview-clip-{uuid.uuid4().hex[:8]}"
-    tmp_dir.mkdir(exist_ok=True)
-    try:
-        for backend in backends_to_try:
-            args = [ffmpeg_bin, "-y", *_hwaccel_input_args(backend)]
-            args += ["-ss", f"{max(0.0, start_timestamp):.3f}"]
-            if seek_mode == "keyframe":
-                args += ["-noaccurate_seek"]
-            args += ["-i", str(video_path)]
-            args += ["-t", f"{max(0.05, duration_seconds):.3f}"]
-            filters = []
-            download_filter = _hwaccel_download_filter(backend)
-            if download_filter:
-                filters.append(download_filter)
-            filters.append(f"fps={fps}")
-            if max_width:
-                filters.append(f"scale='min(iw,{max_width})':-2")
-            args += ["-vf", ",".join(filters), "-frames:v", str(max_frames), "-q:v", "2", str(tmp_dir / "f%04d.jpg")]
-            try:
-                result = subprocess.run(args, capture_output=True, timeout=30, check=False)
-            except (OSError, subprocess.SubprocessError):
-                continue
-            if result.returncode != 0:
-                continue
-            frames = []
-            # Unicode-safe read, same reasoning as `extract_frame_image()`.
-            for frame_path in sorted(tmp_dir.glob("f*.jpg")):
-                data = np.fromfile(str(frame_path), dtype=np.uint8)
-                image = cv2.imdecode(data, cv2.IMREAD_COLOR)
-                if image is not None:
-                    frames.append(image)
-            if frames:
-                return frames
-            # Hardware attempt produced no usable frames -- clear any stray
-            # output before falling back to software so a partial failure
-            # can't get mixed into the next attempt's results.
-            for frame_path in tmp_dir.glob("f*.jpg"):
-                frame_path.unlink()
-        return []
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-def _map_parallel(func, items: list, max_workers: int) -> list:
-    """`[func(item) for item in items]`, optionally spread across a thread
-    pool (post-V1, user request: a single file's independent per-timestamp
-    ffmpeg frame extractions are the "one file, many threads" case for
-    preview generation -- `app/jobs/convert.py`'s variant sweep is the
-    equivalent for conversion). Preserves input order regardless of
-    completion order, which callers rely on (frame index <-> timestamp
-    index correspondence). Falls back to a plain sequential loop for
-    `max_workers <= 1` or a single item, since spinning up a thread pool for
-    one call only adds overhead."""
-    if max_workers <= 1 or len(items) <= 1:
-        return [func(item) for item in items]
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as executor:
-        return list(executor.map(func, items))
-
-
-def fill_missing_frames(images: list):
-    """Replace failed extractions (`None`) with the nearest successful
-    neighbor so a single ffmpeg hiccup never breaks the whole collage."""
-    filled = list(images)
-    for i, img in enumerate(filled):
-        if img is not None:
-            continue
-        for offset in range(1, len(filled)):
-            for j in (i - offset, i + offset):
-                if 0 <= j < len(filled) and filled[j] is not None:
-                    filled[i] = filled[j]
-                    break
-            if filled[i] is not None:
-                break
-    return filled
 
 
 # --- frame scoring and tile assignment ------------------------------------
@@ -356,198 +116,6 @@ def select_frames_for_tiles(
 
     return assignment
 
-
-# --- collage rendering ------------------------------------------------------
-
-
-def shrink_frame(image_bgr, max_width: int):
-    """Downscale a decoded BGR frame to at most `max_width` wide, preserving
-    aspect ratio (post-V1, user request): used when a frame is going to be
-    cached in memory across several downstream uses (folder-preview frame
-    reuse across ancestor directories, `app/jobs/preview.py`) instead of
-    consumed once and discarded, so the cache holds GIF-sized frames instead
-    of full source-resolution ones. A no-op (returns the same array) when
-    the frame is already at or below `max_width` -- never upscales."""
-    if image_bgr is None:
-        return None
-    height, width = image_bgr.shape[:2]
-    if width <= max_width:
-        return image_bgr
-    scale = max_width / width
-    new_size = (max_width, max(1, round(height * scale)))
-    return cv2.resize(image_bgr, new_size, interpolation=cv2.INTER_AREA)
-
-
-def _cover_resize(image: Image.Image, target_w: int, target_h: int) -> Image.Image:
-    """Resize+center-crop to fill the target box without distortion (like
-    CSS `object-fit: cover`)."""
-    src_w, src_h = image.size
-    scale = max(target_w / src_w, target_h / src_h)
-    new_w, new_h = max(1, round(src_w * scale)), max(1, round(src_h * scale))
-    resized = image.resize((new_w, new_h), Image.LANCZOS)
-    left = (new_w - target_w) // 2
-    top = (new_h - target_h) // 2
-    return resized.crop((left, top, left + target_w, top + target_h))
-
-
-def render_collage(
-    images: list,
-    tiles: list[dict],
-    caption: str,
-    aspect_ratio: float,
-    dest_path: Path,
-    *,
-    grid_rows: int,
-    grid_cols: int,
-    width: int = CANVAS_WIDTH,
-    quality: int = JPEG_QUALITY,
-) -> None:
-    """Compose `images[i]` into `tiles[i]`'s cell on a black canvas with a
-    caption bar (Specification §9.2.1). `tiles`/`images` must be the same
-    length and in matching order."""
-    height = round(width / aspect_ratio)
-    canvas = Image.new("RGB", (width, height), (0, 0, 0))
-
-    grid_area_width = width - 2 * MARGIN_PX
-    grid_area_height = height - CAPTION_HEIGHT_PX - 2 * MARGIN_PX
-    cell_w = (grid_area_width - (grid_cols - 1) * GAP_PX) / grid_cols
-    cell_h = (grid_area_height - (grid_rows - 1) * GAP_PX) / grid_rows
-
-    for tile, image_bgr in zip(tiles, images):
-        x = MARGIN_PX + tile["col"] * (cell_w + GAP_PX)
-        y = MARGIN_PX + tile["row"] * (cell_h + GAP_PX)
-        w = tile["span"] * cell_w + (tile["span"] - 1) * GAP_PX
-        h = tile["span"] * cell_h + (tile["span"] - 1) * GAP_PX
-
-        pil_image = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
-        fitted = _cover_resize(pil_image, max(1, round(w)), max(1, round(h)))
-        canvas.paste(fitted, (round(x), round(y)))
-
-    draw = ImageDraw.Draw(canvas)
-    font = ImageFont.load_default()
-    caption_top = height - CAPTION_HEIGHT_PX
-    text_bbox = draw.textbbox((0, 0), caption, font=font)
-    text_w, text_h = text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1]
-    draw.text(
-        ((width - text_w) / 2, caption_top + (CAPTION_HEIGHT_PX - text_h) / 2),
-        caption,
-        fill=CAPTION_COLOR,
-        font=font,
-    )
-
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    canvas.convert("RGB").save(dest_path, format="JPEG", quality=quality)
-
-
-# --- animated GIF preview ---------------------------------------------------
-
-
-_GIF_PALETTE_THUMB_SIZE = 32
-
-
-def _build_shared_gif_palette(frames: list, colors: int):
-    """One `colors`-color palette shared by every output frame (user
-    request, chat 2026-07-25 -- slow preview generation): built from a small
-    thumbnail of each frame pasted into one strip, so quantizing it costs
-    roughly one frame's worth of work regardless of how many frames the GIF
-    actually has, instead of a full-resolution ADAPTIVE search per frame."""
-    strip = Image.new(
-        "RGB", (_GIF_PALETTE_THUMB_SIZE * len(frames), _GIF_PALETTE_THUMB_SIZE)
-    )
-    for index, frame in enumerate(frames):
-        thumb = frame.resize((_GIF_PALETTE_THUMB_SIZE, _GIF_PALETTE_THUMB_SIZE), Image.BILINEAR)
-        strip.paste(thumb, (index * _GIF_PALETTE_THUMB_SIZE, 0))
-    return strip.quantize(colors=colors)
-
-
-def render_gif(
-    images: list,
-    dest_path: Path,
-    aspect_ratio: float,
-    *,
-    max_width: int = GIF_MAX_WIDTH,
-    colors: int = GIF_DEFAULT_COLORS,
-    segment_seconds: float = GIF_DEFAULT_SEGMENT_SECONDS,
-    transition: str = "cut",
-    segment_sizes: list[int] | None = None,
-) -> None:
-    """Compose frames into a small looping GIF for grid/list-view hover
-    previews — a lighter, lower-fidelity companion to the JPEG collage.
-    Each frame is cover-cropped to `aspect_ratio` (user request), same as
-    the collage's tiles, so a native-ratio source video never appears
-    letterboxed inside the fixed-ratio preview slot. `max_width`/`colors`
-    (user request — GIFs previously matched the collage's fidelity despite
-    only ever being shown in a small hover thumbnail) are configurable via
-    `preview_settings.py`'s `gif_max_width`/`gif_colors`; a smaller palette
-    shrinks file size at the cost of banding, which is an acceptable
-    trade-off at this size.
-
-    `images` is a flat, already-ordered list of frames; `segment_sizes`
-    (user request, animated-preview source mode) optionally groups them into
-    consecutive "positions" -- e.g. a burst of frames sampled from one short
-    clip in "clip" mode -- so each position's frames together fill
-    `segment_seconds` regardless of how many frames represent it. When
-    omitted, every image is its own one-frame segment ("frame" mode, and the
-    prior single-still-per-position behavior). `transition="crossfade"`
-    inserts a few alpha-blended frames between consecutive positions instead
-    of a hard cut."""
-    target_w = max_width
-    target_h = max(1, round(target_w / aspect_ratio))
-    fitted_frames = []
-    for image_bgr in images:
-        if image_bgr is None:
-            continue
-        pil_image = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
-        fitted_frames.append(_cover_resize(pil_image, target_w, target_h))
-    if not fitted_frames:
-        return
-
-    if segment_sizes is None:
-        segment_sizes = [1] * len(fitted_frames)
-
-    segments = []
-    cursor = 0
-    for size in segment_sizes:
-        if size <= 0:
-            continue
-        segments.append(fitted_frames[cursor : cursor + size])
-        cursor += size
-    if not segments:
-        return
-
-    output_frames = []
-    durations = []
-    for index, segment in enumerate(segments):
-        per_frame_ms = max(GIF_MIN_FRAME_DURATION_MS, round(segment_seconds * 1000 / len(segment)))
-        for frame in segment:
-            output_frames.append(frame)
-            durations.append(per_frame_ms)
-        if transition == "crossfade" and index < len(segments) - 1:
-            last_frame = segment[-1]
-            next_frame = segments[index + 1][0]
-            for step in range(1, CROSSFADE_STEPS + 1):
-                alpha = step / (CROSSFADE_STEPS + 1)
-                output_frames.append(Image.blend(last_frame, next_frame, alpha))
-                durations.append(CROSSFADE_FRAME_DURATION_MS)
-
-    # One shared palette built from all frames (previously: a separate
-    # ADAPTIVE palette computed per frame -- expensive at 100+ frames and
-    # prone to visible color flicker between frames since each one picked
-    # its own best-fit colors independently).
-    shared_palette = _build_shared_gif_palette(output_frames, colors)
-    palette_frames = [frame.quantize(palette=shared_palette, dither=Image.FLOYDSTEINBERG) for frame in output_frames]
-
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    palette_frames[0].save(
-        dest_path,
-        format="GIF",
-        save_all=True,
-        append_images=palette_frames[1:],
-        duration=durations,
-        loop=0,
-    )
-
-
 # --- file (video) preview ----------------------------------------------------
 
 
@@ -593,7 +161,7 @@ def generate_file_preview(
     hiding which stage is actually slow.
 
     `frame_seek_mode` (Preview Settings `frame_seek_mode`, user request) is
-    passed straight to `extract_frame_image()`/`extract_clip_frames()` --
+    passed straight to `preview_frames.extract_frame_image()`/`preview_frames.extract_clip_frames()` --
     see there for what "keyframe" trades off against the default "accurate".
     All frame extraction here also uses `EXTRACT_MAX_WIDTH` regardless of
     this setting."""
@@ -612,7 +180,7 @@ def generate_file_preview(
 
     # Once per file, not once per sampled frame (post-V1, user request "make
     # it visible when hardware acceleration is actually used"): every
-    # `extract_frame_image()`/`extract_clip_frames()` call below re-checks
+    # `preview_frames.extract_frame_image()`/`preview_frames.extract_clip_frames()` call below re-checks
     # this same (cached) backend on its own, so logging it here once already
     # reflects what the whole file's extraction will use.
     hw_backend = hardware_decode.decode_backend()
@@ -622,9 +190,9 @@ def generate_file_preview(
     t0 = time.monotonic()
     stage(f"Extracting {len(tiles)} collage frame(s)")
     timestamps = sample_interior_timestamps(info["duration"], len(tiles))
-    images = fill_missing_frames(
-        _map_parallel(
-            lambda ts: extract_frame_image(
+    images = preview_frames.fill_missing_frames(
+        preview_frames._map_parallel(
+            lambda ts: preview_frames.extract_frame_image(
                 video_path, ts, seek_mode=frame_seek_mode, max_width=EXTRACT_MAX_WIDTH
             ),
             timestamps,
@@ -646,7 +214,7 @@ def generate_file_preview(
             # the clip burst comes back empty (e.g. too close to EOF).
             def _extract_segment(pair: tuple[float, object]) -> list:
                 timestamp, fallback = pair
-                burst = extract_clip_frames(
+                burst = preview_frames.extract_clip_frames(
                     video_path, timestamp, animated_segment_seconds,
                     seek_mode=frame_seek_mode, max_width=EXTRACT_MAX_WIDTH,
                 )
@@ -654,20 +222,20 @@ def generate_file_preview(
 
             gif_images: list = []
             gif_segment_sizes: list[int] = []
-            for segment in _map_parallel(_extract_segment, list(zip(timestamps, images)), max_workers):
+            for segment in preview_frames._map_parallel(_extract_segment, list(zip(timestamps, images)), max_workers):
                 gif_images.extend(segment)
                 gif_segment_sizes.append(len(segment))
             stage(f"Extracted {len(gif_images)} animated preview frame(s) in {time.monotonic() - t0:.2f}s")
 
             t0 = time.monotonic()
-            render_gif(
+            preview_render.render_gif(
                 gif_images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors,
                 segment_seconds=animated_segment_seconds, transition=animated_transition,
                 segment_sizes=gif_segment_sizes,
             )
         else:
             stage("Reusing collage frames for animated preview")
-            render_gif(
+            preview_render.render_gif(
                 images, gif_dest_path, aspect_ratio, max_width=gif_max_width, colors=gif_colors,
                 segment_seconds=animated_segment_seconds, transition=animated_transition,
             )
@@ -681,7 +249,7 @@ def generate_file_preview(
     )
     ordered_images = [images[assignment[i]] for i in range(len(tiles))]
 
-    render_collage(
+    preview_render.render_collage(
         ordered_images, tiles, video_path.name, aspect_ratio, dest_path,
         grid_rows=layout["grid_rows"], grid_cols=layout["grid_cols"],
     )
@@ -766,7 +334,7 @@ def _pick_representative_frame_and_timestamp(video_path: Path, candidate_count: 
         return None, None
 
     timestamps = sample_interior_timestamps(info["duration"], candidate_count) or [info["duration"] / 2]
-    candidates = [(ts, img) for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]
+    candidates = [(ts, img) for ts in timestamps if (img := preview_frames.extract_frame_image(video_path, ts)) is not None]
     if not candidates:
         return None, None
 
@@ -804,7 +372,7 @@ def pick_representative_frames(video_path: Path, count: int) -> list:
     if info is None or not info.get("duration"):
         return []
     timestamps = sample_interior_timestamps(info["duration"], count)
-    return [img for ts in timestamps if (img := extract_frame_image(video_path, ts)) is not None]
+    return [img for ts in timestamps if (img := preview_frames.extract_frame_image(video_path, ts)) is not None]
 
 
 def pick_image_segments(image_path: Path, count: int) -> list[list]:
@@ -815,7 +383,7 @@ def pick_image_segments(image_path: Path, count: int) -> list[list]:
     position in the plan simply repeats the same decoded frame -- the
     surrounding video segments (or other images) in the plan are what give
     the GIF its variety. Same Windows non-ASCII-path-safe decode as
-    `extract_frame_image()` (`cv2.imread()` silently fails on paths with
+    `preview_frames.extract_frame_image()` (`cv2.imread()` silently fails on paths with
     non-ASCII characters)."""
     if count <= 0:
         return []
@@ -854,7 +422,7 @@ def pick_representative_segments(
         if timestamp is None:
             return []
         if mode == "clip":
-            burst = extract_clip_frames(video_path, timestamp, segment_seconds, seek_mode=seek_mode)
+            burst = preview_frames.extract_clip_frames(video_path, timestamp, segment_seconds, seek_mode=seek_mode)
             if burst:
                 return [burst]
         return [[frame]] if frame is not None else []
@@ -866,12 +434,12 @@ def pick_representative_segments(
     segments: list[list] = []
     for timestamp in timestamps:
         if mode == "clip":
-            burst = extract_clip_frames(
+            burst = preview_frames.extract_clip_frames(
                 video_path, timestamp, segment_seconds, seek_mode=seek_mode, max_width=EXTRACT_MAX_WIDTH
             )
             if burst:
                 segments.append(burst)
                 continue
-        frame = extract_frame_image(video_path, timestamp, seek_mode=seek_mode, max_width=EXTRACT_MAX_WIDTH)
+        frame = preview_frames.extract_frame_image(video_path, timestamp, seek_mode=seek_mode, max_width=EXTRACT_MAX_WIDTH)
         segments.append([frame] if frame is not None else [])
     return segments

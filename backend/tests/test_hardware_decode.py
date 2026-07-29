@@ -128,13 +128,13 @@ def test_extract_frame_image_uses_hw_decode_when_available(tmp_path):
     if not hardware_decode.check_hardware_decode().any_available:
         pytest.skip("No hardware decode backend available on this host")
 
-    from app import preview
+    from app import preview_frames
 
     from .conftest import make_video
 
     video_path = tmp_path / "clip.mp4"
     make_video(video_path, duration=2.0, size="320x240")
 
-    image = preview.extract_frame_image(video_path, 1.0)
+    image = preview_frames.extract_frame_image(video_path, 1.0)
     assert image is not None
     assert image.shape[:2] == (240, 320)

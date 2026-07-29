@@ -35,7 +35,16 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from app import hardware_decode, performance_settings, preview, preview_layouts, preview_settings, similarity
+from app import (
+    hardware_decode,
+    performance_settings,
+    preview,
+    preview_frames,
+    preview_layouts,
+    preview_render,
+    preview_settings,
+    similarity,
+)
 from app.jobs import service
 from app.media import folder_gif_relative_path, is_test_artifact, preview_gif_relative_path, sibling_relative_path
 from app.sources import SourceAccess, get_source_access
@@ -446,7 +455,7 @@ def _generate_folder_previews(
     # request) instead of being re-downloaded (SMB: a full network transfer
     # per ancestor level) and re-decoded from scratch at every level. Cached
     # frames are shrunk to the GIF's own target width before caching
-    # (`preview.shrink_frame()`) so the in-memory cache stays roughly
+    # (`preview_frames.shrink_frame()`) so the in-memory cache stays roughly
     # GIF-sized per frame instead of holding full source-resolution frames
     # for the whole sweep's duration. `job_stack` -- not a per-directory one
     # -- keeps materialized local copies alive (SMB: on local disk) for the
@@ -486,7 +495,7 @@ def _generate_folder_previews(
                         segment_seconds=animated_segment_seconds, seek_mode=frame_seek_mode,
                     )
                 segments_cache[key] = [
-                    [preview.shrink_frame(frame, gif_max_width) for frame in segment]
+                    [preview_frames.shrink_frame(frame, gif_max_width) for frame in segment]
                     for segment in raw_segments
                 ]
             return segments_cache[key]
@@ -563,7 +572,7 @@ def _generate_folder_previews(
                 t0 = time.monotonic()
                 with tempfile.TemporaryDirectory(prefix="va_preview_out_") as gif_stage_dir:
                     local_dest = Path(gif_stage_dir) / dest_name
-                    preview.render_gif(
+                    preview_render.render_gif(
                         images, local_dest, aspect_ratio,
                         max_width=gif_max_width, colors=settings["gif_colors"],
                         segment_seconds=animated_segment_seconds, transition=animated_transition,

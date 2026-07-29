@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app import detection
+from app import detection, hardware_decode
 from app.conversion import build_ffmpeg_command, effective_max_dimension, encode_variant_suffix
 from app.media import (
     PREVIEW_GIF_DIR,
@@ -170,7 +170,12 @@ def test_encode_variant_suffix():
     assert encode_variant_suffix(profile, {"video_codec": "h265", "crf": 30}) == "crf30"
 
 
-def test_build_ffmpeg_command_shape():
+def test_build_ffmpeg_command_shape(monkeypatch):
+    # Pure command-shape assertions below assume no hardware-decode filter
+    # is in play; without this, the test's result depends on whether the
+    # machine running it actually has a probeable QSV/VAAPI device (real
+    # hardware-decode tests live in test_hardware_decode.py).
+    monkeypatch.setattr(hardware_decode, "decode_backend", lambda: None)
     args = build_ffmpeg_command(
         Path("in.mp4"), Path("out.mp4"), video_codec="h265", crf=28, drop_audio=False
     )
@@ -183,7 +188,10 @@ def test_build_ffmpeg_command_shape():
     assert args[args.index("-c:a") + 1] == "copy"
 
 
-def test_build_ffmpeg_command_scale_audio_and_extra_args():
+def test_build_ffmpeg_command_scale_audio_and_extra_args(monkeypatch):
+    # See test_build_ffmpeg_command_shape: keep the scale-filter shape
+    # deterministic regardless of the host machine's real hardware.
+    monkeypatch.setattr(hardware_decode, "decode_backend", lambda: None)
     args = build_ffmpeg_command(
         Path("in.mp4"),
         Path("out.mp4"),

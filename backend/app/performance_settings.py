@@ -50,8 +50,19 @@ def get_settings(engine) -> dict:
 
 
 def update_settings(engine, data: dict) -> dict:
-    parallel_workers = max(MIN_PARALLEL_WORKERS, min(MAX_PARALLEL_WORKERS, data["parallel_workers"]))
-    eta_window_minutes = max(MIN_ETA_WINDOW_MINUTES, min(MAX_ETA_WINDOW_MINUTES, data["eta_window_minutes"]))
+    # `.get(..., current[...])` rather than strict indexing (same reasoning
+    # as `conversion_settings.update_settings`): existing callers that only
+    # ever set `parallel_workers` shouldn't need to know about
+    # `eta_window_minutes` too.
+    current = get_settings(engine)
+    parallel_workers = max(
+        MIN_PARALLEL_WORKERS,
+        min(MAX_PARALLEL_WORKERS, data.get("parallel_workers", current["parallel_workers"])),
+    )
+    eta_window_minutes = max(
+        MIN_ETA_WINDOW_MINUTES,
+        min(MAX_ETA_WINDOW_MINUTES, data.get("eta_window_minutes", current["eta_window_minutes"])),
+    )
     now = _now()
     with engine.begin() as conn:
         conn.execute(
