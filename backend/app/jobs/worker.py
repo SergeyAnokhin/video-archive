@@ -30,8 +30,12 @@ of calling it directly, so it can notice this out-of-band status change and
 abandon a still-running handler thread rather than blocking on it forever
 (which would otherwise wedge this lane -- and every future job of its
 types -- until the process restarts). Python has no safe way to kill a
-thread, so an abandoned thread is left to finish or error out on its own;
-it's a daemon thread, so it can't block process shutdown either.
+thread, so an abandoned thread finishes its current item on its own; it is
+then stopped at its next cooperative checkpoint by
+`service.mark_job_abandoned()` (without which it would work through the rest
+of its item list -- for `convert`, still replacing source files -- long after
+the UI reported the job cancelled). It's a daemon thread, so it can't block
+process shutdown either.
 """
 
 from __future__ import annotations
@@ -151,6 +155,10 @@ class _Lane:
                         engine, job_id, None, "warning", "job_force_abandoned",
                         "Job was force-stopped while its worker thread was still busy; the thread was abandoned.",
                     )
+                    # Marked before the registries are cleared, so the
+                    # abandoned thread never observes a moment with no stop
+                    # signal set at all and run on past its next checkpoint.
+                    service.mark_job_abandoned(job_id)
                     service.clear_cancel_request(job_id)
                     service.clear_pause_request(job_id)
                     return

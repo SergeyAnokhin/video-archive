@@ -756,11 +756,26 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
         f"direct_write={'on' if direct_write_enabled else 'off'}",
     )
 
+    # Timed individually (user-reported: a job that logged its parameters and
+    # then went silent forever): these two calls are everything that happens
+    # between the `job_parameters` line and `_run_directory_scope`'s own first
+    # log line, so whichever of them is missing here is the one that blocked.
+    t0 = time.monotonic()
     with engine.connect() as conn:
         source_row = conn.execute(text("SELECT * FROM sources WHERE is_active = 1 LIMIT 1")).fetchone()
     if source_row is None:
         raise RuntimeError("No active source is configured.")
+    service.log_event(
+        engine, job["id"], None, "info", "job_item_progress",
+        f"Loaded active source in {time.monotonic() - t0:.2f}s",
+    )
+
+    t0 = time.monotonic()
     access = get_source_access(source_row)
+    service.log_event(
+        engine, job["id"], None, "info", "job_item_progress",
+        f"Opened source access in {time.monotonic() - t0:.2f}s",
+    )
 
     if job["scope_type"] == "file":
         return _run_file_scope(

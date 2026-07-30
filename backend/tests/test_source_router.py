@@ -568,7 +568,14 @@ def test_smb_lock_status_and_release(tmp_path, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/api/source/smb-lock-status")
         assert r.status_code == 200
-        assert r.json() == {"held": False, "held_since": None, "seconds_held": None, "description": None}
+        assert r.json() == {
+            "held": False,
+            "held_since": None,
+            "seconds_held": None,
+            "description": None,
+            "waiters": 0,
+            "orphaned_waiters": 0,
+        }
 
         with smb_backend._locked("test operation"):
             r = client.get("/api/source/smb-lock-status")

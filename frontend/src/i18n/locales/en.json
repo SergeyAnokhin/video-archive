@@ -78,6 +78,7 @@
     "sourceStatusDirectFallback": "Direct access isn't available right now — falling back to file copying.",
     "sourceSmbLockFree": "SMB lock: free",
     "sourceSmbLockHeld": "SMB lock: busy ({{duration}}) — every operation against this NAS is waiting its turn",
+    "sourceSmbLockOrphaned": "{{count}} operation(s) are stuck on a lock a previous release retired — they cannot be freed, restart the backend",
     "sourceSmbLockRelease": "Release lock",
     "detectedBackupsHint": "Found {{count}} backup(s) on this source.",
     "restoreDetected": "Restore",

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import shutil
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -247,6 +248,8 @@ def test_get_lock_status_reports_idle_when_not_held():
         "held_since": None,
         "seconds_held": None,
         "description": None,
+        "waiters": 0,
+        "orphaned_waiters": 0,
     }
 
 
@@ -295,6 +298,86 @@ def test_force_release_lock_unblocks_new_callers_even_if_old_holder_never_return
     finally:
         release_stuck_caller.set()
         stuck_thread.join(timeout=5)
+
+
+def test_lock_status_counts_threads_queued_behind_the_holder():
+    holder_ready = threading.Event()
+    release_holder = threading.Event()
+
+    def _holder():
+        with smb_backend._locked("holding"):
+            holder_ready.set()
+            release_holder.wait(timeout=5)
+
+    def _waiter():
+        with smb_backend._locked("queued"):
+            pass
+
+    holder = threading.Thread(target=_holder, daemon=True)
+    holder.start()
+    try:
+        assert holder_ready.wait(timeout=5)
+        waiter = threading.Thread(target=_waiter, daemon=True)
+        waiter.start()
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if smb_backend.get_lock_status()["waiters"] == 1:
+                break
+            time.sleep(0.01)
+        status = smb_backend.get_lock_status()
+        assert status["waiters"] == 1
+        assert status["orphaned_waiters"] == 0
+    finally:
+        release_holder.set()
+        holder.join(timeout=5)
+        waiter.join(timeout=5)
+
+    assert smb_backend.get_lock_status()["waiters"] == 0
+
+
+def test_force_release_reports_waiters_it_stranded_on_the_retired_lock():
+    """The Settings indicator used to read a reassuring "not held" after a
+    release while the thread that had already been waiting stayed wedged for
+    the life of the process (user-reported: a convert job that never got past
+    its parameters line). That thread is unreachable either way -- but it must
+    at least be visible."""
+    holder_ready = threading.Event()
+    release_holder = threading.Event()
+
+    def _holder():
+        with smb_backend._locked("wedged"):
+            holder_ready.set()
+            release_holder.wait(timeout=5)
+
+    def _stranded():
+        with smb_backend._locked("stranded"):
+            pass
+
+    holder = threading.Thread(target=_holder, daemon=True)
+    holder.start()
+    try:
+        assert holder_ready.wait(timeout=5)
+        stranded = threading.Thread(target=_stranded, daemon=True)
+        stranded.start()
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if smb_backend.get_lock_status()["waiters"] == 1:
+                break
+            time.sleep(0.01)
+        assert smb_backend.get_lock_status()["waiters"] == 1
+
+        smb_backend.force_release_lock()
+
+        status = smb_backend.get_lock_status()
+        assert status["held"] is False
+        assert status["waiters"] == 0
+        assert status["orphaned_waiters"] == 1
+    finally:
+        release_holder.set()
+        holder.join(timeout=5)
+        stranded.join(timeout=5)
 
 
 # --- write-side direct-access fast path (commit/rename/remove) --------------

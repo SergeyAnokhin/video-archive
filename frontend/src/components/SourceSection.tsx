@@ -291,6 +291,12 @@ export function SourceSection() {
         </p>
       )}
 
+      {source?.protocol === 'smb' && (lockStatus?.orphaned_waiters ?? 0) > 0 && (
+        <p className="settings-modal__hint settings-modal__hint--warning">
+          {t('settings.sourceSmbLockOrphaned', { count: lockStatus?.orphaned_waiters ?? 0 })}
+        </p>
+      )}
+
       <label className="settings-modal__label">
         {t('settings.sourceProtocol')}
         <select

@@ -140,6 +140,14 @@ export interface SmbLockStatus {
   held_since: string | null
   seconds_held: number | null
   description: string | null
+  /** Threads queued behind the current holder. */
+  waiters: number
+  /**
+   * Threads stranded on a lock a previous "release lock" retired. They stay
+   * stuck for the life of the process — pressing the button again cannot
+   * reach them, only a backend restart can.
+   */
+  orphaned_waiters: number
 }
 
 export interface PreviewCacheStats {

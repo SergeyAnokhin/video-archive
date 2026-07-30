@@ -278,6 +278,65 @@ def test_force_cancel_frees_the_lane_from_an_unresponsive_job(engine, source, mo
         worker.stop()
 
 
+def test_force_cancel_stops_the_abandoned_handler_at_its_next_checkpoint(engine, source, monkeypatch):
+    """Force-cancel can't interrupt the item the handler is already on (there
+    is no safe way to kill a thread), but the abandoned thread must not work
+    through the *rest* of its list: the lane clears the cancel registry when
+    it gives up on the thread, which used to leave the thread with no stop
+    signal at all. For `convert` that meant a job the UI reported as cancelled
+    kept replacing source files -- field-observed ~16 minutes past the cancel.
+    """
+    first_item_started = threading.Event()
+    release_first_item = threading.Event()
+    items_processed: list[int] = []
+
+    stuck_job = service.create_job(engine, "rescan", "source", None, {"path": ""})
+
+    def _multi_item_handler(engine_, job):
+        for index in range(5):
+            if service.check_stop_requested(job["id"]):
+                return "cancelled", "stopped at checkpoint"
+            items_processed.append(index)
+            if index == 0:
+                first_item_started.set()
+                release_first_item.wait(timeout=30)
+        return "completed", "ok"
+
+    monkeypatch.setitem(worker_module._HANDLERS, "rescan", _multi_item_handler)
+
+    worker = JobWorker()
+    worker.start()
+    try:
+        assert first_item_started.wait(timeout=5), "handler never started"
+
+        service.cancel_job(engine, stuck_job["id"])
+        assert service.cancel_job(engine, stuck_job["id"])["status"] == "cancelled"
+        assert _wait_for_event(engine, stuck_job["id"], "job_force_abandoned", timeout=5)
+
+        # Only now let the in-flight item finish: the thread is already
+        # abandoned, and its next checkpoint must stop it.
+        release_first_item.set()
+        time.sleep(0.5)
+        assert items_processed == [0]
+    finally:
+        release_first_item.set()
+        worker.stop()
+
+
+def _wait_for_event(engine, job_id: str, event_type: str, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as conn:
+            found = conn.execute(
+                text("SELECT 1 FROM app_events WHERE job_id = :id AND event_type = :type LIMIT 1"),
+                {"id": job_id, "type": event_type},
+            ).first()
+        if found is not None:
+            return True
+        time.sleep(0.05)
+    return False
+
+
 def _wait_for_finish(engine, job_id: str, timeout: float = 10.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

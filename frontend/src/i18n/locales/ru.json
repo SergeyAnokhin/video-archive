@@ -78,6 +78,7 @@
     "sourceStatusDirectFallback": "Прямой доступ сейчас недоступен — используется копирование файлов.",
     "sourceSmbLockFree": "Блокировка SMB: свободна",
     "sourceSmbLockHeld": "Блокировка SMB: занята ({{duration}}) — все операции с этим NAS ждут своей очереди",
+    "sourceSmbLockOrphaned": "Операций застряло на снятой ранее блокировке: {{count}} — освободить их нельзя, перезапустите бэкенд",
     "sourceSmbLockRelease": "Снять блокировку",
     "detectedBackupsHint": "На этом источнике найдено резервных копий: {{count}}.",
     "restoreDetected": "Восстановить",

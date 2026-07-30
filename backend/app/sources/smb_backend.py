@@ -85,20 +85,50 @@ _state_lock = threading.Lock()
 _lock_held_since: float | None = None
 _lock_description: str | None = None
 
+# How many threads are currently parked waiting for each lock object, keyed by
+# the lock itself (locks are hashable, and a retired lock stays referenced by
+# the very waiters counted here, so its entry can't be lost to GC). Entries for
+# any lock other than the current `_smb_lock` are threads that `_locked()` can
+# never wake again -- see its docstring.
+_waiters_by_lock: dict[threading.Lock, int] = {}
+
+
+def _note_waiter(lock: threading.Lock, delta: int) -> None:
+    with _state_lock:
+        count = _waiters_by_lock.get(lock, 0) + delta
+        if count > 0:
+            _waiters_by_lock[lock] = count
+        else:
+            _waiters_by_lock.pop(lock, None)
+
 
 @contextmanager
 def _locked(description: str):
     """Acquires the current `_smb_lock` while recording why, for
-    `get_lock_status()`. Reads `_smb_lock` via the global each time (not a
-    cached reference) so a `force_release_lock()` call made while this is
-    blocked takes effect for the *next* caller immediately, without needing
-    this one to ever return."""
+    `get_lock_status()`.
+
+    Note the limit of `force_release_lock()`: it swaps in a new lock, so
+    callers arriving *afterwards* proceed immediately, but a thread already
+    parked on `lock.acquire()` below stays parked forever -- the retired
+    lock's holder is by definition never going to release it. Those threads
+    are reported as `orphaned_waiters` rather than being silently invisible
+    (user-reported: a convert job stayed wedged while the Settings indicator
+    read "not held", because a release had already cleared the metadata)."""
     global _lock_held_since, _lock_description
     lock = _smb_lock
-    with lock:
+    _note_waiter(lock, 1)
+    try:
+        lock.acquire()
+    finally:
+        _note_waiter(lock, -1)
+    try:
         with _state_lock:
-            _lock_held_since = time.monotonic()
-            _lock_description = description
+            # Same `is` guard as the clear below: a caller that finally won a
+            # lock a release has already retired is not the current lock's
+            # holder, and must not report itself as one.
+            if _smb_lock is lock:
+                _lock_held_since = time.monotonic()
+                _lock_description = description
         try:
             yield
         finally:
@@ -110,16 +140,34 @@ def _locked(description: str):
                 if _smb_lock is lock:
                     _lock_held_since = None
                     _lock_description = None
+    finally:
+        lock.release()
 
 
 def get_lock_status() -> dict:
     """Read-only snapshot for the Settings UI -- deliberately touches only
-    `_state_lock` (always fast), never `_smb_lock` itself."""
+    `_state_lock` (always fast), never `_smb_lock` itself.
+
+    `waiters` counts threads queued behind the current holder (a healthy
+    number while a big download is in flight). `orphaned_waiters` counts
+    threads stranded on a lock a previous "release lock" retired: those are
+    wedged for the life of the process and pressing the button again will not
+    help them, so a non-zero value means the backend needs a restart."""
     with _state_lock:
         held_since = _lock_held_since
         description = _lock_description
+        current = _smb_lock
+        waiters = _waiters_by_lock.get(current, 0)
+        orphaned_waiters = sum(n for lock, n in _waiters_by_lock.items() if lock is not current)
     if held_since is None:
-        return {"held": False, "held_since": None, "seconds_held": None, "description": None}
+        return {
+            "held": False,
+            "held_since": None,
+            "seconds_held": None,
+            "description": None,
+            "waiters": waiters,
+            "orphaned_waiters": orphaned_waiters,
+        }
     seconds_held = time.monotonic() - held_since
     held_since_iso = (datetime.now(timezone.utc) - timedelta(seconds=seconds_held)).isoformat()
     return {
@@ -127,6 +175,8 @@ def get_lock_status() -> dict:
         "held_since": held_since_iso,
         "seconds_held": seconds_held,
         "description": description,
+        "waiters": waiters,
+        "orphaned_waiters": orphaned_waiters,
     }
 
 
@@ -136,7 +186,9 @@ def force_release_lock() -> None:
     immediately. Whatever thread is stuck holding the *old* lock keeps
     holding it forever -- Python has no safe way to force a thread off a
     blocking socket call -- but that thread is now abandoned rather than
-    blocking the rest of the process."""
+    blocking the rest of the process. Threads that were already *waiting* on
+    the old lock stay stuck with it; `get_lock_status()` reports them as
+    `orphaned_waiters`."""
     global _smb_lock, _lock_held_since, _lock_description
     with _state_lock:
         _smb_lock = threading.Lock()

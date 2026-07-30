@@ -169,12 +169,40 @@ def clear_pause_request(job_id: str) -> None:
         _pause_requested.discard(job_id)
 
 
+# --- abandoned-handler registry ---------------------------------------------
+# Jobs whose handler thread the worker lane gave up waiting on (see
+# `app/jobs/worker.py`'s `_execute`). The lane clears the cancel/pause
+# registries when it abandons a thread, but that thread is still running and
+# still polling `check_stop_requested` -- so the "stop at your next
+# checkpoint" signal has to live somewhere `clear_cancel_request` doesn't
+# reach. Without this the abandoned thread works through the rest of its
+# file list, and a `convert` job the UI already reported as cancelled keeps
+# replacing source files for as long as that takes (observed in the field:
+# a source file replaced ~16 minutes after the cancel).
+#
+# Never cleared: job ids are uuid4 and `restart` mints a new one, so a stale
+# entry can't strand an unrelated job, and one entry per force-cancel is not
+# a size worth managing.
+_abandoned_jobs: set[str] = set()
+_abandoned_lock = threading.Lock()
+
+
+def mark_job_abandoned(job_id: str) -> None:
+    with _abandoned_lock:
+        _abandoned_jobs.add(job_id)
+
+
+def is_job_abandoned(job_id: str) -> bool:
+    with _abandoned_lock:
+        return job_id in _abandoned_jobs
+
+
 def check_stop_requested(job_id: str) -> str | None:
     """Returns `"cancel"`/`"pause"` if either was requested for this job, or
     `None` -- the single check every job-handler loop checkpoint uses instead
     of calling `is_cancel_requested`/`is_pause_requested` separately. Cancel
     wins if somehow both are set, since it's the more final of the two."""
-    if is_cancel_requested(job_id):
+    if is_cancel_requested(job_id) or is_job_abandoned(job_id):
         return "cancel"
     if is_pause_requested(job_id):
         return "pause"
