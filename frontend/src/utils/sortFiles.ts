@@ -1,7 +1,7 @@
 // Client-side library sorting, extracted from LibraryView.tsx so the
 // search-results view (SearchResults.tsx) can apply the same toolbar sort
 // modes to its own fetched lists.
-import type { FileEntry, VariantTag } from '../types/api'
+import type { DirectoryEntry, FileEntry, VariantTag } from '../types/api'
 
 export type SortBy = 'name' | 'size' | 'tags'
 
@@ -35,6 +35,23 @@ export function sortFiles(files: FileEntry[], sortBy: SortBy): FileEntry[] {
       break
     case 'tags':
       sorted.sort(compareByTags)
+      break
+  }
+  return sorted
+}
+
+// Folders have no per-item tag list to sort by, so 'tags' falls back to name,
+// same as 'name' itself -- only 'size' (using the folder's recursive
+// total_size_bytes) actually diverges from the default alphabetical order.
+export function sortDirectories(directories: DirectoryEntry[], sortBy: SortBy): DirectoryEntry[] {
+  const sorted = [...directories]
+  switch (sortBy) {
+    case 'size':
+      sorted.sort((a, b) => (b.status?.total_size_bytes ?? 0) - (a.status?.total_size_bytes ?? 0))
+      break
+    case 'name':
+    case 'tags':
+      sorted.sort((a, b) => a.name.localeCompare(b.name))
       break
   }
   return sorted

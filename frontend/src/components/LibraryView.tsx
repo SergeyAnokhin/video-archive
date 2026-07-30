@@ -43,7 +43,7 @@ import type { DirectoryChildrenResponse, FileEntry, JobSummary } from '../types/
 import { getRecentFolderVisits, recordFolderVisit, recordRecentFolder } from '../utils/recentFolders'
 import { recordRecentlyViewed } from '../utils/recentlyViewed'
 import type { ActiveSearch } from '../utils/searchQuery'
-import { SORT_OPTIONS, sortFiles, type SortBy } from '../utils/sortFiles'
+import { SORT_OPTIONS, sortDirectories, sortFiles, type SortBy } from '../utils/sortFiles'
 import './LibraryView.css'
 
 interface LibraryViewProps {
@@ -316,6 +316,7 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   // results' own on-screen order (`searchFiles`, kept in sync by
   // SearchResults' `onFilesChanged`) while a search is active.
   const sortedFiles = activeSearch ? searchFiles : data ? sortFiles(data.files, sortBy) : []
+  const sortedDirectories = data ? sortDirectories(data.directories, sortBy) : []
 
   // Quick filter (magnifying-glass button next to the breadcrumb) narrows the
   // on-screen grid client-side by substring match, for both folders and
@@ -325,9 +326,9 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
   const quickFilterQuery = quickFilterText.trim().toLowerCase()
 
   const visibleDirectories =
-    !activeSearch && data && quickFilterQuery
-      ? data.directories.filter((dir) => dir.name.toLowerCase().includes(quickFilterQuery))
-      : (data?.directories ?? [])
+    !activeSearch && quickFilterQuery
+      ? sortedDirectories.filter((dir) => dir.name.toLowerCase().includes(quickFilterQuery))
+      : sortedDirectories
 
   const visibleFiles =
     !activeSearch && quickFilterQuery
