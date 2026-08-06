@@ -2,17 +2,15 @@
 # image.backend.tag / image.frontend.tag on every green build of main and
 # force-pushes the result to the `deploy` branch that ArgoCD tracks.
 fullnameOverride: "video-archive"
-
 image:
   registry: ghcr.io/sergeyanokhin/video-archive # lowercase, one repo -> many component images
   pullPolicy: IfNotPresent
-  backend: { repository: backend, tag: "REPLACED_BY_CI" }
-  frontend: { repository: frontend, tag: "REPLACED_BY_CI" }
+  backend: {repository: backend, tag: "a0694fbfaadc"}
+  frontend: {repository: frontend, tag: "a0694fbfaadc"}
 imagePullSecrets: [] # [{name: ghcr-creds}] only if the GHCR packages stay private
-
 backend:
   replicas: 1 # stateful (SQLite on the PVC) -> keep at 1, strategy Recreate
-  service: { port: 8000 }
+  service: {port: 8000}
   # Node placement: soft preference, not a hard requirement. When true, the
   # backend *prefers* the powerful node (`ubuntu-server`, label role=compute)
   # at scheduling time, and falls back to the general-purpose node (`k3s`)
@@ -34,19 +32,17 @@ backend:
   # resource-monitor samples in backend.log (see app/resource_monitor.py)
   # show the real steady-state profile.
   resources:
-    requests: { memory: 512Mi, cpu: 250m }
-    limits: { memory: 7Gi }
+    requests: {memory: 512Mi, cpu: 250m}
+    limits: {memory: 7Gi}
   # Mutable state (SQLite DB, secrets.env, preview cache, detection models,
   # logs) — mounted at stateDir, injected as VIDEO_ARCHIVE_STATE_DIR.
   stateDir: /data/state
   state:
     size: 20Gi
     storageClass: "" # "" = cluster default (k3s local-path, RWO, node-local)
-
 frontend:
   replicas: 1
-  service: { port: 80 }
-
+  service: {port: 80}
 ingress:
   enabled: true
   className: traefik
