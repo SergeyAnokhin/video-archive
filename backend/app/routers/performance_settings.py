@@ -17,6 +17,11 @@ class PerformanceSettingsRequest(BaseModel):
         ge=service.MIN_PARALLEL_WORKERS,
         le=service.MAX_PARALLEL_WORKERS,
     )
+    convert_workers: int = Field(
+        default=service.DEFAULT_CONVERT_WORKERS,
+        ge=service.MIN_PARALLEL_WORKERS,
+        le=service.MAX_PARALLEL_WORKERS,
+    )
     eta_window_minutes: int = Field(
         default=service.DEFAULT_ETA_WINDOW_MINUTES,
         ge=service.MIN_ETA_WINDOW_MINUTES,

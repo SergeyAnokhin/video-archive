@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -187,6 +188,77 @@ def test_extract_clip_frames_keyframe_mode_and_max_width(tmp_path, monkeypatch):
     assert "-noaccurate_seek" in calls[0]
     vf_index = calls[0].index("-vf")
     assert "scale=" in calls[0][vf_index + 1]
+
+
+def test_redo_duplicate_frames_reextracts_only_the_collapsed_timestamp(monkeypatch):
+    # Regression test (user report, chat 2026-08-05): `seek_mode="keyframe"`'s
+    # fast `-noaccurate_seek` occasionally resolves two distinct timestamps
+    # to the exact same physical frame, which shows up as a repeated tile in
+    # the collage. Verified against real footage in test-data/VideoArchive
+    # (two sample points ~1.3s apart, straddling a keyframe boundary, came
+    # back byte-identical).
+    import numpy as np
+
+    frame_a = np.zeros((4, 4, 3), dtype=np.uint8)
+    frame_b = np.full((4, 4, 3), 255, dtype=np.uint8)
+    images = [frame_a, frame_a.copy(), frame_b]  # index 1 duplicates index 0
+    timestamps = [1.0, 2.0, 3.0]
+
+    calls = []
+
+    def fake_extract(video_path, timestamp, *, seek_mode, max_width=None):
+        calls.append((timestamp, seek_mode))
+        return np.full((4, 4, 3), 9, dtype=np.uint8)
+
+    monkeypatch.setattr(preview_frames, "extract_frame_image", fake_extract)
+
+    result = preview_frames.redo_duplicate_frames(Path("dummy.mp4"), timestamps, images, max_width=1280)
+
+    assert calls == [(2.0, "accurate")]
+    assert np.array_equal(result[0], frame_a)
+    assert np.array_equal(result[2], frame_b)
+    assert np.array_equal(result[1], np.full((4, 4, 3), 9, dtype=np.uint8))
+
+
+def test_redo_duplicate_frames_keeps_duplicate_when_retry_fails(monkeypatch):
+    import numpy as np
+
+    frame_a = np.zeros((4, 4, 3), dtype=np.uint8)
+    images = [frame_a, frame_a.copy()]
+
+    monkeypatch.setattr(preview_frames, "extract_frame_image", lambda *a, **k: None)
+
+    result = preview_frames.redo_duplicate_frames(Path("dummy.mp4"), [1.0, 2.0], images, max_width=1280)
+
+    assert np.array_equal(result[1], frame_a)
+
+
+def test_generate_file_preview_reextracts_keyframe_seek_duplicates(tmp_path, monkeypatch):
+    # Integration-level regression test: simulates the real ffmpeg quirk
+    # above (rather than relying on it reproducing reliably in CI) by making
+    # every "keyframe" mode extraction collapse onto the same frame, then
+    # checks `generate_file_preview()`'s collage frames end up diverse again.
+    video_path = tmp_path / "movie.mp4"
+    make_video(video_path, duration=3.0, size="320x240")
+
+    layout = _layout_from_preset(preview_layouts._BUILTIN_PRESETS[0])
+    dest_path = tmp_path / "movie.jpg"
+
+    real_extract = preview_frames.extract_frame_image
+
+    def collapsing_extract(path, timestamp, *, seek_mode="accurate", max_width=None):
+        if seek_mode == "keyframe":
+            return real_extract(path, 0.01, seek_mode="accurate", max_width=max_width)
+        return real_extract(path, timestamp, seek_mode=seek_mode, max_width=max_width)
+
+    monkeypatch.setattr(preview_frames, "extract_frame_image", collapsing_extract)
+
+    _, images = preview.generate_file_preview(
+        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, frame_seek_mode="keyframe"
+    )
+
+    distinct = {img.tobytes() for img in images if img is not None}
+    assert len(distinct) > 1
 
 
 # --- layout geometry ------------------------------------------------------

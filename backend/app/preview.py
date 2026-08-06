@@ -164,7 +164,11 @@ def generate_file_preview(
     passed straight to `preview_frames.extract_frame_image()`/`preview_frames.extract_clip_frames()` --
     see there for what "keyframe" trades off against the default "accurate".
     All frame extraction here also uses `EXTRACT_MAX_WIDTH` regardless of
-    this setting."""
+    this setting. When `frame_seek_mode == "keyframe"`, collage frames are
+    also passed through `preview_frames.redo_duplicate_frames()`, which
+    re-extracts (with exact seeking) any tile whose fast keyframe seek
+    collapsed onto the same frame as an earlier tile -- otherwise visible as
+    a repeated frame in the collage grid (user report, chat 2026-08-05)."""
 
     def stage(message: str) -> None:
         if on_stage is not None:
@@ -201,6 +205,8 @@ def generate_file_preview(
     )
     if not any(img is not None for img in images):
         raise PreviewError("Could not extract any frames from the source video.")
+    if frame_seek_mode == "keyframe":
+        images = preview_frames.redo_duplicate_frames(video_path, timestamps, images, max_width=EXTRACT_MAX_WIDTH)
     stage(f"Extracted {len(tiles)} collage frame(s) in {time.monotonic() - t0:.2f}s")
 
     if gif_dest_path is not None:

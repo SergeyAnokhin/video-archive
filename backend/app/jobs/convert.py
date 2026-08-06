@@ -741,7 +741,15 @@ def run_convert_job(engine, job: dict) -> tuple[str, str]:
         raise RuntimeError("Conversion profile not found.")
 
     mode = params.get("mode", "production")
-    worker_count = max(1, performance_settings.get_settings(engine)["parallel_workers"])
+    # `convert_workers`, not the shared `parallel_workers` (user request
+    # 2026-07-30): a convert job against an SMB source reproducibly wedges
+    # before its first file when started with more than one worker -- it never
+    # reaches `_run_directory_scope`'s first log line -- while the same job at
+    # one worker starts in the same second. The blocking call is still being
+    # traced (`GET /api/health/thread-dump` is the diagnostic); until then this
+    # defaults to 1 so conversion works, without forcing `preview` down to one
+    # worker too.
+    worker_count = max(1, performance_settings.get_settings(engine)["convert_workers"])
     conv_settings = conversion_settings.get_settings(engine)
     min_size_reduction_percent = conv_settings["min_size_reduction_percent"]
     direct_write_enabled = conv_settings["direct_write_enabled"]

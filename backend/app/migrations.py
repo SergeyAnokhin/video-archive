@@ -836,4 +836,13 @@ MIGRATIONS: dict[int, list[str]] = {
     47: [
         "ALTER TABLE performance_settings ADD COLUMN eta_window_minutes INTEGER NOT NULL DEFAULT 5",
     ],
+    # Post-V1 (chat request 2026-07-30): `parallel_workers` drove both the
+    # preview and convert jobs, but a convert job with more than one worker
+    # reproducibly wedges before its first file on an SMB source (root cause
+    # still under investigation -- see `app/jobs/convert.py`'s own note), so
+    # conversion gets its own knob defaulting to 1 while preview keeps the
+    # shared one.
+    48: [
+        "ALTER TABLE performance_settings ADD COLUMN convert_workers INTEGER NOT NULL DEFAULT 1",
+    ],
 }

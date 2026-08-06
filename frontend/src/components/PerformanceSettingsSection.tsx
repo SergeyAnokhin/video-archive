@@ -59,6 +59,21 @@ export function PerformanceSettingsSection() {
 
       {settings && (
         <label className="settings-modal__label">
+          {t('performanceSettings.convertWorkers')}
+          <input
+            className="settings-modal__input"
+            type="number"
+            min={1}
+            max={16}
+            value={settings.convert_workers}
+            onChange={(event) => void updateSettings({ convert_workers: Number(event.target.value) })}
+          />
+        </label>
+      )}
+      {settings && <p className="settings-modal__hint">{t('performanceSettings.convertWorkersHint')}</p>}
+
+      {settings && (
+        <label className="settings-modal__label">
           {t('performanceSettings.etaWindowMinutes')}
           <input
             className="settings-modal__input"

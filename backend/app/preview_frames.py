@@ -230,6 +230,31 @@ def fill_missing_frames(images: list):
                 break
     return filled
 
+def redo_duplicate_frames(video_path: Path, timestamps: list[float], images: list, *, max_width: int | None = None):
+    """`seek_mode="keyframe"`'s fast approximate seek (`-noaccurate_seek`)
+    occasionally resolves two nearby but distinct timestamps to the exact
+    same physical frame (verified against real footage: two sample points
+    ~1.3s apart, straddling a keyframe boundary, came back byte-identical) --
+    visible as a repeated tile in the collage (user report, chat 2026-08-05).
+    Re-extracts any exact duplicate at its own timestamp with
+    `seek_mode="accurate"` (slower, frame-exact) so only the handful of
+    collapsed positions pay for precision instead of the whole file."""
+    seen: dict[bytes, int] = {}
+    result = list(images)
+    for i, image in enumerate(result):
+        if image is None:
+            continue
+        key = image.tobytes()
+        if key not in seen:
+            seen[key] = i
+            continue
+        retry = extract_frame_image(video_path, timestamps[i], seek_mode="accurate", max_width=max_width)
+        if retry is not None:
+            result[i] = retry
+            seen[retry.tobytes()] = i
+    return result
+
+
 def shrink_frame(image_bgr, max_width: int):
     """Downscale a decoded BGR frame to at most `max_width` wide, preserving
     aspect ratio (post-V1, user request): used when a frame is going to be

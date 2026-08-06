@@ -25,6 +25,48 @@ def test_performance_settings_defaults_and_round_trip(engine):
     assert performance_settings.get_settings(engine)["eta_window_minutes"] == 15
 
 
+def test_convert_workers_is_separate_from_parallel_workers(engine):
+    """Conversion has its own count defaulting to 1 (user request
+    2026-07-30): a convert job with more than one worker wedges before its
+    first file on an SMB source, and the shared setting used to force preview
+    down to one worker too as the only workaround."""
+    settings = performance_settings.get_settings(engine)
+    assert settings["convert_workers"] == performance_settings.DEFAULT_CONVERT_WORKERS == 1
+
+    updated = performance_settings.update_settings(engine, {"parallel_workers": 8})
+    assert updated["parallel_workers"] == 8
+    assert updated["convert_workers"] == 1, "raising the shared count must not raise conversion's"
+
+    updated = performance_settings.update_settings(engine, {"convert_workers": 3})
+    assert updated["convert_workers"] == 3
+    assert updated["parallel_workers"] == 8
+
+
+def test_convert_job_reads_convert_workers(engine, source, monkeypatch):
+    from app.jobs import convert as convert_module
+
+    performance_settings.update_settings(engine, {"parallel_workers": 8, "convert_workers": 2})
+    seen: list[int] = []
+    monkeypatch.setattr(
+        convert_module,
+        "_run_directory_scope",
+        lambda *args, **kwargs: (seen.append(args[6]), ("completed", "ok"))[1],
+    )
+
+    job = {
+        "id": "job-1",
+        "scope_type": "directory",
+        "parameters": {"path": "", "profile_id": "p"},
+    }
+    monkeypatch.setattr(
+        convert_module.conversion_profiles, "get_profile", lambda *a, **k: {"id": "p", "name": "P"}
+    )
+
+    convert_module.run_convert_job(engine, job)
+
+    assert seen == [2], "convert must use convert_workers, not parallel_workers"
+
+
 def test_performance_settings_clamps_out_of_range_values(engine):
     updated = performance_settings.update_settings(
         engine, {"parallel_workers": 999, "eta_window_minutes": 999}
