@@ -479,7 +479,11 @@ export interface ProviderUsageSummary {
   total_items: number
   total_tokens_in: number | null
   total_tokens_out: number | null
+  // Total spend whatever its source; the two below split it into what the
+  // provider reported itself vs. what was computed from tokens x price.
   total_estimated_cost_usd: number | null
+  reported_cost_usd: number | null
+  estimated_cost_usd: number | null
   last_used_at: string
 }
 

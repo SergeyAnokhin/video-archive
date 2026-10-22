@@ -873,4 +873,11 @@ MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    # Usage stats show whether a cost came from the provider itself
+    # ('reported') or was computed from tokens x `model_pricing`
+    # ('estimated'). Rows logged before this stay NULL -- which one they
+    # were wasn't recorded, so they only count toward the total.
+    50: [
+        "ALTER TABLE provider_usage_log ADD COLUMN cost_source TEXT",
+    ],
 }

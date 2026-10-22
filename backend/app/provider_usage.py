@@ -16,7 +16,9 @@ vendors reprice, not a billing-accurate figure -- and is `NULL` for any
 (provider_type, model_name) pair with no price on file. OpenRouter and FAL's
 router gateway are the exceptions: both report an already-computed `cost`
 themselves (`UsageInfo.cost_usd`), which `log_usage()`'s `cost_usd_override`
-records directly instead of estimating from the rate table.
+records directly instead of estimating from the rate table. Each row's
+`cost_source` says which of the two it was (`'reported'`/`'estimated'`), so
+the summary can split actual vs. computed spend.
 """
 
 from __future__ import annotations
@@ -68,20 +70,21 @@ def log_usage(
     (`UsageInfo.cost_usd`, currently only FAL's router gateway) -- when
     given, it's recorded as-is instead of estimating one from the
     `model_pricing` rate table."""
-    cost = (
-        cost_usd_override if cost_usd_override is not None
-        else estimate_cost_usd(engine, provider_type, model_name, tokens_in, tokens_out)
-    )
+    if cost_usd_override is not None:
+        cost, cost_source = cost_usd_override, "reported"
+    else:
+        cost = estimate_cost_usd(engine, provider_type, model_name, tokens_in, tokens_out)
+        cost_source = "estimated" if cost is not None else None
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
                 INSERT INTO provider_usage_log (
                     id, provider_type, model_name, request_kind, success, item_count,
-                    tokens_in, tokens_out, estimated_cost_usd, error_message, job_id, created_at
+                    tokens_in, tokens_out, estimated_cost_usd, cost_source, error_message, job_id, created_at
                 ) VALUES (
                     :id, :provider_type, :model_name, :request_kind, :success, :item_count,
-                    :tokens_in, :tokens_out, :estimated_cost_usd, :error_message, :job_id, :now
+                    :tokens_in, :tokens_out, :estimated_cost_usd, :cost_source, :error_message, :job_id, :now
                 )
                 """
             ),
@@ -95,6 +98,7 @@ def log_usage(
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "estimated_cost_usd": cost,
+                "cost_source": cost_source,
                 "error_message": error_message,
                 "job_id": job_id,
                 "now": _now(),
@@ -105,7 +109,9 @@ def log_usage(
 def get_usage_summary(engine) -> list[dict]:
     """One row per (provider_type, model_name) actually used, aggregated
     across every logged call, newest-last-used-first -- for the Settings
-    usage stats table."""
+    usage stats table (which groups them by provider itself).
+    `total_estimated_cost_usd` is the total spend whatever its source;
+    `reported_cost_usd`/`estimated_cost_usd` split it by `cost_source`."""
     with engine.connect() as conn:
         rows = conn.execute(
             text(
@@ -117,6 +123,8 @@ def get_usage_summary(engine) -> list[dict]:
                        SUM(tokens_in) AS total_tokens_in,
                        SUM(tokens_out) AS total_tokens_out,
                        SUM(estimated_cost_usd) AS total_estimated_cost_usd,
+                       SUM(CASE WHEN cost_source = 'reported' THEN estimated_cost_usd END) AS reported_cost_usd,
+                       SUM(CASE WHEN cost_source = 'estimated' THEN estimated_cost_usd END) AS estimated_cost_usd,
                        MAX(created_at) AS last_used_at
                 FROM provider_usage_log
                 GROUP BY provider_type, model_name
@@ -134,6 +142,8 @@ def get_usage_summary(engine) -> list[dict]:
             "total_tokens_in": row.total_tokens_in,
             "total_tokens_out": row.total_tokens_out,
             "total_estimated_cost_usd": row.total_estimated_cost_usd,
+            "reported_cost_usd": row.reported_cost_usd,
+            "estimated_cost_usd": row.estimated_cost_usd,
             "last_used_at": row.last_used_at,
         }
         for row in rows

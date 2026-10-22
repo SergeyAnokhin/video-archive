@@ -6,7 +6,10 @@ success or failure.
 
 from __future__ import annotations
 
-from app import provider_usage
+import pytest
+from sqlalchemy import text
+
+from app import model_pricing, provider_usage
 from app.providers import registry
 from app.providers.base import ProviderError, UsageInfo
 
@@ -70,6 +73,28 @@ def test_log_usage_cost_usd_override_recorded_as_is(engine):
     fal_row = next(row for row in summary if row["model_name"] == "google/gemini-2.5-flash")
     assert fal_row["total_tokens_in"] == 469
     assert fal_row["total_estimated_cost_usd"] == 0.0003832
+
+
+def test_usage_summary_splits_reported_and_estimated_cost(engine):
+    common = {"provider_type": "openrouter", "model_name": "vendor/m", "request_kind": "sync", "success": True}
+    model_pricing.upsert_price(engine, "openrouter", "vendor/m", 1.0, 2.0, "manual")
+    provider_usage.log_usage(engine, **common, tokens_in=1000, tokens_out=1000, cost_usd_override=0.01)
+    provider_usage.log_usage(engine, **common, tokens_in=1_000_000, tokens_out=0)  # estimated: $1
+    provider_usage.log_usage(engine, **common)  # no tokens, no cost
+    # A pre-migration row: cost known, source not recorded.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO provider_usage_log (id, provider_type, model_name, request_kind, success, "
+                "item_count, estimated_cost_usd, created_at) "
+                "VALUES ('old', 'openrouter', 'vendor/m', 'sync', 1, 1, 0.5, '2026-01-01T00:00:00+00:00')"
+            )
+        )
+
+    row = provider_usage.get_usage_summary(engine)[0]
+    assert row["reported_cost_usd"] == 0.01
+    assert row["estimated_cost_usd"] == 1.0
+    assert row["total_estimated_cost_usd"] == pytest.approx(1.51)
 
 
 def test_score_tags_with_entry_logs_success(engine, monkeypatch):

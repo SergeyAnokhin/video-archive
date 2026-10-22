@@ -673,17 +673,21 @@
   },
   "providerUsage": {
     "title": "Usage statistics",
-    "hint": "Which models were used for tagging across the whole app, with an estimated token count and cost where the provider reports it.",
+    "hint": "Spend per provider and model, all time. \"Actual\" is the cost the provider reported itself (OpenRouter, FAL gateway); \"estimate\" is tokens × the model's price.",
     "empty": "No model requests yet.",
     "colModel": "Model",
     "colCalls": "Calls",
     "colTokensIn": "Tokens (in)",
     "colTokensOut": "Tokens (out)",
-    "colCost": "Estimated cost",
+    "colCost": "Cost",
     "colLastUsed": "Last used",
     "callsValue": "{{success}} of {{total}}",
     "notAvailable": "—",
-    "colPrice": "Price $/1M (in / out)"
+    "colPrice": "Price $/1M (in / out)",
+    "costReported": "actual ${{cost}}",
+    "costEstimated": "estimate ${{cost}}",
+    "costUnknown": "unlabeled ${{cost}}",
+    "total": "Total"
   },
   "modelPricing": {
     "importCatalog": "Import price list",

@@ -390,6 +390,27 @@
   font-weight: 500;
 }
 
+.provider-usage-table__group td,
+.provider-usage-table__total td {
+  font-weight: 600;
+}
+
+.provider-usage-table__total td {
+  border-top: 2px solid var(--color-border);
+  border-bottom: none;
+}
+
+.provider-usage-table__model {
+  padding-left: var(--space-4);
+}
+
+.provider-usage-table__cost-split {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
 .settings-modal__link-button {
   padding: 0;
   border: none;
