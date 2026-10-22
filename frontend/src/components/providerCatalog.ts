@@ -15,13 +15,22 @@ export const BATCH_SUPPORTED: ProviderType[] = ['gemini', 'mistral']
 //   instead (`{image_urls, model, prompt}` shape) -- general-purpose vision
 //   LLMs with real reasoning ability, one per major vendor. `fal.py` picks
 //   the request shape by checking for the "fal-ai/" prefix.
+// Last verified 2026-10-22 against fal.ai/models/openrouter/router/vision's
+// own model picker (its quick-pick list, which fal.ai keeps current as
+// vendors release new models) -- request/response shape there is unchanged.
 export const FAL_VISION_MODELS = [
   'fal-ai/moondream2/visual-query',
   'fal-ai/moondream3-preview/query',
-  'anthropic/claude-sonnet-4.5',
-  'openai/gpt-5',
+  'openai/gpt-6-sol',
+  'anthropic/claude-opus-5.5',
+  'anthropic/claude-sonnet-5',
+  'google/gemini-3.8-flash',
   'google/gemini-2.5-flash',
-  'meta-llama/llama-3.2-90b-vision-instruct',
-  'qwen/qwen2.5-vl-72b-instruct',
-  'mistralai/pixtral-12b',
+  'x-ai/grok-4.7',
+  'deepseek/deepseek-v4.1-flash',
+  'qwen/qwen3.8-max-0902',
+  'z-ai/glm-5.3-flash',
+  'moonshotai/kimi-k3',
+  'minimax/minimax-m3',
+  'mistralai/mistral-medium-3-5',
 ]

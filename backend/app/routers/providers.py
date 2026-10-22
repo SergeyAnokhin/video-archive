@@ -148,6 +148,18 @@ def refresh_model_pricing_from_openrouter():
         )
 
 
+@router.post("/settings/model-pricing/import-catalog")
+def import_model_pricing_catalog(body: dict):
+    """Bulk price update from an uploaded third-party pricing JSON (user
+    request). `body` is that file's own top-level shape, passed through
+    unparsed by the frontend -- see `model_pricing.import_catalog_prices()`
+    for the matching/update rules."""
+    try:
+        return model_pricing.import_catalog_prices(get_engine(), body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"error": {"code": "invalid_catalog", "message": str(exc)}})
+
+
 @router.get("/settings/model-ratings")
 def get_model_ratings():
     """Per-model like/dislike accuracy rating and apply-behavior KPI (user

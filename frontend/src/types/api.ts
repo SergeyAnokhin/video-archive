@@ -409,7 +409,7 @@ export interface TagLabPreparedResult {
   prompt: string
 }
 
-export type ModelPricingSource = 'manual' | 'openrouter_api'
+export type ModelPricingSource = 'manual' | 'openrouter_api' | 'catalog_import'
 
 export interface ModelPricing {
   provider_type: ProviderType

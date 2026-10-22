@@ -85,6 +85,69 @@ def test_refresh_openrouter_prices_updates_configured_models(engine, monkeypatch
     assert row["source"] == "openrouter_api"
 
 
+def test_import_catalog_prices_updates_known_models(engine):
+    # Already-seeded row -- price changes from 0.30/2.50 to 0.31/2.51.
+    catalog = {
+        "pricing_version": "2026-10-22",
+        "models": {
+            "google:gemini-2.5-flash": {"kind": "text", "input": 0.31, "output": 2.51, "source": "Google"},
+            "google:gemini-9.9-unknown": {"kind": "text", "input": 9.0, "output": 9.0, "source": "Google"},
+            "fal:fal-ai/aura-flow": {"kind": "image", "per_image": 0.01, "source": "FAL"},
+        },
+    }
+    result = model_pricing.import_catalog_prices(engine, catalog)
+    assert result["pricing_version"] == "2026-10-22"
+    assert result["updated"] == [
+        {
+            "provider_type": "gemini",
+            "model_name": "gemini-2.5-flash",
+            "input_per_million": 0.31,
+            "output_per_million": 2.51,
+        }
+    ]
+    assert model_pricing.get_price(engine, "gemini", "gemini-2.5-flash") == (0.31, 2.51)
+
+    row = next(
+        r for r in model_pricing.list_prices(engine)
+        if r["provider_type"] == "gemini" and r["model_name"] == "gemini-2.5-flash"
+    )
+    assert row["source"] == "catalog_import"
+
+
+def test_import_catalog_prices_skips_unchanged_and_unmapped(engine):
+    catalog = {
+        "models": {
+            "google:gemini-2.5-flash": {"kind": "text", "input": 0.30, "output": 2.50, "source": "Google"},
+            "deepseek:deepseek-chat": {"kind": "text", "input": 0.27, "output": 1.1, "source": "DeepSeek"},
+        },
+    }
+    result = model_pricing.import_catalog_prices(engine, catalog)
+    assert result["updated"] == []
+    assert result["unchanged"] == 1
+
+
+def test_import_catalog_prices_updates_configured_but_unpriced_model(engine):
+    _insert_openrouter_entry(engine, "xiaomi/mimo-v2.5")
+    catalog = {"models": {"openrouter:xiaomi/mimo-v2.5": {"kind": "text", "input": 0.05, "output": 0.15}}}
+    result = model_pricing.import_catalog_prices(engine, catalog)
+    assert result["updated"] == [
+        {
+            "provider_type": "openrouter",
+            "model_name": "xiaomi/mimo-v2.5",
+            "input_per_million": 0.05,
+            "output_per_million": 0.15,
+        }
+    ]
+
+
+def test_import_catalog_prices_rejects_malformed_catalog(engine):
+    try:
+        model_pricing.import_catalog_prices(engine, {"no_models_key": True})
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+
+
 def test_openrouter_fetch_pricing_parses_response(monkeypatch):
     class FakeResponse:
         def raise_for_status(self):

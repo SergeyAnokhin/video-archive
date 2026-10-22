@@ -664,6 +664,11 @@
     "refreshOpenRouter": "Обновить из OpenRouter",
     "refreshing": "Обновление…",
     "refreshResult": "Обновлено моделей: {{updated}}, не найдено в каталоге OpenRouter: {{notFound}}.",
+    "importCatalog": "Импортировать прайс-лист",
+    "importing": "Импорт…",
+    "importError": "Не удалось импортировать файл. Убедитесь, что это корректный JSON с ценами.",
+    "importResult": "Обновлено цен: {{updated}}, совпали без изменений: {{unchanged}}.",
+    "justUpdated": "Только что обновлено из импортированного файла",
     "empty": "Данных о ценах пока нет.",
     "colModel": "Модель",
     "colInput": "$/1М вход",
@@ -672,7 +677,8 @@
     "colUpdatedAt": "Обновлено",
     "source": {
       "manual": "вручную",
-      "openrouter_api": "OpenRouter"
+      "openrouter_api": "OpenRouter",
+      "catalog_import": "импортировано из файла"
     }
   },
   "jobs": {

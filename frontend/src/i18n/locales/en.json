@@ -664,6 +664,11 @@
     "refreshOpenRouter": "Refresh from OpenRouter",
     "refreshing": "Refreshing…",
     "refreshResult": "Updated {{updated}} model(s), {{notFound}} not found in OpenRouter's catalog.",
+    "importCatalog": "Import price list",
+    "importing": "Importing…",
+    "importError": "Couldn't import that file. Make sure it's a valid pricing JSON.",
+    "importResult": "Updated {{updated}} price(s), {{unchanged}} already matched.",
+    "justUpdated": "Just updated from the imported file",
     "empty": "No pricing data yet.",
     "colModel": "Model",
     "colInput": "$/1M in",
@@ -672,7 +677,8 @@
     "colUpdatedAt": "Updated",
     "source": {
       "manual": "manual",
-      "openrouter_api": "OpenRouter"
+      "openrouter_api": "OpenRouter",
+      "catalog_import": "imported file"
     }
   },
   "jobs": {

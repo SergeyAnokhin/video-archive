@@ -1,13 +1,23 @@
-import { RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { RefreshCw, Sparkles, Upload } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { tryApi } from '../api/client'
+import { api, tryApi } from '../api/client'
 import type { ModelPricing } from '../types/api'
+
+interface CatalogImportResult {
+  updated: { provider_type: string; model_name: string; input_per_million: number; output_per_million: number }[]
+  unchanged: number
+  pricing_version: string | null
+}
 
 export function ModelPricingSection({ prices, onRefresh }: { prices: ModelPricing[]; onRefresh: () => Promise<void> }) {
   const { t } = useTranslation()
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState<{ updated: string[]; not_found: string[] } | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<CatalogImportResult | null>(null)
+  const [justUpdatedKeys, setJustUpdatedKeys] = useState<Set<string>>(new Set())
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   async function handleSavePrice(row: ModelPricing, changes: { input_per_million?: number; output_per_million?: number }) {
     const body = {
@@ -38,6 +48,25 @@ export function ModelPricingSection({ prices, onRefresh }: { prices: ModelPricin
     }
   }
 
+  async function handleImportCatalogFile(file: File) {
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const catalog = JSON.parse(await file.text())
+      const json = await api<CatalogImportResult>('/api/settings/model-pricing/import-catalog', {
+        method: 'POST',
+        body: catalog,
+      })
+      setImportResult(json)
+      setJustUpdatedKeys(new Set(json.updated.map((row) => `${row.provider_type}-${row.model_name}`)))
+      await onRefresh()
+    } catch {
+      window.alert(t('modelPricing.importError'))
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <section className="settings-modal__section">
       <h3 className="settings-modal__section-title">{t('modelPricing.title')}</h3>
@@ -46,10 +75,29 @@ export function ModelPricingSection({ prices, onRefresh }: { prices: ModelPricin
         <button type="button" className="settings-modal__option" onClick={() => void handleRefreshOpenRouter()} disabled={refreshing}>
           <RefreshCw size={14} /> {refreshing ? t('modelPricing.refreshing') : t('modelPricing.refreshOpenRouter')}
         </button>
+        <button type="button" className="settings-modal__option" onClick={() => importInputRef.current?.click()} disabled={importing}>
+          <Upload size={14} /> {importing ? t('modelPricing.importing') : t('modelPricing.importCatalog')}
+        </button>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept="application/json"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void handleImportCatalogFile(file)
+          }}
+        />
       </div>
       {refreshResult && (
         <p className="settings-modal__hint">
           {t('modelPricing.refreshResult', { updated: refreshResult.updated.length, notFound: refreshResult.not_found.length })}
+        </p>
+      )}
+      {importResult && (
+        <p className="settings-modal__hint">
+          {t('modelPricing.importResult', { updated: importResult.updated.length, unchanged: importResult.unchanged })}
         </p>
       )}
       {prices.length === 0 ? (
@@ -67,9 +115,17 @@ export function ModelPricingSection({ prices, onRefresh }: { prices: ModelPricin
               </tr>
             </thead>
             <tbody>
-              {prices.map((row) => (
-                <tr key={`${row.provider_type}-${row.model_name}`}>
+              {prices.map((row) => {
+                const key = `${row.provider_type}-${row.model_name}`
+                const justUpdated = justUpdatedKeys.has(key)
+                return (
+                <tr key={key}>
                   <td>
+                    {justUpdated && (
+                      <span className="model-pricing__updated-icon" title={t('modelPricing.justUpdated')}>
+                        <Sparkles size={14} aria-label={t('modelPricing.justUpdated')} />
+                      </span>
+                    )}{' '}
                     {t(`providers.${row.provider_type}`)} / {row.model_name}
                   </td>
                   <td>
@@ -99,7 +155,8 @@ export function ModelPricingSection({ prices, onRefresh }: { prices: ModelPricin
                   <td>{t(`modelPricing.source.${row.source}`)}</td>
                   <td>{new Date(row.updated_at).toLocaleString()}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

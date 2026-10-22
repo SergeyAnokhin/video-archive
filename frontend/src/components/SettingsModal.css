@@ -390,6 +390,12 @@
   font-weight: 500;
 }
 
+.model-pricing__updated-icon {
+  display: inline-flex;
+  color: var(--color-accent);
+  vertical-align: -2px;
+}
+
 .settings-modal__label {
   display: flex;
   flex-direction: column;

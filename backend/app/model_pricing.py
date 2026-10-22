@@ -138,6 +138,92 @@ def upsert_price(
     }
 
 
+# Maps a third-party pricing export's "<source>:<model id>" key prefix (see
+# `import_catalog_prices()`) to this app's own `provider_type` values. Only
+# sources this app actually has a provider for are listed -- an unmapped
+# prefix (e.g. a reseller or a provider this app doesn't integrate) is
+# silently skipped rather than guessed at.
+_CATALOG_SOURCE_TO_PROVIDER_TYPE: dict[str, str] = {
+    "openrouter": "openrouter",
+    "google": "gemini",
+    "fal": "fal",
+    "mistral": "mistral",
+}
+
+
+def import_catalog_prices(engine, catalog: dict) -> dict:
+    """Bulk-updates `model_pricing` from a third-party pricing export (user
+    request -- rather than hand-editing each row after a price change,
+    import a JSON price list like the one a site such as versecraft exports:
+    `{"models": {"<source>:<model id>": {"kind": "text", "input": ...,
+    "output": ..., ...}}}`, $/1M-token rates in the same units this table
+    already uses).
+
+    Only `"kind": "text"` entries with both rates present are usable here --
+    `model_pricing` has no column for FAL/image/video's per-image or
+    per-second pricing. And only models this app already knows about (a
+    `model_pricing` row already exists, or a `provider_entries` row
+    currently points a `vision_model`/`text_model` at it) are touched --
+    importing a full third-party catalog verbatim would flood the table with
+    hundreds of irrelevant rows, the same reasoning `refresh_openrouter_prices()`
+    above already applies to OpenRouter's own catalog.
+    """
+    models = catalog.get("models") if isinstance(catalog, dict) else None
+    if not isinstance(models, dict):
+        raise ValueError("Catalog JSON has no 'models' object.")
+
+    catalog_prices: dict[tuple[str, str], tuple[float, float]] = {}
+    for key, entry in models.items():
+        if not isinstance(entry, dict) or entry.get("kind") != "text":
+            continue
+        input_rate = entry.get("input")
+        output_rate = entry.get("output")
+        if input_rate is None or output_rate is None:
+            continue
+        source, _, model_id = key.partition(":")
+        provider_type = _CATALOG_SOURCE_TO_PROVIDER_TYPE.get(source)
+        if provider_type is None or not model_id:
+            continue
+        catalog_prices[(provider_type, model_id)] = (float(input_rate), float(output_rate))
+
+    with engine.connect() as conn:
+        known_rows = conn.execute(text("SELECT provider_type, model_name FROM model_pricing")).all()
+        configured_rows = conn.execute(
+            text(
+                "SELECT provider_type, vision_model AS model FROM provider_entries WHERE vision_model IS NOT NULL "
+                "UNION "
+                "SELECT provider_type, text_model AS model FROM provider_entries WHERE text_model IS NOT NULL"
+            )
+        ).all()
+    known_models = {(row.provider_type, row.model_name) for row in known_rows}
+    known_models.update((row.provider_type, row.model) for row in configured_rows)
+
+    updated = []
+    unchanged = 0
+    for provider_type, model_name in known_models:
+        rates = catalog_prices.get((provider_type, model_name))
+        if rates is None:
+            continue
+        if get_price(engine, provider_type, model_name) == rates:
+            unchanged += 1
+            continue
+        upsert_price(engine, provider_type, model_name, rates[0], rates[1], "catalog_import")
+        updated.append(
+            {
+                "provider_type": provider_type,
+                "model_name": model_name,
+                "input_per_million": rates[0],
+                "output_per_million": rates[1],
+            }
+        )
+
+    return {
+        "updated": updated,
+        "unchanged": unchanged,
+        "pricing_version": catalog.get("pricing_version"),
+    }
+
+
 def refresh_openrouter_prices(engine) -> dict:
     """Fetches live pricing for every OpenRouter model currently configured
     on an enabled-or-not `provider_entries` row (`vision_model`/`text_model`)
@@ -171,5 +257,6 @@ __all__ = [
     "get_price",
     "list_prices",
     "upsert_price",
+    "import_catalog_prices",
     "refresh_openrouter_prices",
 ]
