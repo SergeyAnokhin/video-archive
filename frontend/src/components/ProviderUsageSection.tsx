@@ -1,21 +1,16 @@
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { tryApi } from '../api/client'
-import type { ProviderUsageSummary } from '../types/api'
+import type { ModelPricing, ProviderUsageSummary } from '../types/api'
 
-export function ProviderUsageSection() {
+// Read-only usage table. Also the only place a price is visible for a model
+// that's no longer configured (prices are kept for its past usage).
+export function ProviderUsageSection({ usage, prices }: { usage: ProviderUsageSummary[]; prices: ModelPricing[] }) {
   const { t } = useTranslation()
-  const [usage, setUsage] = useState<ProviderUsageSummary[]>([])
 
-  useEffect(() => {
-    let cancelled = false
-    tryApi<{ usage: ProviderUsageSummary[] }>('/api/settings/provider-usage').then((json) => {
-      if (!cancelled) setUsage(json?.usage ?? [])
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  function priceText(row: ProviderUsageSummary): string {
+    const price = prices.find((p) => p.provider_type === row.provider_type && p.model_name === row.model_name)
+    if (price?.input_per_million == null || price.output_per_million == null) return t('providerUsage.notAvailable')
+    return t('providerSettings.priceShort', { input: price.input_per_million, output: price.output_per_million })
+  }
 
   return (
     <section className="settings-modal__section">
@@ -33,6 +28,7 @@ export function ProviderUsageSection() {
                 <th>{t('providerUsage.colTokensIn')}</th>
                 <th>{t('providerUsage.colTokensOut')}</th>
                 <th>{t('providerUsage.colCost')}</th>
+                <th>{t('providerUsage.colPrice')}</th>
                 <th>{t('providerUsage.colLastUsed')}</th>
               </tr>
             </thead>
@@ -50,6 +46,7 @@ export function ProviderUsageSection() {
                       ? `$${row.total_estimated_cost_usd.toFixed(4)}`
                       : t('providerUsage.notAvailable')}
                   </td>
+                  <td>{priceText(row)}</td>
                   <td>{new Date(row.last_used_at).toLocaleString()}</td>
                 </tr>
               ))}

@@ -80,6 +80,13 @@ def test_failed_refresh_keeps_old_catalog_and_counts_as_checked(engine, monkeypa
     assert len(calls) == 1
 
 
+def test_failed_refresh_error_never_contains_the_key(engine, monkeypatch):
+    secrets_store.set_provider_api_key("gemini", "sk-secret-key")
+    _stub_listing(monkeypatch, registry.ProviderError("400 for url '...models?key=sk-secret-key'"))
+    provider_catalog.refresh_catalog(engine, "gemini")
+    assert provider_catalog.get_status(engine, "gemini")["error"] == "400 for url '...models?key=***'"
+
+
 def test_openrouter_refresh_overwrites_configured_prices_including_manual(engine, monkeypatch):
     secrets_store.set_provider_api_key("openrouter", "sk-or")
     provider_entries.create_entry(engine, {"provider_type": "openrouter", "vision_model": "vendor/vision"})

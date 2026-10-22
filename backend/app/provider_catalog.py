@@ -83,8 +83,11 @@ def refresh_catalog(engine, provider_type: str) -> dict | None:
             catalog = [(model_id, None) for model_id in registry.list_models_for_provider_type(provider_type, api_key)]
             all_rates = None
     except registry.ProviderError as exc:
+        # Gemini sends the key as a `?key=` query param and httpx errors
+        # quote the URL -- never store/show it.
+        error = str(exc).replace(api_key, "***")
         with engine.begin() as conn:
-            _write_status(conn, provider_type, checked_at, fetched_at=None, error=str(exc))
+            _write_status(conn, provider_type, checked_at, fetched_at=None, error=error)
         return get_status(engine, provider_type)
 
     with engine.begin() as conn:

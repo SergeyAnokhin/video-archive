@@ -370,11 +370,40 @@ export interface ProviderEntry {
   vision_model: string | null
   text_model: string | null
   batch_enabled: boolean
+  notes: string | null
   sort_order: number
   has_api_key: boolean
   key_suffix: string | null
   created_at: string
   updated_at: string
+}
+
+// One row per provider type (`GET /api/settings/providers`): the shared API
+// key and the cached, at-most-daily model catalog.
+export interface ProviderStatus {
+  provider_type: ProviderType
+  has_api_key: boolean
+  key_suffix: string | null
+  catalog_supported: boolean
+  catalog_count: number
+  fetched_at: string | null
+  checked_at: string | null
+  error: string | null
+  legacy_key_conflict: boolean
+}
+
+export interface CatalogModel {
+  model_id: string
+  input_per_million: number | null
+  output_per_million: number | null
+}
+
+export interface ProviderCatalog {
+  provider_type: ProviderType
+  models: CatalogModel[]
+  fetched_at: string | null
+  checked_at: string | null
+  error: string | null
 }
 
 export interface TagLabRankedTag {
