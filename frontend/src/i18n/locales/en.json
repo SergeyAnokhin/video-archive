@@ -441,7 +441,6 @@
     "statsLikeRatioTooltip": "Share of liked tags among all liked/disliked tags from this model's runs (ignores tags with no vote).",
     "statsLikeRatioValue": "{{percent}}%",
     "statsPercentValue": "{{percent}}%",
-    "statsNoData": "no data yet",
     "statsUnchangedTooltip": "Share of runs applied exactly as suggested, with no tags added or removed, out of all runs.",
     "statsChangedTooltip": "Share of runs applied with edits — tags added and/or removed before applying, out of all runs.",
     "statsTotalRunsTooltip": "Total number of attempts (runs) with this model.",

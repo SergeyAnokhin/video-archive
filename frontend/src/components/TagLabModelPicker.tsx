@@ -58,45 +58,45 @@ function ModelRow({ entry, prices, ratings }: { entry: ProviderEntry; prices: Mo
             <span className="tag-lab-model-picker__model">{entry.vision_model ?? '?'}</span>
           </span>
         </span>
-        <span className="tag-lab-model-picker__stats">
-          <span title={t('tagLab.statsLikeRatioTooltip')}>
-            👍{' '}
-            {stats && stats.likes + stats.dislikes > 0
-              ? t('tagLab.statsLikeRatioValue', {
+        {/* Metrics without data are omitted entirely (user request -- the
+            "no data yet" placeholders cluttered the list). */}
+        {stats && (stats.likes + stats.dislikes > 0 || stats.runs_total > 0) && (
+          <span className="tag-lab-model-picker__stats">
+            {stats.likes + stats.dislikes > 0 && (
+              <span title={t('tagLab.statsLikeRatioTooltip')}>
+                👍{' '}
+                {t('tagLab.statsLikeRatioValue', {
                   percent: Math.round((stats.likes / (stats.likes + stats.dislikes)) * 100),
-                })
-              : t('tagLab.statsNoData')}
+                })}
+              </span>
+            )}
+            {stats.runs_total > 0 && (
+              <>
+                <span title={t('tagLab.statsUnchangedTooltip')}>
+                  ✅{' '}
+                  {t('tagLab.statsPercentValue', {
+                    percent: Math.round((stats.applied_unchanged_count / stats.runs_total) * 100),
+                  })}
+                </span>
+                <span title={t('tagLab.statsChangedTooltip')}>
+                  ✏️{' '}
+                  {t('tagLab.statsPercentValue', {
+                    percent: Math.round((stats.applied_changed_count / stats.runs_total) * 100),
+                  })}
+                </span>
+                <span title={t('tagLab.statsTotalRunsTooltip')}>🔁 {stats.runs_total}</span>
+              </>
+            )}
           </span>
-          <span title={t('tagLab.statsUnchangedTooltip')}>
-            ✅{' '}
-            {stats && stats.runs_total > 0
-              ? t('tagLab.statsPercentValue', {
-                  percent: Math.round((stats.applied_unchanged_count / stats.runs_total) * 100),
-                })
-              : t('tagLab.statsNoData')}
-          </span>
-          <span title={t('tagLab.statsChangedTooltip')}>
-            ✏️{' '}
-            {stats && stats.runs_total > 0
-              ? t('tagLab.statsPercentValue', {
-                  percent: Math.round((stats.applied_changed_count / stats.runs_total) * 100),
-                })
-              : t('tagLab.statsNoData')}
-          </span>
-          <span title={t('tagLab.statsTotalRunsTooltip')}>🔁 {stats?.runs_total ?? 0}</span>
-        </span>
-      </span>
-      <span className="tag-lab-model-picker__price">
-        {price?.input_per_million != null && price.output_per_million != null ? (
-          <>
-            <span className="tag-lab-model-picker__price-in">${price.input_per_million}</span>
-            <span className="tag-lab-model-picker__price-slash">/</span>
-            <span className="tag-lab-model-picker__price-out">${price.output_per_million}</span>
-          </>
-        ) : (
-          <span className="tag-lab-model-picker__price-empty">{t('tagLab.priceUnavailable')}</span>
         )}
       </span>
+      {price?.input_per_million != null && price.output_per_million != null && (
+        <span className="tag-lab-model-picker__price">
+          <span className="tag-lab-model-picker__price-in">${price.input_per_million}</span>
+          <span className="tag-lab-model-picker__price-slash">/</span>
+          <span className="tag-lab-model-picker__price-out">${price.output_per_million}</span>
+        </span>
+      )}
     </span>
   )
 }

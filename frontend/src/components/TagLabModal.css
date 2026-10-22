@@ -232,10 +232,6 @@
   color: var(--color-warning);
 }
 
-.tag-lab-model-picker__price-empty {
-  font-size: 12px;
-}
-
 .tag-lab__header {
   display: flex;
   align-items: flex-start;
