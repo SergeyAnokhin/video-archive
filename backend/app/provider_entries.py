@@ -7,10 +7,14 @@ and deleted freely through the API. `sort_order` is the fallback priority —
 the tag job (`app/jobs/tag.py`) tries enabled entries in ascending
 `sort_order`, falling through to the next one on failure.
 
-Only non-secret fields live in `provider_entries`; the API key itself is
-written to/read from the local secrets file (`app/secrets_store.py`), keyed
-by entry id, and is never returned to the frontend — only whether one is
-currently set (`has_api_key`) and a masked suffix (`key_suffix`).
+Only non-secret fields live in `provider_entries`; the API key belongs to
+the provider type, not the entry -- one key per provider in the local
+secrets file (`app/secrets_store.py`), shared by every entry of that type.
+It is never returned to the frontend -- only whether one is currently set
+(`has_api_key`) and a masked suffix (`key_suffix`). An `api_key` passed to
+create/update still sets that shared provider key.
+
+`notes` is a free-form user comment about the model (user request).
 """
 
 from __future__ import annotations
@@ -43,8 +47,9 @@ def _row_to_dict(row) -> dict:
         "text_model": row.text_model,
         "batch_enabled": bool(row.batch_enabled),
         "sort_order": row.sort_order,
-        "has_api_key": secrets_store.has_entry_api_key(row.id),
-        "key_suffix": secrets_store.get_entry_api_key_suffix(row.id),
+        "notes": row.notes,
+        "has_api_key": secrets_store.get_provider_api_key(row.provider_type) is not None,
+        "key_suffix": secrets_store.get_provider_api_key_suffix(row.provider_type),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -76,9 +81,9 @@ def create_entry(engine, data: dict) -> dict:
                 """
                 INSERT INTO provider_entries
                     (id, provider_type, display_name, enabled, vision_model, text_model,
-                     batch_enabled, sort_order, created_at, updated_at)
+                     batch_enabled, notes, sort_order, created_at, updated_at)
                 VALUES (:id, :provider_type, :display_name, :enabled, :vision_model, :text_model,
-                        :batch_enabled, :sort_order, :now, :now)
+                        :batch_enabled, :notes, :sort_order, :now, :now)
                 """
             ),
             {
@@ -89,12 +94,13 @@ def create_entry(engine, data: dict) -> dict:
                 "vision_model": data.get("vision_model"),
                 "text_model": data.get("text_model"),
                 "batch_enabled": bool(data.get("batch_enabled", False)),
+                "notes": data.get("notes"),
                 "sort_order": next_order,
                 "now": now,
             },
         )
     if data.get("api_key"):
-        secrets_store.set_entry_api_key(entry_id, data["api_key"])
+        secrets_store.set_provider_api_key(provider_type, data["api_key"])
     return get_entry(engine, entry_id)
 
 
@@ -111,7 +117,8 @@ def update_entry(engine, entry_id: str, data: dict) -> dict | None:
                 """
                 UPDATE provider_entries
                 SET display_name = :display_name, enabled = :enabled, vision_model = :vision_model,
-                    text_model = :text_model, batch_enabled = :batch_enabled, updated_at = :now
+                    text_model = :text_model, batch_enabled = :batch_enabled, notes = :notes,
+                    updated_at = :now
                 WHERE id = :id
                 """
             ),
@@ -121,12 +128,13 @@ def update_entry(engine, entry_id: str, data: dict) -> dict | None:
                 "vision_model": merged["vision_model"],
                 "text_model": merged["text_model"],
                 "batch_enabled": bool(merged["batch_enabled"]),
+                "notes": merged["notes"],
                 "now": now,
                 "id": entry_id,
             },
         )
     if data.get("api_key"):
-        secrets_store.set_entry_api_key(entry_id, data["api_key"])
+        secrets_store.set_provider_api_key(existing["provider_type"], data["api_key"])
     return get_entry(engine, entry_id)
 
 
@@ -134,6 +142,7 @@ def delete_entry(engine, entry_id: str) -> bool:
     with engine.begin() as conn:
         result = conn.execute(text("DELETE FROM provider_entries WHERE id = :id"), {"id": entry_id})
     if result.rowcount > 0:
+        # Pre-migration per-entry key, if one was left behind.
         secrets_store.delete_entry_api_key(entry_id)
         return True
     return False
@@ -151,3 +160,27 @@ def reorder_entries(engine, ordered_ids: list[str]) -> list[dict]:
                 {"order": index, "now": now, "id": entry_id},
             )
     return list_entries(engine)
+
+
+def migrate_api_keys(conn) -> None:
+    """Called once from `init_db()` (migration 49): copies the old
+    per-entry keys to one key per provider type, highest-priority entry
+    first. See `secrets_store.migrate_entry_keys_to_provider_keys()`."""
+    rows = conn.execute(text("SELECT id, provider_type FROM provider_entries ORDER BY sort_order, created_at")).all()
+    secrets_store.migrate_entry_keys_to_provider_keys([(row.id, row.provider_type) for row in rows])
+
+
+def entry_ids_by_type(engine, provider_type: str) -> list[str]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id FROM provider_entries WHERE provider_type = :provider_type"),
+            {"provider_type": provider_type},
+        ).all()
+    return [row.id for row in rows]
+
+
+def delete_legacy_entry_keys(engine, provider_type: str) -> None:
+    """Drops the pre-migration per-entry keys left behind for
+    `provider_type` once the user has checked the shared provider key."""
+    for entry_id in entry_ids_by_type(engine, provider_type):
+        secrets_store.delete_entry_api_key(entry_id)

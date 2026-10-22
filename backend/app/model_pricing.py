@@ -224,22 +224,22 @@ def import_catalog_prices(engine, catalog: dict) -> dict:
     }
 
 
-def refresh_openrouter_prices(engine) -> dict:
-    """Fetches live pricing for every OpenRouter model currently configured
-    on an enabled-or-not `provider_entries` row (`vision_model`/`text_model`)
-    and upserts matches with `source='openrouter_api'`. Scoped to configured
-    models rather than OpenRouter's full catalog (hundreds of models,
-    mostly irrelevant here)."""
+def _configured_models(engine, provider_type: str) -> list[str]:
     with engine.connect() as conn:
         rows = conn.execute(
-            text("SELECT vision_model, text_model FROM provider_entries WHERE provider_type = 'openrouter'")
+            text("SELECT vision_model, text_model FROM provider_entries WHERE provider_type = :provider_type"),
+            {"provider_type": provider_type},
         ).all()
-    model_ids = sorted({model for row in rows for model in (row.vision_model, row.text_model) if model})
+    return sorted({model for row in rows for model in (row.vision_model, row.text_model) if model})
 
-    if not model_ids:
-        return {"updated": [], "not_found": []}
 
-    prices = openrouter.fetch_pricing(model_ids)
+def apply_openrouter_prices(engine, prices: dict[str, tuple[float, float]]) -> dict:
+    """Upserts `prices` (model id -> $/1M rates) for every OpenRouter model
+    configured on a provider entry, overwriting whatever was there --
+    including manual edits (user decision: a fresh price always wins).
+    Shared by the manual refresh below and the daily catalog refresh
+    (`app/provider_catalog.py`)."""
+    model_ids = _configured_models(engine, "openrouter")
     updated = []
     for model_id in model_ids:
         rates = prices.get(model_id)
@@ -252,11 +252,24 @@ def refresh_openrouter_prices(engine) -> dict:
     return {"updated": updated, "not_found": not_found}
 
 
+def refresh_openrouter_prices(engine) -> dict:
+    """Fetches live pricing for every OpenRouter model currently configured
+    on an enabled-or-not `provider_entries` row (`vision_model`/`text_model`)
+    and upserts matches with `source='openrouter_api'`. Scoped to configured
+    models rather than OpenRouter's full catalog (hundreds of models,
+    mostly irrelevant here)."""
+    model_ids = _configured_models(engine, "openrouter")
+    if not model_ids:
+        return {"updated": [], "not_found": []}
+    return apply_openrouter_prices(engine, openrouter.fetch_pricing(model_ids))
+
+
 __all__ = [
     "seed_default_prices",
     "get_price",
     "list_prices",
     "upsert_price",
     "import_catalog_prices",
+    "apply_openrouter_prices",
     "refresh_openrouter_prices",
 ]

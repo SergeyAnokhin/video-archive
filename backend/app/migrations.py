@@ -845,4 +845,32 @@ MIGRATIONS: dict[int, list[str]] = {
     48: [
         "ALTER TABLE performance_settings ADD COLUMN convert_workers INTEGER NOT NULL DEFAULT 1",
     ],
+    # Post-V1 (chat request 2026-10-22 -- provider/model settings rework):
+    # API keys move from one per entry to one per provider type (a Python
+    # step in `init_db()`, since keys live in `secrets.env`, not here);
+    # entries get a free-form `notes` comment; and each provider's model
+    # catalog is cached (`app/provider_catalog.py`) so it's fetched at most
+    # once a day instead of on every "Load models" click.
+    # `provider_catalog_status.checked_at` is the last attempt, successful
+    # or not -- a bad key isn't retried on every settings open either.
+    49: [
+        "ALTER TABLE provider_entries ADD COLUMN notes TEXT",
+        """
+        CREATE TABLE IF NOT EXISTS provider_model_catalog (
+            provider_type TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            input_per_million REAL,
+            output_per_million REAL,
+            PRIMARY KEY (provider_type, model_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS provider_catalog_status (
+            provider_type TEXT PRIMARY KEY,
+            fetched_at TEXT,
+            checked_at TEXT NOT NULL,
+            error TEXT
+        )
+        """,
+    ],
 }

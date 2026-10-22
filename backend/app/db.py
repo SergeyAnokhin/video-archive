@@ -138,6 +138,11 @@ def init_db() -> int:
 
             seed_default_log_rotation_settings(conn)
 
+        if current_version < 49 <= SCHEMA_VERSION:
+            from app.provider_entries import migrate_api_keys
+
+            migrate_api_keys(conn)
+
     return SCHEMA_VERSION
 
 

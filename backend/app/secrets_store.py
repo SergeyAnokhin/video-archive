@@ -12,10 +12,14 @@ real secrets by monkeypatching `secrets_store.SECRETS_PATH` (see
 `from app.config import SECRETS_PATH` binds the pre-patch value and silently
 reads/writes the real `backend/secrets.env` instead of the per-test temp file.
 
-Provider API keys are keyed by `app/provider_entries.py` entry id (not
-provider type), since a user can add multiple entries per provider type —
-see `_entry_key_name()`. Only key *presence* and a masked suffix should ever
-be exposed to the frontend, never the value itself.
+Provider API keys are keyed by provider type — one key per provider, shared
+by every `app/provider_entries.py` entry (model) of that type, see
+`_provider_key_name()`. Before that, keys were stored per entry id
+(`_entry_key_name()`); `migrate_entry_keys_to_provider_keys()` copies them
+over once and leaves the old per-entry values in place so nothing is lost
+when one provider type had several different keys. Only key *presence* and
+a masked suffix should ever be exposed to the frontend, never the value
+itself.
 """
 
 from __future__ import annotations
@@ -55,6 +59,57 @@ def delete_entry_api_key(entry_id: str) -> None:
 def get_entry_api_key_suffix(entry_id: str, length: int = 4) -> str | None:
     api_key = get_entry_api_key(entry_id)
     return api_key[-length:] if api_key else None
+
+
+def _provider_key_name(provider_type: str) -> str:
+    return f"PROVIDER_{provider_type.upper()}_API_KEY"
+
+
+def get_provider_api_key(provider_type: str) -> str | None:
+    if not SECRETS_PATH.exists():
+        return None
+    values = dotenv_values(SECRETS_PATH)
+    return values.get(_provider_key_name(provider_type)) or None
+
+
+def set_provider_api_key(provider_type: str, api_key: str) -> None:
+    if not SECRETS_PATH.exists():
+        SECRETS_PATH.touch()
+    set_key(str(SECRETS_PATH), _provider_key_name(provider_type), api_key, quote_mode="never")
+
+
+def delete_provider_api_key(provider_type: str) -> None:
+    if not SECRETS_PATH.exists():
+        return
+    unset_key(str(SECRETS_PATH), _provider_key_name(provider_type))
+
+
+def get_provider_api_key_suffix(provider_type: str, length: int = 4) -> str | None:
+    api_key = get_provider_api_key(provider_type)
+    return api_key[-length:] if api_key else None
+
+
+def migrate_entry_keys_to_provider_keys(entries: list[tuple[str, str]]) -> None:
+    """One-time move to one key per provider type. `entries` is
+    `(entry_id, provider_type)` in priority order; for every type that has
+    no provider key yet, the first entry with a key wins. Old per-entry
+    keys stay in the file -- see `legacy_entry_keys_differ()`."""
+    for entry_id, provider_type in entries:
+        if get_provider_api_key(provider_type):
+            continue
+        api_key = get_entry_api_key(entry_id)
+        if api_key:
+            set_provider_api_key(provider_type, api_key)
+
+
+def legacy_entry_keys_differ(provider_type: str, entry_ids: list[str]) -> bool:
+    """True when a leftover per-entry key of `entry_ids` (all of
+    `provider_type`) differs from the provider key -- i.e. migration had to
+    pick one of several keys and the user should check it."""
+    provider_key = get_provider_api_key(provider_type)
+    return any(
+        (legacy := get_entry_api_key(entry_id)) and legacy != provider_key for entry_id in entry_ids
+    )
 
 
 # Source credentials (Specification §5, §18): historically only one active

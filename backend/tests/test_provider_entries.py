@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app import provider_entries
+from app import provider_entries, secrets_store
 
 
 def test_create_entry_assigns_incrementing_sort_order(engine):
@@ -39,11 +39,52 @@ def test_create_entry_stores_api_key_and_masks_it(engine):
     assert entry["key_suffix"] == "1234"
 
 
-def test_multiple_entries_of_same_provider_type_allowed(engine):
+def test_multiple_entries_of_same_provider_type_share_one_key(engine):
     a = provider_entries.create_entry(engine, {"provider_type": "gemini", "api_key": "sk-aaaa"})
     b = provider_entries.create_entry(engine, {"provider_type": "gemini", "api_key": "sk-bbbb"})
     assert a["id"] != b["id"]
-    assert {e["provider_type"] for e in provider_entries.list_entries(engine)} == {"gemini"}
+    entries = provider_entries.list_entries(engine)
+    assert {e["provider_type"] for e in entries} == {"gemini"}
+    assert [e["key_suffix"] for e in entries] == ["bbbb", "bbbb"]
+
+
+def test_entry_without_own_key_uses_provider_key(engine):
+    secrets_store.set_provider_api_key("mistral", "sk-shared-4321")
+    entry = provider_entries.create_entry(engine, {"provider_type": "mistral"})
+    assert entry["has_api_key"] is True
+    assert entry["key_suffix"] == "4321"
+
+
+def test_entry_notes_are_stored_and_updated(engine):
+    entry = provider_entries.create_entry(engine, {"provider_type": "gemini", "notes": "good at night scenes"})
+    assert entry["notes"] == "good at night scenes"
+    updated = provider_entries.update_entry(engine, entry["id"], {"notes": "slow"})
+    assert updated["notes"] == "slow"
+
+
+def test_migrate_api_keys_picks_highest_priority_key_and_flags_conflict(engine):
+    low = provider_entries.create_entry(engine, {"provider_type": "gemini"})
+    high = provider_entries.create_entry(engine, {"provider_type": "gemini"})
+    same = provider_entries.create_entry(engine, {"provider_type": "mistral"})
+    provider_entries.reorder_entries(engine, [high["id"], low["id"], same["id"]])
+    secrets_store.set_entry_api_key(low["id"], "sk-low")
+    secrets_store.set_entry_api_key(high["id"], "sk-high")
+    secrets_store.set_entry_api_key(same["id"], "sk-mistral")
+
+    with engine.begin() as conn:
+        provider_entries.migrate_api_keys(conn)
+
+    assert secrets_store.get_provider_api_key("gemini") == "sk-high"
+    assert secrets_store.get_provider_api_key("mistral") == "sk-mistral"
+    # Old keys are kept; only gemini had a different one left behind.
+    assert secrets_store.get_entry_api_key(low["id"]) == "sk-low"
+    gemini_ids = provider_entries.entry_ids_by_type(engine, "gemini")
+    assert secrets_store.legacy_entry_keys_differ("gemini", gemini_ids) is True
+    assert secrets_store.legacy_entry_keys_differ("mistral", [same["id"]]) is False
+
+    provider_entries.delete_legacy_entry_keys(engine, "gemini")
+    assert secrets_store.legacy_entry_keys_differ("gemini", gemini_ids) is False
+    assert secrets_store.get_provider_api_key("gemini") == "sk-high"
 
 
 def test_update_entry_changes_fields_and_rotates_key(engine):

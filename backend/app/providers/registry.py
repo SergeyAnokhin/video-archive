@@ -70,9 +70,11 @@ class AllProvidersFailedError(Exception):
 
 
 def _resolve_entry_api_key(entry: dict) -> str:
-    api_key = secrets_store.get_entry_api_key(entry["id"])
+    api_key = secrets_store.get_provider_api_key(entry["provider_type"])
     if not api_key:
-        raise ProviderNotConfiguredError(f"No API key configured for provider entry: {entry['display_name']}")
+        raise ProviderNotConfiguredError(
+            f"No API key configured for provider {entry['provider_type']} (entry: {entry['display_name']})"
+        )
     return api_key
 
 

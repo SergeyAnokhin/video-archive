@@ -383,8 +383,68 @@ def test_provider_entries_export_includes_plaintext_key_over_http(tmp_path, monk
         r = client.get("/api/settings/provider-entries/export")
         assert r.status_code == 200
         payload = r.json()
-        assert payload["entries"][0]["api_key"] == "sk-export-me"
+        assert payload["provider_keys"] == {"gemini": "sk-export-me"}
+        assert "api_key" not in payload["entries"][0]
         assert "attachment" in r.headers["content-disposition"]
+
+
+def test_provider_entries_import_accepts_provider_keys_and_legacy_entry_keys(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        r = client.post(
+            "/api/settings/provider-entries/import",
+            json={
+                "provider_keys": {"gemini": "sk-gemini-new"},
+                "entries": [
+                    # Legacy per-entry keys: ignored when the type already has
+                    # a key, otherwise the first one becomes the provider key.
+                    {"provider_type": "gemini", "api_key": "sk-gemini-old", "notes": "fast"},
+                    {"provider_type": "mistral", "api_key": "sk-mistral-1"},
+                    {"provider_type": "mistral", "api_key": "sk-mistral-2"},
+                ],
+            },
+        )
+        assert r.status_code == 200
+        providers = {p["provider_type"]: p for p in client.get("/api/settings/providers").json()["providers"]}
+        assert providers["gemini"]["key_suffix"] == "-new"
+        assert providers["mistral"]["key_suffix"] == "al-1"
+        entries = client.get("/api/settings/provider-entries").json()["entries"]
+        assert entries[0]["notes"] == "fast"
+
+
+def test_provider_api_key_endpoints_refresh_catalog_and_never_leak_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(registry, "list_models_for_provider_type", lambda provider_type, api_key: ["m-1", "m-2"])
+
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        r = client.put("/api/settings/providers/gemini/api-key", json={"api_key": "sk-secret-9999"})
+        assert r.status_code == 200
+        assert "sk-secret-9999" not in r.text
+        gemini = next(p for p in r.json()["providers"] if p["provider_type"] == "gemini")
+        assert gemini["has_api_key"] is True
+        assert gemini["key_suffix"] == "9999"
+        assert gemini["catalog_count"] == 2
+
+        r = client.get("/api/settings/providers/gemini/models")
+        assert [m["model_id"] for m in r.json()["models"]] == ["m-1", "m-2"]
+
+        assert client.put("/api/settings/providers/nope/api-key", json={"api_key": "x"}).status_code == 404
+
+        r = client.delete("/api/settings/providers/gemini/api-key")
+        gemini = next(p for p in r.json()["providers"] if p["provider_type"] == "gemini")
+        assert gemini["has_api_key"] is False
+
+
+def test_provider_entry_update_keeps_notes_when_omitted(tmp_path, monkeypatch):
+    with _fresh_client(tmp_path, monkeypatch) as client:
+        entry = client.post("/api/settings/provider-entries", json={"provider_type": "gemini", "notes": "hi"}).json()
+        r = client.put(
+            f"/api/settings/provider-entries/{entry['id']}", json={"display_name": "Renamed", "enabled": True}
+        )
+        assert r.json()["notes"] == "hi"
+        r = client.put(
+            f"/api/settings/provider-entries/{entry['id']}",
+            json={"display_name": "Renamed", "enabled": True, "notes": None},
+        )
+        assert r.json()["notes"] is None
 
 
 def test_provider_entries_import_round_trips_export_and_skips_unknown_types(tmp_path, monkeypatch):
