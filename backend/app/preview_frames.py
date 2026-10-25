@@ -28,9 +28,10 @@ CLIP_MAX_FRAMES = 24
 
 # Downscale target for collage/animated-preview frame extraction (user
 # request, chat 2026-07-25 -- slow preview generation on underpowered
-# hardware): >= both `CANVAS_WIDTH`'s per-tile width and `gif_max_width`'s
-# default, so nothing downstream (collage tile, GIF frame, face/person
-# detection) loses visible resolution. Only applied where extraction is
+# hardware): >= a small tile's width on a preset's canvas and
+# `gif_max_width`'s default, so small collage tiles, GIF frames and
+# face/person detection lose no visible resolution (an enlarged tile on a
+# very wide canvas, e.g. 4000px, is upscaled from this). Only applied where extraction is
 # explicitly passed `max_width=` (collage/animated-preview call sites) --
 # other callers (AI tagging, similarity signatures computed independently
 # of a preview, single-thumbnail picking) keep extracting at source

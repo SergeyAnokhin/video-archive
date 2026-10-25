@@ -6,7 +6,7 @@ construction-set editor.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import preview_layouts as service
 from app.db import get_engine
@@ -24,6 +24,12 @@ class PresetRequest(BaseModel):
     name: str
     grid_rows: int
     grid_cols: int
+    canvas_width: int = Field(
+        default=service.DEFAULT_CANVAS_WIDTH, ge=service.MIN_CANVAS_SIDE, le=service.MAX_CANVAS_SIDE
+    )
+    canvas_height: int = Field(
+        default=service.DEFAULT_CANVAS_HEIGHT, ge=service.MIN_CANVAS_SIDE, le=service.MAX_CANVAS_SIDE
+    )
     timeline_flow: str = "row"
     identity_diversity_enabled: bool = True
     layout_definition: list[EnlargedTileInput] = []

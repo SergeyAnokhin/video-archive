@@ -27,8 +27,7 @@ from app.media import (
     variant_base_stem,
 )
 from app.preview import diverse_video_frame_plan, pick_image_segments, select_frames_for_tiles
-from app.preview_layouts import compute_layout_tiles
-from app.preview_settings import effective_aspect_ratio
+from app.preview_layouts import LayoutValidationError, canvas_aspect_ratio, compute_layout_tiles, validate_canvas_size
 
 
 # --- media naming rules --------------------------------------------------
@@ -246,22 +245,15 @@ def test_build_ffmpeg_command_faststart_for_mp4_only():
     assert "-movflags" not in mkv_args
 
 
-# --- preview settings: aspect ratio resolution ---------------------------
+# --- preview layouts: canvas size -----------------------------------------
 
 
-def test_effective_aspect_ratio():
-    assert effective_aspect_ratio({"aspect_ratio": "standard"}) == 4 / 3
-    assert effective_aspect_ratio({"aspect_ratio": "phone-landscape"}) == 19.5 / 9
-    assert effective_aspect_ratio({"aspect_ratio": "ultra-wide"}) == 21 / 9
-    assert effective_aspect_ratio(
-        {"aspect_ratio": "custom", "aspect_ratio_custom_width": 16, "aspect_ratio_custom_height": 10}
-    ) == 1.6
-    # Missing custom dimensions fall back to 1 each, never divide by zero.
-    assert effective_aspect_ratio(
-        {"aspect_ratio": "custom", "aspect_ratio_custom_width": None, "aspect_ratio_custom_height": None}
-    ) == 1.0
-    # Unknown preset name falls back to standard.
-    assert effective_aspect_ratio({"aspect_ratio": "bogus"}) == 4 / 3
+def test_canvas_aspect_ratio_and_size_validation():
+    assert canvas_aspect_ratio({"canvas_width": 4000, "canvas_height": 2000}) == 2.0
+    validate_canvas_size(256, 8192)
+    for width, height in ((255, 1000), (1000, 8193)):
+        with pytest.raises(LayoutValidationError):
+            validate_canvas_size(width, height)
 
 
 # --- preview: frame-to-tile selection ------------------------------------

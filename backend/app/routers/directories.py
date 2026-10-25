@@ -11,7 +11,13 @@ from sqlalchemy import text
 
 from app import directory_ops, orphan_previews
 from app.db import get_engine
-from app.media import compute_variant_tags, file_row_to_dict, folder_gif_relative_path, resolve_variant_preview_flags
+from app.media import (
+    compute_variant_tags,
+    file_row_to_dict,
+    folder_gif_relative_path,
+    preview_cache_headers,
+    resolve_variant_preview_flags,
+)
 from app.source_access import get_active_source_or_404
 from app.sources import get_source_access
 from app.status import compute_directory_status
@@ -57,7 +63,7 @@ def get_directory_children(
 
         subdir_rows = conn.execute(
             text(
-                "SELECT relative_path, name, has_folder_preview, is_favorite FROM directories "
+                "SELECT relative_path, name, has_folder_preview, folder_preview_generated_at, is_favorite FROM directories "
                 "WHERE source_id = :sid AND parent_relative_path = :path "
                 "ORDER BY name COLLATE NOCASE"
             ),
@@ -71,6 +77,7 @@ def get_directory_children(
                 "name": row.name,
                 "is_favorite": bool(row.is_favorite),
                 "has_folder_preview": bool(row.has_folder_preview),
+                "folder_preview_generated_at": row.folder_preview_generated_at,
             }
             if include_status:
                 entry["status"] = compute_directory_status(conn, source.id, row.relative_path)
@@ -82,7 +89,8 @@ def get_directory_children(
             text(
                 """
                 SELECT id, relative_path, file_name, extension, size_bytes, modified_at, is_video_supported,
-                       is_image_supported, has_preview_asset, converted_at, tagged_at, duration_seconds
+                       is_image_supported, has_preview_asset, preview_generated_at, converted_at, tagged_at,
+                       duration_seconds
                 FROM files
                 WHERE directory_id = :dir_id AND (is_video_supported = 1 OR is_image_supported = 1)
                 ORDER BY file_name COLLATE NOCASE
@@ -117,7 +125,7 @@ def search_directories(
         source = get_active_source_or_404(conn)
         rows = conn.execute(
             text(
-                "SELECT relative_path, name, has_folder_preview, is_favorite FROM directories "
+                "SELECT relative_path, name, has_folder_preview, folder_preview_generated_at, is_favorite FROM directories "
                 "WHERE source_id = :sid AND relative_path != '' AND LOWER(name) LIKE :q "
                 "ORDER BY relative_path COLLATE NOCASE LIMIT :limit OFFSET :offset"
             ),
@@ -131,6 +139,7 @@ def search_directories(
                 "name": row.name,
                 "is_favorite": bool(row.is_favorite),
                 "has_folder_preview": bool(row.has_folder_preview),
+                "folder_preview_generated_at": row.folder_preview_generated_at,
             }
             for row in rows
         ]
@@ -236,7 +245,7 @@ def delete_orphaned_previews(body: DeleteOrphanedPreviewsRequest):
 
 
 @router.get("/directories/preview.gif")
-def get_directory_preview_gif(path: str = Query(default="")):
+def get_directory_preview_gif(path: str = Query(default=""), v: str | None = Query(default=None)):
     engine = get_engine()
     with engine.connect() as conn:
         source = get_active_source_or_404(conn)
@@ -250,4 +259,4 @@ def get_directory_preview_gif(path: str = Query(default="")):
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No folder preview for this directory."}},
         )
-    return Response(content=access.read_bytes(gif_rel), media_type="image/gif")
+    return Response(content=access.read_bytes(gif_rel), media_type="image/gif", headers=preview_cache_headers(v))

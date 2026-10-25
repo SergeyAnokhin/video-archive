@@ -254,7 +254,7 @@ def test_generate_file_preview_reextracts_keyframe_seek_duplicates(tmp_path, mon
     monkeypatch.setattr(preview_frames, "extract_frame_image", collapsing_extract)
 
     _, images = preview.generate_file_preview(
-        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, frame_seek_mode="keyframe"
+        video_path, dest_path, layout=layout, frame_seek_mode="keyframe"
     )
 
     distinct = {img.tobytes() for img in images if img is not None}
@@ -338,6 +338,8 @@ def _layout_from_preset(preset: dict) -> dict:
         "layout_definition": preset["layout_definition"],
         "identity_diversity_enabled": preset.get("identity_diversity_enabled", True),
         "timeline_flow": preset.get("timeline_flow", "row"),
+        "canvas_width": preset.get("canvas_width", preview_layouts.DEFAULT_CANVAS_WIDTH),
+        "canvas_height": preset.get("canvas_height", preview_layouts.DEFAULT_CANVAS_HEIGHT),
     }
 
 
@@ -345,15 +347,19 @@ def test_generate_file_preview_writes_jpeg_next_to_video(tmp_path):
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=3.0, size="320x240")
 
-    layout = _layout_from_preset(preview_layouts._BUILTIN_PRESETS[0])
+    # The collage is rendered at exactly the preset's canvas size.
+    layout = {**_layout_from_preset(preview_layouts._BUILTIN_PRESETS[0]), "canvas_width": 1200, "canvas_height": 600}
     dest_path = tmp_path / "movie.jpg"
-    preview.generate_file_preview(video_path, dest_path, layout=layout, aspect_ratio=4 / 3)
+    gif_path = tmp_path / "movie.preview.gif"
+    preview.generate_file_preview(video_path, dest_path, layout=layout, gif_dest_path=gif_path)
 
     assert dest_path.exists()
     with Image.open(dest_path) as img:
         assert img.format == "JPEG"
-        assert img.size[0] == preview_render.CANVAS_WIDTH
-        assert abs(img.size[0] / img.size[1] - 4 / 3) < 0.01
+        assert img.size == (1200, 600)
+    # The GIF shares the collage's shape.
+    with Image.open(gif_path) as img:
+        assert abs(img.size[0] / img.size[1] - 2.0) < 0.02
 
 
 def test_generate_file_preview_also_writes_gif_when_requested(tmp_path):
@@ -364,7 +370,7 @@ def test_generate_file_preview_also_writes_gif_when_requested(tmp_path):
     dest_path = tmp_path / "movie.jpg"
     gif_path = tmp_path / "movie.preview.gif"
     preview.generate_file_preview(
-        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, gif_dest_path=gif_path
+        video_path, dest_path, layout=layout, gif_dest_path=gif_path
     )
 
     assert dest_path.exists()
@@ -377,7 +383,7 @@ def test_generate_file_preview_also_writes_gif_when_requested(tmp_path):
 
 def test_generate_file_preview_honors_custom_gif_max_width(tmp_path):
     # User request: GIF size/quality is configurable (Preview Settings),
-    # independent of the JPEG collage's own fixed CANVAS_WIDTH.
+    # independent of the JPEG collage's own canvas size.
     video_path = tmp_path / "movie.mp4"
     make_video(video_path, duration=3.0, size="320x240")
 
@@ -385,7 +391,7 @@ def test_generate_file_preview_honors_custom_gif_max_width(tmp_path):
     dest_path = tmp_path / "movie.jpg"
     gif_path = tmp_path / "movie.preview.gif"
     preview.generate_file_preview(
-        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, gif_dest_path=gif_path,
+        video_path, dest_path, layout=layout, gif_dest_path=gif_path,
         gif_max_width=240, gif_colors=16,
     )
 
@@ -399,7 +405,7 @@ def test_generate_file_preview_rejects_non_video(tmp_path):
 
     layout = _layout_from_preset(preview_layouts._BUILTIN_PRESETS[0])
     with pytest.raises(preview.PreviewError):
-        preview.generate_file_preview(not_a_video, tmp_path / "notes.jpg", layout=layout, aspect_ratio=4 / 3)
+        preview.generate_file_preview(not_a_video, tmp_path / "notes.jpg", layout=layout)
 
 
 def test_generate_file_preview_degrades_to_blur_ranking_without_models(tmp_path, monkeypatch):
@@ -419,7 +425,7 @@ def test_generate_file_preview_degrades_to_blur_ranking_without_models(tmp_path,
 
     layout = _layout_from_preset(preview_layouts._BUILTIN_PRESETS[0])
     dest_path = tmp_path / "movie.jpg"
-    preview.generate_file_preview(video_path, dest_path, layout=layout, aspect_ratio=4 / 3)
+    preview.generate_file_preview(video_path, dest_path, layout=layout)
 
     assert dest_path.exists()
     with Image.open(dest_path) as img:
@@ -495,7 +501,7 @@ def test_generate_file_preview_passes_frame_seek_mode_through(tmp_path, monkeypa
     monkeypatch.setattr(preview_frames, "extract_frame_image", spy)
 
     preview.generate_file_preview(
-        video_path, dest_path, layout=layout, aspect_ratio=4 / 3, frame_seek_mode="accurate"
+        video_path, dest_path, layout=layout, frame_seek_mode="accurate"
     )
 
     assert seen_modes
@@ -871,7 +877,6 @@ def test_preview_settings_singleton_roundtrip(engine):
     updated = preview_settings.update_settings(
         engine,
         {
-            "aspect_ratio": "ultra-wide",
             "folder_preview_frame_count": 6,
             "gif_max_width": 320,
             "gif_colors": 32,
@@ -881,7 +886,6 @@ def test_preview_settings_singleton_roundtrip(engine):
             "frame_seek_mode": "accurate",
         },
     )
-    assert updated["aspect_ratio"] == "ultra-wide"
     assert updated["folder_preview_frame_count"] == 6
     assert updated["gif_max_width"] == 320
     assert updated["gif_colors"] == 32
@@ -890,3 +894,46 @@ def test_preview_settings_singleton_roundtrip(engine):
     assert updated["animated_transition"] == "crossfade"
     assert updated["frame_seek_mode"] == "accurate"
     assert preview_settings.get_settings(engine) == updated
+
+
+def test_migration_51_moves_canvas_size_into_presets(tmp_path):
+    """Runs migrations 1-50 on a fresh database, seeds a pre-51 state (global
+    "custom" 16:10 ratio, one custom and one built-in preset), then applies
+    migration 51: the custom preset keeps the size it rendered at so far
+    (2048 wide, height from the old ratio), the built-in gets the new
+    4000x1848 default, and the global ratio columns are gone."""
+    from sqlalchemy import create_engine
+
+    from app.migrations import MIGRATIONS
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as conn:
+        for version in range(1, 51):
+            for statement in MIGRATIONS[version]:
+                conn.execute(text(statement))
+        conn.execute(
+            text(
+                "INSERT INTO preview_settings (id, aspect_ratio, aspect_ratio_custom_width, "
+                "aspect_ratio_custom_height, updated_at) VALUES (1, 'custom', 16, 10, 'now')"
+            )
+        )
+        for preset_id, is_builtin in (("custom", 0), ("builtin", 1)):
+            conn.execute(
+                text(
+                    "INSERT INTO preview_layout_presets (id, name, grid_rows, grid_cols, layout_definition, "
+                    "is_builtin, created_at, updated_at) VALUES (:id, :id, 4, 4, '[]', :builtin, 'now', 'now')"
+                ),
+                {"id": preset_id, "builtin": is_builtin},
+            )
+
+        for statement in MIGRATIONS[51]:
+            conn.execute(text(statement))
+
+        sizes = dict(
+            (row.id, (row.canvas_width, row.canvas_height))
+            for row in conn.execute(text("SELECT id, canvas_width, canvas_height FROM preview_layout_presets"))
+        )
+        settings_columns = {row.name for row in conn.execute(text("PRAGMA table_info(preview_settings)"))}
+
+    assert sizes == {"custom": (2048, 1280), "builtin": (4000, 1848)}
+    assert not {"aspect_ratio", "aspect_ratio_custom_width", "aspect_ratio_custom_height"} & settings_columns

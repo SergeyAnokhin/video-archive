@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Archive, File as FileIcon, Film, Folder, Image as ImageIcon, Info, SlidersHorizontal, Star, Trash2 } from 'lucide-react'
 import type { DirectoryEntry, FileEntry, VariantTag } from '../types/api'
 import { formatDuration, formatSize } from '../utils/format'
+import { fileCollageUrl, fileGifUrl, folderGifUrl } from '../utils/previewUrl'
 import { TagBadge } from './TagBadge'
 import './LibraryView.css'
 
@@ -58,7 +59,7 @@ export function FolderCard({
         <div className="library-card__thumb">
           {showThumbnail ? (
             <img
-              src={`/api/directories/preview.gif?path=${encodeURIComponent(dir.path)}`}
+              src={folderGifUrl(dir)}
               alt=""
               className="library-card__thumb-img"
             />
@@ -176,7 +177,7 @@ export function FileCard({ file, onPlay, onInfo, onDelete }: FileCardProps) {
             />
           ) : showThumbnail ? (
             <img
-              src={gifFailed ? `/api/files/${file.id}/preview.jpg` : `/api/files/${file.id}/preview.gif`}
+              src={gifFailed ? fileCollageUrl(file) : fileGifUrl(file)}
               alt=""
               className="library-card__thumb-img"
               onError={() => setGifFailed(true)}

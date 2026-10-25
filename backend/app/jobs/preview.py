@@ -17,9 +17,10 @@ Handles both scopes:
   regenerates (no skip-processed toggle — this is an explicit single-file
   action, not a bulk job).
 
-The layout preset and global settings (aspect ratio, folder-preview frame
-count, GIF max width/color count, animated-preview source mode/segment
-duration/transition — user request) are resolved once at launch and reused
+The layout preset (grid, canvas size in pixels -- whose shape the GIFs
+share) and global settings (folder-preview frame count, GIF max width/color
+count, animated-preview source mode/segment duration/transition — user
+request) are resolved once at launch and reused
 for the whole job (Job Model "Preview Jobs" — "use preview settings
 snapshot at launch time").
 """
@@ -135,7 +136,6 @@ def _generate_one_file(
     access: SourceAccess,
     file_row,
     layout: dict,
-    aspect_ratio: float,
     settings: dict,
     max_workers: int = 1,
 ) -> tuple[str, dict]:
@@ -166,7 +166,7 @@ def _generate_one_file(
         with tempfile.TemporaryDirectory(prefix="va_preview_out_") as gif_stage_dir:
             local_gif = Path(gif_stage_dir) / f"{video_path.stem}.preview.gif"
             info, images = preview.generate_file_preview(
-                video_path, local_dest, layout=layout, aspect_ratio=aspect_ratio, gif_dest_path=local_gif,
+                video_path, local_dest, layout=layout, gif_dest_path=local_gif,
                 gif_max_width=settings["gif_max_width"], gif_colors=settings["gif_colors"],
                 animated_source_mode=settings["animated_source_mode"],
                 animated_segment_seconds=settings["animated_segment_seconds"],
@@ -187,7 +187,6 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     params = job["parameters"] or {}
     layout = _resolve_layout(engine, params.get("layout_preset_id"))
     settings = preview_settings.get_settings(engine)
-    aspect_ratio = preview_settings.effective_aspect_ratio(settings)
     worker_count = max(1, performance_settings.get_settings(engine)["parallel_workers"])
 
     scope_desc = (
@@ -195,7 +194,8 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     )
     service.log_event(
         engine, job["id"], None, "info", "job_parameters",
-        f"Parameters: scope={scope_desc}, layout='{layout['name']}' ({layout['grid_rows']}x{layout['grid_cols']}), "
+        f"Parameters: scope={scope_desc}, layout='{layout['name']}' ({layout['grid_rows']}x{layout['grid_cols']}, "
+        f"{layout['canvas_width']}x{layout['canvas_height']}px), "
         f"workers={worker_count}, frame_seek={settings['frame_seek_mode']}",
     )
 
@@ -206,8 +206,8 @@ def run_preview_job(engine, job: dict) -> tuple[str, str]:
     access = get_source_access(source_row)
 
     if job["scope_type"] == "file":
-        return _run_file_scope(engine, job, access, params, layout, aspect_ratio, settings, worker_count)
-    return _run_directory_scope(engine, job, access, params, layout, aspect_ratio, settings, worker_count)
+        return _run_file_scope(engine, job, access, params, layout, settings, worker_count)
+    return _run_directory_scope(engine, job, access, params, layout, settings, worker_count)
 
 
 def _format_duration(seconds: float) -> str:
@@ -221,7 +221,6 @@ def _run_file_scope(
     access: SourceAccess,
     params: dict,
     layout: dict,
-    aspect_ratio: float,
     settings: dict,
     worker_count: int,
 ) -> tuple[str, str]:
@@ -244,7 +243,7 @@ def _run_file_scope(
         # file's own independent frame extractions instead (see
         # `preview.generate_file_preview()`'s `max_workers`).
         output_ref, info = _generate_one_file(
-            engine, job["id"], access, row, layout, aspect_ratio, settings, max_workers=worker_count
+            engine, job["id"], access, row, layout, settings, max_workers=worker_count
         )
         _mark_file_previewed(engine, row.id, info)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
@@ -263,7 +262,7 @@ def _run_file_scope(
 
 
 def _process_preview_file(
-    engine, job_id: str, access: SourceAccess, row, layout: dict, aspect_ratio: float, settings: dict
+    engine, job_id: str, access: SourceAccess, row, layout: dict, settings: dict
 ) -> bool:
     """One directory-scope file, run from inside a batch's thread pool.
     Returns whether it succeeded; failures are recorded through the normal
@@ -283,7 +282,7 @@ def _process_preview_file(
         # spending the configured parallelism on both axes at once would
         # spawn `files-in-flight x max_workers` ffmpeg processes together.
         output_ref, info = _generate_one_file(
-            engine, job_id, access, row, layout, aspect_ratio, settings
+            engine, job_id, access, row, layout, settings
         )
         _mark_file_previewed(engine, row.id, info)
         service.complete_job_item(engine, item_id, output_ref=output_ref, message="Preview generated.")
@@ -307,7 +306,6 @@ def _run_directory_scope(
     access: SourceAccess,
     params: dict,
     layout: dict,
-    aspect_ratio: float,
     settings: dict,
     worker_count: int,
 ) -> tuple[str, str]:
@@ -381,7 +379,7 @@ def _run_directory_scope(
         job["id"],
         worker_count,
         next_item,
-        lambda row: _process_preview_file(engine, job["id"], access, row, layout, aspect_ratio, settings),
+        lambda row: _process_preview_file(engine, job["id"], access, row, layout, settings),
     )
     processed = sum(1 for ok in results if ok)
     failed = sum(1 for ok in results if not ok)
@@ -390,7 +388,7 @@ def _run_directory_scope(
     folder_count = 0
     if stop_status is None:
         folder_count, stop_status = _generate_folder_previews(
-            engine, job, source_id, access, relative_path, settings
+            engine, job, source_id, access, relative_path, layout, settings
         )
 
     if stop_status is not None:
@@ -412,7 +410,7 @@ def _run_directory_scope(
 
 
 def _generate_folder_previews(
-    engine, job: dict, source_id: str, access: SourceAccess, relative_path: str, settings: dict
+    engine, job: dict, source_id: str, access: SourceAccess, relative_path: str, layout: dict, settings: dict
 ) -> tuple[int, str | None]:
     """Refresh folder-preview.gif for the target directory and every
     descendant directory that contains at least one supported video or
@@ -431,7 +429,7 @@ def _generate_folder_previews(
             text(f"SELECT * FROM directories WHERE {' AND '.join(dir_clauses)}"), dir_params
         ).all()
 
-    aspect_ratio = preview_settings.effective_aspect_ratio(settings)
+    aspect_ratio = preview_layouts.canvas_aspect_ratio(layout)
     frame_count = settings["folder_preview_frame_count"]
     animated_source_mode = settings["animated_source_mode"]
     animated_segment_seconds = settings["animated_segment_seconds"]

@@ -27,6 +27,7 @@ import {
   X,
 } from 'lucide-react'
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
+import { fileCollageUrl, refreshPreviewCache } from '../utils/previewUrl'
 import { getRecentTags, recordRecentTag } from '../utils/recentTags'
 import { buildTagSuggestions } from '../utils/tagSuggestions'
 import { api, ApiError, tryApi } from '../api/client'
@@ -176,6 +177,7 @@ export function FileInfoPanel({
     try {
       const data = await api<FileRefreshResponse>(`/api/files/${file.id}/refresh`, { method: 'POST' })
       setMediaInfo(data.media_info)
+      refreshPreviewCache({ fileIds: [file.id] })
       onFileRefreshed?.({ ...file, ...data.file })
     } catch (err) {
       setRefreshError(
@@ -423,7 +425,7 @@ export function FileInfoPanel({
               {file.is_image_supported ? (
                 <img src={`/api/files/${file.id}/stream`} alt="" className="file-info-panel__thumb-img" />
               ) : (
-                <img src={`/api/files/${file.id}/preview.jpg`} alt="" className="file-info-panel__thumb-img" />
+                <img src={fileCollageUrl(file)} alt="" className="file-info-panel__thumb-img" />
               )}
             </button>
           ) : (
@@ -667,7 +669,7 @@ export function FileInfoPanel({
             </button>
           </div>
           <img
-            src={file.is_image_supported ? `/api/files/${file.id}/stream` : `/api/files/${file.id}/preview.jpg`}
+            src={file.is_image_supported ? `/api/files/${file.id}/stream` : fileCollageUrl(file)}
             alt=""
             className="file-info-panel__lightbox-img"
             onClick={(event) => event.stopPropagation()}

@@ -40,6 +40,18 @@ FOLDER_PREVIEW_FILENAME = "folder-preview.gif"
 PREVIEW_GIF_DIR = f"{TECHNICAL_FOLDER_NAME}/previews"
 
 
+def preview_cache_headers(version: str | None) -> dict:
+    """Cache policy for a served preview asset. The frontend versions preview
+    URLs (`?v=<preview_generated_at>`, plus an optional per-browser manual
+    refresh token), and a regenerated asset gets a new timestamp, so a
+    versioned URL's bytes never change and the browser may keep them
+    indefinitely. An unversioned URL is regenerated in place, so it must be
+    revalidated instead of served stale."""
+    if version:
+        return {"Cache-Control": "private, max-age=31536000, immutable"}
+    return {"Cache-Control": "no-cache"}
+
+
 def preview_gif_relative_path(rel_path: str) -> str:
     """Deterministic path for `rel_path`'s animated GIF preview, mirrored
     under `PREVIEW_GIF_DIR` at the same subfolder depth as the source video
@@ -74,6 +86,7 @@ def file_row_to_dict(row, **extra) -> dict:
         "is_video_supported": bool(row.is_video_supported),
         "is_image_supported": bool(row.is_image_supported),
         "has_preview_asset": bool(row.has_preview_asset),
+        "preview_generated_at": row.preview_generated_at,
         "converted_at": row.converted_at,
         "tagged_at": row.tagged_at,
         "is_variant": VARIANT_MARKER in row.file_name,

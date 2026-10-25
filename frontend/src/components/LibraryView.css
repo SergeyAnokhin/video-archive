@@ -358,7 +358,8 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  aspect-ratio: 19.5 / 9;
+  /* The default layout preset's collage shape (utils/collageAspect.ts). */
+  aspect-ratio: var(--collage-aspect, 19.5 / 9);
   overflow: hidden;
   padding: 0;
   color: var(--color-text-muted);

@@ -880,4 +880,35 @@ MIGRATIONS: dict[int, list[str]] = {
     50: [
         "ALTER TABLE provider_usage_log ADD COLUMN cost_source TEXT",
     ],
+    # Chat request 2026-10-25: the collage's size moves from a global aspect
+    # ratio (on a fixed 2048px-wide canvas) into each layout preset as exact
+    # pixels. Built-ins (and new presets) default to 4000x1848; existing
+    # custom presets keep the size they rendered at until now -- 2048 wide,
+    # height from the global ratio -- which is then dropped.
+    51: [
+        "ALTER TABLE preview_layout_presets ADD COLUMN canvas_width INTEGER NOT NULL DEFAULT 4000",
+        "ALTER TABLE preview_layout_presets ADD COLUMN canvas_height INTEGER NOT NULL DEFAULT 1848",
+        """
+        UPDATE preview_layout_presets
+        SET canvas_width = 2048,
+            canvas_height = COALESCE(
+                (
+                    SELECT MIN(8192, MAX(256, CAST(ROUND(2048.0 / CASE aspect_ratio
+                        WHEN 'phone-portrait' THEN 9 / 19.5
+                        WHEN 'phone-landscape' THEN 19.5 / 9
+                        WHEN 'ultra-wide' THEN 21.0 / 9
+                        WHEN 'custom' THEN
+                            COALESCE(aspect_ratio_custom_width, 1) * 1.0 / COALESCE(aspect_ratio_custom_height, 1)
+                        ELSE 4.0 / 3
+                    END) AS INTEGER)))
+                    FROM preview_settings WHERE id = 1
+                ),
+                1536
+            )
+        WHERE is_builtin = 0
+        """,
+        "ALTER TABLE preview_settings DROP COLUMN aspect_ratio",
+        "ALTER TABLE preview_settings DROP COLUMN aspect_ratio_custom_width",
+        "ALTER TABLE preview_settings DROP COLUMN aspect_ratio_custom_height",
+    ],
 }

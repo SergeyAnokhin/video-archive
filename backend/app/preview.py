@@ -19,7 +19,7 @@ import numpy as np
 
 from app import conversion, detection, hardware_decode, preview_frames, preview_render
 from app.preview_frames import EXTRACT_MAX_WIDTH
-from app.preview_layouts import compute_layout_tiles
+from app.preview_layouts import canvas_aspect_ratio, compute_layout_tiles
 from app.preview_render import GIF_DEFAULT_COLORS, GIF_DEFAULT_SEGMENT_SECONDS, GIF_MAX_WIDTH
 from app.sampling import sample_interior_timestamps
 
@@ -124,7 +124,6 @@ def generate_file_preview(
     dest_path: Path,
     *,
     layout: dict,
-    aspect_ratio: float,
     gif_dest_path: Path | None = None,
     gif_max_width: int = GIF_MAX_WIDTH,
     gif_colors: int = GIF_DEFAULT_COLORS,
@@ -175,6 +174,9 @@ def generate_file_preview(
             on_stage(message)
 
     tiles = compute_layout_tiles(layout["grid_rows"], layout["grid_cols"], layout["layout_definition"])
+    # The GIF is cover-cropped to the collage's own shape, so both preview
+    # kinds (and the library cards showing them) share one aspect ratio.
+    aspect_ratio = canvas_aspect_ratio(layout)
 
     t0 = time.monotonic()
     info = conversion.probe_media(video_path)
@@ -256,7 +258,8 @@ def generate_file_preview(
     ordered_images = [images[assignment[i]] for i in range(len(tiles))]
 
     preview_render.render_collage(
-        ordered_images, tiles, video_path.name, aspect_ratio, dest_path,
+        ordered_images, tiles, video_path.name, dest_path,
+        width=layout["canvas_width"], height=layout["canvas_height"],
         grid_rows=layout["grid_rows"], grid_cols=layout["grid_cols"],
     )
     stage(f"Rendered collage image in {time.monotonic() - t0:.2f}s")

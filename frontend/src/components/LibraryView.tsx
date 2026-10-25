@@ -40,6 +40,7 @@ import { TagDirectoryDialog } from './TagDirectoryDialog'
 import { TagLabModal } from './TagLabModal'
 import { api, ApiError, tryApi } from '../api/client'
 import type { DirectoryChildrenResponse, FileEntry, JobSummary } from '../types/api'
+import { refreshPreviewCache } from '../utils/previewUrl'
 import { getRecentFolderVisits, recordFolderVisit, recordRecentFolder } from '../utils/recentFolders'
 import { recordRecentlyViewed } from '../utils/recentlyViewed'
 import type { ActiveSearch } from '../utils/searchQuery'
@@ -157,6 +158,17 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
     }
     setReloadTick((tick) => tick + 1)
   }, [jobItemsById, data, activeSearch])
+
+  // The info panel holds a snapshot of the file it was opened with; swap in
+  // the reloaded listing's copy so a regenerated collage (new
+  // `preview_generated_at`) shows up without reopening the panel.
+  useEffect(() => {
+    const files = activeSearch ? searchFiles : data?.files
+    if (!files) {
+      return
+    }
+    setInfoFile((current) => (current ? (files.find((file) => file.id === current.id) ?? current) : current))
+  }, [activeSearch, searchFiles, data])
 
   useEffect(() => {
     if (!overflowOpen) {
@@ -378,6 +390,11 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
 
   function handleManualRefresh() {
     setRefreshing(true)
+    // Also re-fetch this folder's preview images, bypassing the browser cache.
+    refreshPreviewCache({
+      fileIds: data?.files.map((file) => file.id),
+      folderPaths: data?.directories.map((dir) => dir.path),
+    })
     setReloadTick((tick) => tick + 1)
   }
 

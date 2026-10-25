@@ -16,17 +16,6 @@
   flex: 1;
 }
 
-.preview-settings__custom-ratio {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
-}
-
-.preview-settings__custom-ratio input {
-  width: 80px;
-}
-
 /* Collage appearance is fixed for V1 (Specification §9.2.1): black
    background, thin gaps between tiles, file-name caption bar. */
 .preview-canvas {

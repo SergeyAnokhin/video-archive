@@ -20,6 +20,7 @@ from app.media import (
     VARIANT_MARKER,
     compute_variant_tags,
     file_row_to_dict,
+    preview_cache_headers,
     preview_gif_relative_path,
     resolve_variant_preview_flags,
     variant_base_stem,
@@ -137,7 +138,8 @@ def list_files(
             text(
                 f"""
                 SELECT id, directory_id, relative_path, file_name, extension, size_bytes, modified_at,
-                       is_video_supported, is_image_supported, has_preview_asset, converted_at, tagged_at
+                       is_video_supported, is_image_supported, has_preview_asset, preview_generated_at,
+                       converted_at, tagged_at
                 FROM files
                 WHERE {where_sql}
                 ORDER BY relative_path COLLATE NOCASE
@@ -436,7 +438,7 @@ def get_file_preview_metadata(file_id: str):
 
 
 @router.get("/files/{file_id}/preview.jpg")
-def get_file_preview_image(file_id: str):
+def get_file_preview_image(file_id: str, v: str | None = Query(default=None)):
     with get_engine().connect() as conn:
         row = _preview_lookup(conn, file_id)
         if row is None:
@@ -450,11 +452,11 @@ def get_file_preview_image(file_id: str):
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No preview asset for this file."}},
         )
-    return Response(content=access.read_bytes(collage_rel), media_type="image/jpeg")
+    return Response(content=access.read_bytes(collage_rel), media_type="image/jpeg", headers=preview_cache_headers(v))
 
 
 @router.get("/files/{file_id}/preview.gif")
-def get_file_preview_gif(file_id: str):
+def get_file_preview_gif(file_id: str, v: str | None = Query(default=None)):
     """Animated GIF companion to the JPEG collage (user request), used for
     grid/list-view hover previews. Lives in the source's own technical
     folder, same as the collage (`app/media.py`'s `preview_gif_relative_path`)."""
@@ -471,7 +473,7 @@ def get_file_preview_gif(file_id: str):
             status_code=404,
             detail={"error": {"code": "preview_not_found", "message": "No GIF preview for this file."}},
         )
-    return Response(content=access.read_bytes(gif_rel), media_type="image/gif")
+    return Response(content=access.read_bytes(gif_rel), media_type="image/gif", headers=preview_cache_headers(v))
 
 
 @router.get("/files/{file_id}/similar")

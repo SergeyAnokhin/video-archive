@@ -13,7 +13,6 @@ from pathlib import Path
 import cv2
 from PIL import Image, ImageDraw, ImageFont
 
-CANVAS_WIDTH = 2048
 JPEG_QUALITY = 85
 MARGIN_PX = 6
 GAP_PX = 4
@@ -55,18 +54,18 @@ def render_collage(
     images: list,
     tiles: list[dict],
     caption: str,
-    aspect_ratio: float,
     dest_path: Path,
     *,
+    width: int,
+    height: int,
     grid_rows: int,
     grid_cols: int,
-    width: int = CANVAS_WIDTH,
     quality: int = JPEG_QUALITY,
 ) -> None:
-    """Compose `images[i]` into `tiles[i]`'s cell on a black canvas with a
+    """Compose `images[i]` into `tiles[i]`'s cell on a `width` x `height`
+    black canvas (the layout preset's `canvas_width`/`canvas_height`) with a
     caption bar (Specification §9.2.1). `tiles`/`images` must be the same
     length and in matching order."""
-    height = round(width / aspect_ratio)
     canvas = Image.new("RGB", (width, height), (0, 0, 0))
 
     grid_area_width = width - 2 * MARGIN_PX

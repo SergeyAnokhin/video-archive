@@ -5,7 +5,6 @@ import { api, ApiError, tryApi } from '../api/client'
 import type {
   AnimatedSourceMode,
   AnimatedTransition,
-  AspectRatioMode,
   EnlargedTile,
   FrameSeekMode,
   LayoutTile,
@@ -13,29 +12,23 @@ import type {
   PreviewSettings,
   TimelineFlow,
 } from '../types/api'
+import { applyCollageAspectFromPresets } from '../utils/collageAspect'
 import { buildOccupancy, cellsOf, computeTilesLocal, fillAll } from '../utils/layoutGeometry'
 import { LayoutCanvas } from './LayoutCanvas'
 import './PreviewSettingsSection.css'
 
-const ASPECT_RATIOS: AspectRatioMode[] = ['standard', 'phone-portrait', 'phone-landscape', 'ultra-wide', 'custom']
 const QUICK_SLOT_NAMES = ['Quick 1', 'Quick 2', 'Quick 3']
 const ANIMATED_SOURCE_MODES: AnimatedSourceMode[] = ['frame', 'clip']
 const ANIMATED_TRANSITIONS: AnimatedTransition[] = ['cut', 'crossfade']
 const FRAME_SEEK_MODES: FrameSeekMode[] = ['keyframe', 'accurate']
+// Mirrors `app/preview_layouts.py`'s DEFAULT_CANVAS_* / MIN/MAX_CANVAS_SIDE.
+const DEFAULT_CANVAS_WIDTH = 4000
+const DEFAULT_CANVAS_HEIGHT = 1848
+const MIN_CANVAS_SIDE = 256
+const MAX_CANVAS_SIDE = 8192
 
-function effectiveAspectRatio(settings: PreviewSettings): number {
-  switch (settings.aspect_ratio) {
-    case 'phone-portrait':
-      return 9 / 19.5
-    case 'phone-landscape':
-      return 19.5 / 9
-    case 'ultra-wide':
-      return 21 / 9
-    case 'custom':
-      return (settings.aspect_ratio_custom_width || 1) / (settings.aspect_ratio_custom_height || 1)
-    default:
-      return 4 / 3
-  }
+function isValidCanvasSide(side: number): boolean {
+  return Number.isInteger(side) && side >= MIN_CANVAS_SIDE && side <= MAX_CANVAS_SIDE
 }
 
 export function PreviewSettingsSection() {
@@ -47,6 +40,8 @@ export function PreviewSettingsSection() {
 
   const [gridRows, setGridRows] = useState(4)
   const [gridCols, setGridCols] = useState(4)
+  const [canvasWidth, setCanvasWidth] = useState(DEFAULT_CANVAS_WIDTH)
+  const [canvasHeight, setCanvasHeight] = useState(DEFAULT_CANVAS_HEIGHT)
   const [enlarged, setEnlarged] = useState<EnlargedTile[]>([])
   const [timelineFlow, setTimelineFlow] = useState<TimelineFlow>('row')
   const [identityDiversity, setIdentityDiversity] = useState(true)
@@ -64,6 +59,7 @@ export function PreviewSettingsSection() {
     const data = await tryApi<{ presets: PreviewLayoutPreset[] }>('/api/preview-layouts')
     if (data) {
       setPresets(data.presets)
+      applyCollageAspectFromPresets(data.presets)
     }
   }, [])
 
@@ -81,6 +77,8 @@ export function PreviewSettingsSection() {
     setSelectedPresetId(preset.id)
     setGridRows(preset.grid_rows)
     setGridCols(preset.grid_cols)
+    setCanvasWidth(preset.canvas_width)
+    setCanvasHeight(preset.canvas_height)
     setEnlarged(preset.layout_definition)
     setTimelineFlow(preset.timeline_flow)
     setIdentityDiversity(preset.identity_diversity_enabled)
@@ -165,11 +163,17 @@ export function PreviewSettingsSection() {
     setEnlarged([])
   }
 
-  async function persistPreset(name: string, presetId: string | null) {
+  // `isDefault` keeps an overwritten preset's default flag: the PUT replaces
+  // every field, and dropping it would silently move the default (and with
+  // it the library cards' shape) to another preset.
+  async function persistPreset(name: string, presetId: string | null, isDefault = false) {
     const body = {
       name,
       grid_rows: gridRows,
       grid_cols: gridCols,
+      canvas_width: canvasWidth,
+      canvas_height: canvasHeight,
+      is_default: isDefault,
       timeline_flow: timelineFlow,
       identity_diversity_enabled: identityDiversity,
       layout_definition: enlarged,
@@ -187,7 +191,8 @@ export function PreviewSettingsSection() {
     try {
       const existing = !asNew ? presets.find((preset) => preset.id === selectedPresetId) : null
       const editingBuiltin = Boolean(existing?.is_builtin)
-      const saved = await persistPreset(presetName, existing && !editingBuiltin ? existing.id : null)
+      const overwritten = existing && !editingBuiltin ? existing : null
+      const saved = await persistPreset(presetName, overwritten?.id ?? null, overwritten?.is_default)
       await refreshPresets()
       setSelectedPresetId(saved.id)
     } catch (err) {
@@ -200,7 +205,7 @@ export function PreviewSettingsSection() {
   async function handleSaveToSlot(slotIndex: number) {
     const slotName = QUICK_SLOT_NAMES[slotIndex]
     const existingSlot = presets.find((preset) => preset.name === slotName && !preset.is_builtin)
-    await persistPreset(slotName, existingSlot?.id ?? null)
+    await persistPreset(slotName, existingSlot?.id ?? null, existingSlot?.is_default)
     await refreshPresets()
   }
 
@@ -237,6 +242,7 @@ export function PreviewSettingsSection() {
 
   const quickSlots = QUICK_SLOT_NAMES.map((name) => presets.find((preset) => preset.name === name && !preset.is_builtin))
   const selectedPreset = presets.find((preset) => preset.id === selectedPresetId) ?? null
+  const canvasValid = isValidCanvasSide(canvasWidth) && isValidCanvasSide(canvasHeight)
 
   return (
     <section className="settings-modal__section">
@@ -266,45 +272,6 @@ export function PreviewSettingsSection() {
           {t('previewSettings.tabAnimated')}
         </button>
       </div>
-
-      {activeTab === 'collage' && settings && (
-        <>
-          <label className="settings-modal__label">
-            {t('previewSettings.aspectRatio')}
-            <select
-              className="settings-modal__input"
-              value={settings.aspect_ratio}
-              onChange={(event) => void updateSettings({ aspect_ratio: event.target.value as AspectRatioMode })}
-            >
-              {ASPECT_RATIOS.map((ratio) => (
-                <option key={ratio} value={ratio}>
-                  {t(`previewSettings.aspectRatioOption.${ratio}`)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {settings.aspect_ratio === 'custom' && (
-            <div className="preview-settings__custom-ratio">
-              <input
-                type="number"
-                min={1}
-                className="settings-modal__input"
-                value={settings.aspect_ratio_custom_width ?? 16}
-                onChange={(event) => void updateSettings({ aspect_ratio_custom_width: Number(event.target.value) })}
-              />
-              <span>:</span>
-              <input
-                type="number"
-                min={1}
-                className="settings-modal__input"
-                value={settings.aspect_ratio_custom_height ?? 9}
-                onChange={(event) => void updateSettings({ aspect_ratio_custom_height: Number(event.target.value) })}
-              />
-            </div>
-          )}
-        </>
-      )}
 
       {activeTab === 'animated' && settings && (
         <>
@@ -490,6 +457,32 @@ export function PreviewSettingsSection() {
         </label>
       </div>
 
+      <div className="preview-settings__grid-dims">
+        <label className="settings-modal__label">
+          {t('previewSettings.canvasWidth')}
+          <input
+            type="number"
+            min={MIN_CANVAS_SIDE}
+            max={MAX_CANVAS_SIDE}
+            className="settings-modal__input"
+            value={canvasWidth}
+            onChange={(event) => setCanvasWidth(Number(event.target.value))}
+          />
+        </label>
+        <label className="settings-modal__label">
+          {t('previewSettings.canvasHeight')}
+          <input
+            type="number"
+            min={MIN_CANVAS_SIDE}
+            max={MAX_CANVAS_SIDE}
+            className="settings-modal__input"
+            value={canvasHeight}
+            onChange={(event) => setCanvasHeight(Number(event.target.value))}
+          />
+        </label>
+      </div>
+      <p className="settings-modal__hint">{t('previewSettings.canvasHint')}</p>
+
       <label className="settings-modal__label">
         {t('previewSettings.timelineFlow')}
         <select
@@ -519,7 +512,7 @@ export function PreviewSettingsSection() {
         tiles={tiles}
         gridRows={gridRows}
         gridCols={gridCols}
-        aspectRatio={settings ? effectiveAspectRatio(settings) : 4 / 3}
+        aspectRatio={canvasValid ? canvasWidth / canvasHeight : DEFAULT_CANVAS_WIDTH / DEFAULT_CANVAS_HEIGHT}
         caption={t('previewSettings.captionSample')}
         onCellClick={handleCellClick}
       />
@@ -540,7 +533,7 @@ export function PreviewSettingsSection() {
                 tiles={computeTilesLocal(preset.grid_rows, preset.grid_cols, preset.layout_definition)}
                 gridRows={preset.grid_rows}
                 gridCols={preset.grid_cols}
-                aspectRatio={1}
+                aspectRatio={preset.canvas_width / preset.canvas_height}
               />
               <span>{preset.name}</span>
               {preset.is_default && <span className="conversion-profile-row__badge">{t('conversionProfiles.default')}</span>}
@@ -610,7 +603,7 @@ export function PreviewSettingsSection() {
           type="button"
           className="settings-modal__option"
           onClick={() => void handleSavePreset(false)}
-          disabled={saving || !presetName || Boolean(layoutError)}
+          disabled={saving || !presetName || Boolean(layoutError) || !canvasValid}
         >
           <Save size={14} /> {t('previewSettings.savePreset')}
         </button>
@@ -618,7 +611,7 @@ export function PreviewSettingsSection() {
           type="button"
           className="settings-modal__option"
           onClick={() => void handleSavePreset(true)}
-          disabled={saving || !presetName || Boolean(layoutError)}
+          disabled={saving || !presetName || Boolean(layoutError) || !canvasValid}
         >
           <Copy size={14} /> {t('previewSettings.saveAsNewPreset')}
         </button>

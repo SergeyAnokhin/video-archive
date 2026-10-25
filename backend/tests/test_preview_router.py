@@ -85,6 +85,15 @@ def test_preview_layout_preset_crud_over_http(tmp_path, monkeypatch):
         assert r.status_code == 200
         preset = r.json()
         assert preset["is_builtin"] is False
+        assert (preset["canvas_width"], preset["canvas_height"]) == (4000, 1848)
+        assert all((p["canvas_width"], p["canvas_height"]) == (4000, 1848) for p in presets)
+
+        r = client.put(f"/api/preview-layouts/{preset['id']}", json={**preset, "canvas_width": 1848, "canvas_height": 4000})
+        assert r.status_code == 200
+        assert (r.json()["canvas_width"], r.json()["canvas_height"]) == (1848, 4000)
+
+        r = client.put(f"/api/preview-layouts/{preset['id']}", json={**preset, "canvas_width": 100})
+        assert r.status_code == 422
 
         r = client.post(
             "/api/preview-layouts",
@@ -127,7 +136,6 @@ def test_preview_settings_get_and_put(tmp_path, monkeypatch):
     with TestClient(app) as client:
         r = client.get("/api/preview-settings")
         assert r.status_code == 200
-        assert r.json()["aspect_ratio"] == "phone-landscape"
         assert r.json()["folder_preview_frame_count"] == 4
         assert r.json()["gif_max_width"] == 640
         assert r.json()["gif_colors"] == 64
@@ -135,21 +143,18 @@ def test_preview_settings_get_and_put(tmp_path, monkeypatch):
 
         r = client.put(
             "/api/preview-settings",
-            json={"aspect_ratio": "custom", "aspect_ratio_custom_width": 16, "aspect_ratio_custom_height": 10,
-                  "folder_preview_frame_count": 6, "gif_max_width": 320, "gif_colors": 32,
+            json={"folder_preview_frame_count": 6, "gif_max_width": 320, "gif_colors": 32,
                   "frame_seek_mode": "accurate"},
         )
         assert r.status_code == 200
-        assert r.json()["aspect_ratio"] == "custom"
         assert r.json()["folder_preview_frame_count"] == 6
         assert r.json()["gif_max_width"] == 320
         assert r.json()["gif_colors"] == 32
         assert r.json()["frame_seek_mode"] == "accurate"
 
-        r = client.put("/api/preview-settings", json={"aspect_ratio": "not-a-real-ratio"})
-        assert r.status_code == 422
+        assert "aspect_ratio" not in r.json()
 
-        r = client.put("/api/preview-settings", json={"aspect_ratio": "standard", "frame_seek_mode": "bogus"})
+        r = client.put("/api/preview-settings", json={"frame_seek_mode": "bogus"})
         assert r.status_code == 422
 
 
@@ -210,11 +215,24 @@ def test_file_preview_image_serving(tmp_path, monkeypatch):
         collage_path = source_root / "clip_0.jpg"
         collage_path.write_bytes(b"\xff\xd8\xff\xd9")
         with engine.begin() as conn:
-            conn.execute(text("UPDATE files SET has_preview_asset = 1 WHERE id = :id"), {"id": file_id})
+            conn.execute(
+                text("UPDATE files SET has_preview_asset = 1, preview_generated_at = 'gen-1' WHERE id = :id"),
+                {"id": file_id},
+            )
 
         r = client.get(f"/api/files/{file_id}/preview.jpg")
         assert r.status_code == 200
         assert r.headers["content-type"] == "image/jpeg"
+        # Regenerated in place under the same URL -- must not be served stale.
+        assert r.headers["cache-control"] == "no-cache"
+        # A versioned URL's bytes never change, so the browser may keep them.
+        r = client.get(f"/api/files/{file_id}/preview.jpg", params={"v": "gen-1"})
+        assert r.headers["cache-control"] == "private, max-age=31536000, immutable"
+
+        # The listing exposes the generation timestamp the frontend uses as
+        # the preview URL's cache-busting version.
+        r = client.get("/api/directories/children", params={"path": ""})
+        assert [f["preview_generated_at"] for f in r.json()["files"]] == ["gen-1"]
 
         r = client.get(f"/api/files/{file_id}/preview")
         assert r.status_code == 200
@@ -240,6 +258,7 @@ def test_file_preview_gif_serving(tmp_path, monkeypatch):
         r = client.get(f"/api/files/{file_id}/preview.gif")
         assert r.status_code == 200
         assert r.headers["content-type"] == "image/gif"
+        assert r.headers["cache-control"] == "no-cache"
 
 
 def test_directory_preview_image_serving(tmp_path, monkeypatch):
@@ -260,3 +279,4 @@ def test_directory_preview_image_serving(tmp_path, monkeypatch):
         r = client.get("/api/directories/preview.gif", params={"path": ""})
         assert r.status_code == 200
         assert r.headers["content-type"] == "image/gif"
+        assert r.headers["cache-control"] == "no-cache"

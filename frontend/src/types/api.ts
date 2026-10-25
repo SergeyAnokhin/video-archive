@@ -190,6 +190,7 @@ export interface DirectoryEntry {
   status?: DirectoryStatus
   top_tags?: FolderTagSummary[]
   has_folder_preview: boolean
+  folder_preview_generated_at?: string | null
   is_favorite: boolean
 }
 
@@ -221,6 +222,7 @@ export interface FileEntry {
   is_video_supported: boolean
   is_image_supported: boolean
   has_preview_asset: boolean
+  preview_generated_at?: string | null
   converted_at: string | null
   tagged_at: string | null
   is_variant: boolean
@@ -281,7 +283,6 @@ export interface FileRefreshResponse {
 }
 
 export type TimelineFlow = 'row' | 'column' | 'shuffle'
-export type AspectRatioMode = 'standard' | 'phone-portrait' | 'phone-landscape' | 'ultra-wide' | 'custom'
 
 export interface EnlargedTile {
   row: number
@@ -301,6 +302,8 @@ export interface PreviewLayoutPreset {
   name: string
   grid_rows: number
   grid_cols: number
+  canvas_width: number
+  canvas_height: number
   timeline_flow: TimelineFlow
   identity_diversity_enabled: boolean
   layout_definition: EnlargedTile[]
@@ -315,9 +318,6 @@ export type AnimatedTransition = 'cut' | 'crossfade'
 export type FrameSeekMode = 'keyframe' | 'accurate'
 
 export interface PreviewSettings {
-  aspect_ratio: AspectRatioMode
-  aspect_ratio_custom_width: number | null
-  aspect_ratio_custom_height: number | null
   folder_preview_frame_count: number
   gif_max_width: number
   gif_colors: number

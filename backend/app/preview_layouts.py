@@ -1,5 +1,7 @@
 """Preview layout preset CRUD and grid geometry (Data Model §5, Specification
-§9.2, §10). A layout preset only stores enlarged-tile placements; the small
+§9.2, §10). A preset also fixes the collage's exact pixel size
+(`canvas_width` x `canvas_height`), whose shape the animated GIFs and the
+library cards share. A layout preset only stores enlarged-tile placements; the small
 tiles that fill the rest of the grid are always derived by
 `compute_layout_tiles()` so the grid stays fully covered by construction
 (Specification §9.2 "the grid must always remain completely filled").
@@ -19,6 +21,10 @@ from sqlalchemy import text
 
 VALID_SPANS = (2, 3)
 VALID_TIMELINE_FLOWS = ("row", "column", "shuffle")
+DEFAULT_CANVAS_WIDTH = 4000
+DEFAULT_CANVAS_HEIGHT = 1848
+MIN_CANVAS_SIDE = 256
+MAX_CANVAS_SIDE = 8192
 
 
 def _now() -> str:
@@ -69,6 +75,19 @@ def compute_layout_tiles(grid_rows: int, grid_cols: int, enlarged: list[dict]) -
     return tiles
 
 
+def validate_canvas_size(width: int, height: int) -> None:
+    for side in (width, height):
+        if not MIN_CANVAS_SIDE <= side <= MAX_CANVAS_SIDE:
+            raise LayoutValidationError(
+                f"Canvas size {width}x{height} is out of range ({MIN_CANVAS_SIDE}-{MAX_CANVAS_SIDE} px per side)."
+            )
+
+
+def canvas_aspect_ratio(preset: dict) -> float:
+    """Width / height of the preset's collage canvas."""
+    return preset["canvas_width"] / preset["canvas_height"]
+
+
 def frame_count_for_layout(grid_rows: int, grid_cols: int, enlarged: list[dict]) -> int:
     """Total sampled frames needed: one per tile, small or enlarged
     (Specification §9.2)."""
@@ -85,6 +104,8 @@ def _row_to_dict(row) -> dict:
         "name": row.name,
         "grid_rows": row.grid_rows,
         "grid_cols": row.grid_cols,
+        "canvas_width": row.canvas_width,
+        "canvas_height": row.canvas_height,
         "timeline_flow": row.timeline_flow,
         "identity_diversity_enabled": bool(row.identity_diversity_enabled),
         "layout_definition": json.loads(row.layout_definition),
@@ -113,6 +134,9 @@ def get_preset(engine, preset_id: str) -> dict | None:
 
 def create_preset(engine, data: dict) -> dict:
     compute_layout_tiles(data["grid_rows"], data["grid_cols"], data["layout_definition"])
+    canvas_width = data.get("canvas_width", DEFAULT_CANVAS_WIDTH)
+    canvas_height = data.get("canvas_height", DEFAULT_CANVAS_HEIGHT)
+    validate_canvas_size(canvas_width, canvas_height)
 
     preset_id = str(uuid.uuid4())
     now = _now()
@@ -125,11 +149,11 @@ def create_preset(engine, data: dict) -> dict:
             text(
                 """
                 INSERT INTO preview_layout_presets
-                    (id, name, grid_rows, grid_cols, timeline_flow, identity_diversity_enabled,
-                     layout_definition, is_builtin, is_default, created_at, updated_at)
+                    (id, name, grid_rows, grid_cols, canvas_width, canvas_height, timeline_flow,
+                     identity_diversity_enabled, layout_definition, is_builtin, is_default, created_at, updated_at)
                 VALUES
-                    (:id, :name, :grid_rows, :grid_cols, :timeline_flow, :identity_diversity,
-                     :layout_definition, 0, :is_default, :now, :now)
+                    (:id, :name, :grid_rows, :grid_cols, :canvas_width, :canvas_height, :timeline_flow,
+                     :identity_diversity, :layout_definition, 0, :is_default, :now, :now)
                 """
             ),
             {
@@ -137,6 +161,8 @@ def create_preset(engine, data: dict) -> dict:
                 "name": data["name"],
                 "grid_rows": data["grid_rows"],
                 "grid_cols": data["grid_cols"],
+                "canvas_width": canvas_width,
+                "canvas_height": canvas_height,
                 "timeline_flow": data.get("timeline_flow", "row"),
                 "identity_diversity": bool(data.get("identity_diversity_enabled", True)),
                 "layout_definition": json.dumps(data["layout_definition"]),
@@ -156,6 +182,7 @@ def update_preset(engine, preset_id: str, data: dict) -> dict | None:
 
     merged = {**existing, **data}
     compute_layout_tiles(merged["grid_rows"], merged["grid_cols"], merged["layout_definition"])
+    validate_canvas_size(merged["canvas_width"], merged["canvas_height"])
 
     now = _now()
     is_default = bool(merged.get("is_default", False))
@@ -171,6 +198,7 @@ def update_preset(engine, preset_id: str, data: dict) -> dict | None:
                 """
                 UPDATE preview_layout_presets
                 SET name = :name, grid_rows = :grid_rows, grid_cols = :grid_cols,
+                    canvas_width = :canvas_width, canvas_height = :canvas_height,
                     timeline_flow = :timeline_flow, identity_diversity_enabled = :identity_diversity,
                     layout_definition = :layout_definition, is_default = :is_default, updated_at = :now
                 WHERE id = :id
@@ -181,6 +209,8 @@ def update_preset(engine, preset_id: str, data: dict) -> dict | None:
                 "name": merged["name"],
                 "grid_rows": merged["grid_rows"],
                 "grid_cols": merged["grid_cols"],
+                "canvas_width": merged["canvas_width"],
+                "canvas_height": merged["canvas_height"],
                 "timeline_flow": merged["timeline_flow"],
                 "identity_diversity": bool(merged["identity_diversity_enabled"]),
                 "layout_definition": json.dumps(merged["layout_definition"]),
@@ -266,7 +296,8 @@ _BUILTIN_PRESETS = [
 def seed_builtin_presets(conn) -> None:
     """Idempotently insert the built-in preset gallery. Called once from
     `init_db()` right after migration 5 creates the table; safe to call again
-    (existing ids are left untouched)."""
+    (existing ids are left untouched). Canvas size comes from the column
+    defaults (`DEFAULT_CANVAS_WIDTH` x `DEFAULT_CANVAS_HEIGHT`, migration 51)."""
     now = _now()
     for preset in _BUILTIN_PRESETS:
         conn.execute(
