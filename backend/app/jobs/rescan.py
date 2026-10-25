@@ -32,7 +32,12 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
     currently empty are probed (a changed file's cache was just reset to
     NULL by `upsert_file()` above; an unchanged file's cached probe from a
     prior run/job is left alone), so re-running this on an already-probed
-    library is a cheap no-op rather than a full re-probe."""
+    library is a cheap no-op rather than a full re-probe.
+
+    Both types also probe a video that shrank on disk while not marked
+    converted, and mark it converted when the probe matches a profile
+    (`media_probe.mark_converted_if_inferred()`) -- recovers a conversion
+    whose own DB update never landed, folder-wide."""
     relative_path = (job["parameters"] or {}).get("path", "") or ""
     with_media_info = job["job_type"] == "rescan_with_media_info"
 
@@ -67,6 +72,7 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
     processed = 0
     failed = 0
     probed = 0
+    inferred = 0
     total = len(touched_files)
     service.set_job_total_items(engine, job["id"], total)
 
@@ -84,15 +90,24 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
         try:
             with engine.begin() as conn:
                 existing = conn.execute(
-                    text("SELECT id FROM files WHERE source_id = :sid AND relative_path = :rel"),
+                    text(
+                        "SELECT id, size_bytes, converted_at FROM files "
+                        "WHERE source_id = :sid AND relative_path = :rel"
+                    ),
                     {"sid": source_id, "rel": rel_file},
                 ).fetchone()
+                shrank_unconverted = (
+                    existing is not None
+                    and attrs["is_video_supported"]
+                    and existing.converted_at is None
+                    and attrs["size_bytes"] < (existing.size_bytes or 0)
+                )
                 file_id = upsert_file(
                     conn, source_id, dir_ids[attrs["directory_rel"]], rel_file, attrs, now,
                     existing_id=existing.id if existing else None,
                 )
-                needs_probe = False
-                if with_media_info and attrs["is_video_supported"]:
+                needs_probe = shrank_unconverted
+                if with_media_info and attrs["is_video_supported"] and not needs_probe:
                     probed_row = conn.execute(
                         text("SELECT media_probed_at FROM files WHERE id = :id"), {"id": file_id}
                     ).fetchone()
@@ -108,6 +123,15 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
                     message = "Metadata refreshed; media info probed."
                 else:
                     message = "Metadata refreshed; media info could not be probed."
+                if shrank_unconverted:
+                    profile = media_probe.mark_converted_if_inferred(engine, file_id, attrs["extension"], probe)
+                    if profile is not None:
+                        inferred += 1
+                        message += f" Marked converted ({profile['name']})."
+                        service.log_event(
+                            engine, job["id"], file_id, "info", "job_item_progress",
+                            f"{rel_file} shrank on disk and matches profile {profile['name']}; marked converted.",
+                        )
 
             service.complete_job_item(engine, item_id, file_id=file_id, message=message)
             service.log_event(engine, job["id"], file_id, "debug", "job_item_completed", f"Rescanned {rel_file}")
@@ -124,6 +148,8 @@ def run_rescan_job(engine, job: dict) -> tuple[str, str]:
     summary = f"Rescanned {processed} of {total} file(s)"
     if with_media_info:
         summary += f", probed {probed} file(s) for media info"
+    if inferred:
+        summary += f", marked {inferred} file(s) converted"
     if failed:
         summary += f", {failed} failed"
     if removed:

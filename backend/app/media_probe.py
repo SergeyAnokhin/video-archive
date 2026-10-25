@@ -6,7 +6,8 @@ Used both by the lazy `GET /files/{file_id}/media-info` endpoint
 (`app/routers/files.py`) and by a `rescan_with_media_info` job's bulk pass
 (`app/jobs/rescan.py`), so the two never drift into probing or caching a
 file's technical data differently. `refresh_from_source()` backs the info
-panel's manual refresh (`POST /files/{file_id}/refresh`).
+panel's manual refresh (`POST /files/{file_id}/refresh`);
+`mark_converted_if_inferred()` is shared by it and `jobs/rescan.py`.
 """
 
 from __future__ import annotations
@@ -93,6 +94,31 @@ def infer_conversion_profile(engine, extension: str, codec_name: str | None) -> 
     return candidates[0] if len(candidates) == 1 else None
 
 
+def mark_converted_if_inferred(engine, file_id: str, extension: str, info: dict | None) -> dict | None:
+    """For a file that shrank on disk without a recorded conversion (the
+    conversion's own `files` update never landed -- e.g. the backend
+    restarted between replacing the file and writing the row): mark it
+    converted with the profile its fresh probe matches. Callers decide the
+    "shrank and not yet converted" part. Returns the profile, or `None`."""
+    if info is None:
+        return None
+    profile = infer_conversion_profile(engine, extension, info.get("video_codec_name"))
+    if profile is None:
+        return None
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE files
+                SET converted_at = :now, last_conversion_profile_id = :profile_id
+                WHERE id = :id AND converted_at IS NULL
+                """
+            ),
+            {"id": file_id, "profile_id": profile["id"], "now": datetime.now(timezone.utc).isoformat()},
+        )
+    return profile
+
+
 def refresh_from_source(
     engine,
     access,
@@ -108,10 +134,9 @@ def refresh_from_source(
     file and writing the row -- and both refresh buttons only re-read the DB).
 
     Re-stats the file on the source, stores the new size/mtime, drops the
-    cached probe columns, and re-probes. If the file shrank on disk, isn't
-    marked converted yet, and its new codec/container matches a conversion
-    profile (`infer_conversion_profile()`), it is marked converted with that
-    profile. Returns the probe dict, or `None`."""
+    cached probe columns, and re-probes. If the file shrank on disk and isn't
+    marked converted yet, `mark_converted_if_inferred()` runs on the fresh
+    probe. Returns the probe dict, or `None`."""
     stat = access.stat_rel(relative_path)
     shrank = stat.size < (size_bytes or 0)
     now = datetime.now(timezone.utc).isoformat()
@@ -132,19 +157,7 @@ def refresh_from_source(
 
     info = probe_and_cache(engine, access, file_id, relative_path, extension, stat.size, stat.modified_at)
 
-    if info is not None and shrank and converted_at is None:
-        profile = infer_conversion_profile(engine, extension, info.get("video_codec_name"))
-        if profile is not None:
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        """
-                        UPDATE files
-                        SET converted_at = :now, last_conversion_profile_id = :profile_id
-                        WHERE id = :id AND converted_at IS NULL
-                        """
-                    ),
-                    {"id": file_id, "profile_id": profile["id"], "now": now},
-                )
+    if shrank and converted_at is None:
+        mark_converted_if_inferred(engine, file_id, extension, info)
 
     return info
