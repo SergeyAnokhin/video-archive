@@ -279,6 +279,8 @@
     "collapseFolder": "Свернуть папку",
     "mediaInfoSectionTitle": "Технические данные",
     "mediaInfoRefresh": "Обновить информацию о файле",
+    "mediaInfoRefreshError": "Не удалось обновить информацию о файле. Попробуйте ещё раз.",
+    "mediaInfoFileMissing": "Файла с таким именем больше нет в источнике. Пересканируйте папку, чтобы подхватить изменения.",
     "mediaInfoSize": "Размер",
     "mediaInfoResolution": "Разрешение",
     "mediaInfoAspectRatio": "Соотношение сторон",

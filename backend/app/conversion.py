@@ -141,6 +141,13 @@ def resolve_encoder(video_codec: str, hardware_accel: str = "off") -> str:
     return encoder
 
 
+def ffprobe_codec_name(video_codec: str) -> str:
+    """The codec name ffprobe reports for a profile's short `video_codec`
+    (e.g. `h265` -> `hevc`)."""
+    _, codec_name = _CODEC_INFO.get(video_codec, (video_codec, video_codec))
+    return codec_name
+
+
 def build_ffmpeg_command(
     input_path: Path,
     output_path: Path,
@@ -354,7 +361,7 @@ def validate_converted_output(path: Path, *, video_codec: str, container: str) -
     if path.suffix.lstrip(".").lower() != container.lower():
         return False, f"Output extension does not match expected container: {container}."
 
-    _, expected_codec_name = _CODEC_INFO.get(video_codec, (video_codec, video_codec))
+    expected_codec_name = ffprobe_codec_name(video_codec)
     if info["video_codec_name"] != expected_codec_name:
         return False, (
             f"Output video codec ({info['video_codec_name']}) does not match "

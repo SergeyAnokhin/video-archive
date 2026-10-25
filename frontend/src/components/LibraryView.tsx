@@ -958,6 +958,10 @@ export function LibraryView({ path, onNavigate, activeSearch, onSearch, onClearS
           onTagsChanged={() => {
             infoTagsChangedRef.current = true
           }}
+          onFileRefreshed={(updated) => {
+            setInfoFile(updated)
+            setReloadTick((tick) => tick + 1)
+          }}
           hasPrev={infoIndex > 0}
           hasNext={infoIndex >= 0 && infoIndex < visibleFiles.length - 1}
           onPrev={() => goToInfoOffset(-1)}

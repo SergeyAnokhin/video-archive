@@ -273,6 +273,13 @@ export interface FileMediaInfo {
   probe_failed: boolean
 }
 
+// POST /api/files/{id}/refresh: file fields re-read from the source plus a
+// fresh media-info probe.
+export interface FileRefreshResponse {
+  file: Pick<FileEntry, 'size_bytes' | 'modified_at' | 'converted_at'>
+  media_info: FileMediaInfo
+}
+
 export type TimelineFlow = 'row' | 'column' | 'shuffle'
 export type AspectRatioMode = 'standard' | 'phone-portrait' | 'phone-landscape' | 'ultra-wide' | 'custom'
 

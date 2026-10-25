@@ -299,6 +299,10 @@ def get_file_media_info(file_id: str):
             engine, access, file_id, row.relative_path, row.extension, row.size_bytes, row.modified_at
         )
 
+    return _probe_media_info_response(info, profile)
+
+
+def _probe_media_info_response(info: dict | None, profile: dict | None) -> dict:
     aspect_ratio = _aspect_ratio(info.get("width") if info else None, info.get("height") if info else None)
 
     return {
@@ -311,6 +315,66 @@ def get_file_media_info(file_id: str):
         "bit_rate": info.get("bit_rate") if info else None,
         "conversion_profile": profile,
         "probe_failed": info is None,
+    }
+
+
+@router.post("/files/{file_id}/refresh")
+def refresh_file(file_id: str):
+    """The info panel's "refresh file info" button: unlike `GET
+    .../media-info` (cache-first), always re-reads the file from the source
+    -- size/mtime, a fresh probe, and conversion status inferred from the
+    result (see `media_probe.refresh_from_source()`). Returns the updated
+    file fields plus the same media-info shape as `GET .../media-info`."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT f.relative_path, f.extension, f.size_bytes, f.converted_at,
+                       s.*
+                FROM files f
+                JOIN sources s ON s.id = f.source_id
+                WHERE f.id = :id AND s.is_active = 1
+                """
+            ),
+            {"id": file_id},
+        ).fetchone()
+    if row is None:
+        raise _file_not_found_error(file_id)
+
+    access = get_source_access(row)
+    if not access.exists(row.relative_path):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "file_missing_on_source",
+                    "message": f"File no longer exists on the source: {row.relative_path}",
+                }
+            },
+        )
+
+    logger.info("refresh: re-reading %s", row.relative_path)
+    info = media_probe.refresh_from_source(
+        engine, access, file_id, row.relative_path, row.extension, row.size_bytes, row.converted_at
+    )
+
+    with engine.connect() as conn:
+        updated = conn.execute(
+            text(
+                "SELECT size_bytes, modified_at, converted_at, last_conversion_profile_id FROM files WHERE id = :id"
+            ),
+            {"id": file_id},
+        ).fetchone()
+    profile = get_profile(engine, updated.last_conversion_profile_id) if updated.last_conversion_profile_id else None
+
+    return {
+        "file": {
+            "size_bytes": updated.size_bytes,
+            "modified_at": updated.modified_at,
+            "converted_at": updated.converted_at,
+        },
+        "media_info": _probe_media_info_response(info, profile),
     }
 
 

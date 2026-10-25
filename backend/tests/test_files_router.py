@@ -342,6 +342,118 @@ def test_media_info_persists_probe_result_for_next_request(engine, source, monke
     assert second.json()["width"] == 1280
 
 
+def _insert_profile(engine, name: str, video_codec: str, *, is_default: bool = False) -> str:
+    profile_id = str(uuid.uuid4())
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO conversion_profiles (id, name, is_default, video_codec, container, "
+                "max_dimension, crf, drop_audio, created_at, updated_at) "
+                "VALUES (:id, :name, :is_default, :codec, 'mp4', 1024, 28, 0, :now, :now)"
+            ),
+            {"id": profile_id, "name": name, "is_default": int(is_default), "codec": video_codec, "now": _now()},
+        )
+    return profile_id
+
+
+def _hevc_probe(path):
+    return {
+        "has_video_stream": True,
+        "width": 1280,
+        "height": 720,
+        "video_codec_name": "hevc",
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": 3.0,
+        "bit_rate": 100000,
+    }
+
+
+def _stale_cached_file(engine, source) -> str:
+    """A file whose DB row still describes its pre-conversion state (big,
+    h264, cached probe) while the bytes on disk are the smaller re-encode --
+    the conversion's own `files` update never landed."""
+    root_id = _insert_directory(engine, source["id"], "", None)
+    (source["root"] / "clip.mp4").write_bytes(b"small")
+    file_id = _insert_file(engine, source["id"], root_id, "clip.mp4", "clip.mp4")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE files SET size_bytes = 999999, width = 1920, height = 1080, video_codec = 'h264', "
+                "format_name = 'mov,mp4,m4a,3gp,3g2,mj2', bit_rate = 9000000, duration_seconds = 3.0, "
+                "media_probed_at = :now WHERE id = :id"
+            ),
+            {"now": _now(), "id": file_id},
+        )
+    return file_id
+
+
+def test_refresh_rereads_disk_and_infers_conversion(engine, source, monkeypatch):
+    from app import media_probe
+
+    file_id = _stale_cached_file(engine, source)
+    _insert_profile(engine, "H264", "h264")
+    hevc_id = _insert_profile(engine, "HEVC", "h265", is_default=True)
+    monkeypatch.setattr(media_probe.conversion, "probe_media", _hevc_probe)
+
+    with TestClient(app) as client:
+        res = client.post(f"/api/files/{file_id}/refresh")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["file"]["size_bytes"] == len(b"small")
+        assert body["file"]["converted_at"] is not None
+        assert body["media_info"]["video_codec"] == "hevc"
+        assert body["media_info"]["width"] == 1280
+        assert body["media_info"]["conversion_profile"]["id"] == hevc_id
+
+        # The fresh probe is cached for the regular cache-first endpoint too.
+        cached = client.get(f"/api/files/{file_id}/media-info").json()
+    assert cached["video_codec"] == "hevc"
+
+
+def test_refresh_does_not_mark_converted_without_matching_profile(engine, source, monkeypatch):
+    from app import media_probe
+
+    file_id = _stale_cached_file(engine, source)
+    _insert_profile(engine, "H264", "h264", is_default=True)
+    monkeypatch.setattr(media_probe.conversion, "probe_media", _hevc_probe)
+
+    with TestClient(app) as client:
+        res = client.post(f"/api/files/{file_id}/refresh")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["file"]["size_bytes"] == len(b"small")
+    assert body["file"]["converted_at"] is None
+    assert body["media_info"]["video_codec"] == "hevc"
+    assert body["media_info"]["conversion_profile"] is None
+
+
+def test_refresh_does_not_mark_converted_when_file_did_not_shrink(engine, source, monkeypatch):
+    """An untouched original that merely happens to be in a profile's codec
+    must not be flagged as converted."""
+    from app import media_probe
+
+    file_id = _stale_cached_file(engine, source)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE files SET size_bytes = :size WHERE id = :id"), {"size": len(b"small"), "id": file_id})
+    _insert_profile(engine, "HEVC", "h265", is_default=True)
+    monkeypatch.setattr(media_probe.conversion, "probe_media", _hevc_probe)
+
+    with TestClient(app) as client:
+        res = client.post(f"/api/files/{file_id}/refresh")
+    assert res.status_code == 200
+    assert res.json()["file"]["converted_at"] is None
+
+
+def test_refresh_reports_file_missing_on_source(engine, source):
+    root_id = _insert_directory(engine, source["id"], "", None)
+    file_id = _insert_file(engine, source["id"], root_id, "gone.mp4", "gone.mp4")
+
+    with TestClient(app) as client:
+        res = client.post(f"/api/files/{file_id}/refresh")
+    assert res.status_code == 404
+    assert res.json()["detail"]["error"]["code"] == "file_missing_on_source"
+
+
 def test_move_file_updates_path_and_directory(engine, source):
     root_id = _insert_directory(engine, source["id"], "", None)
     dest_id = _insert_directory(engine, source["id"], "dest", "")

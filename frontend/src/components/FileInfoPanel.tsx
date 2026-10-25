@@ -29,8 +29,8 @@ import {
 import { formatBitrate, formatDuration, formatSize } from '../utils/format'
 import { getRecentTags, recordRecentTag } from '../utils/recentTags'
 import { buildTagSuggestions } from '../utils/tagSuggestions'
-import { api, tryApi } from '../api/client'
-import type { FileEntry, FileMediaInfo, FileTagAssignment, Tag } from '../types/api'
+import { api, ApiError, tryApi } from '../api/client'
+import type { FileEntry, FileMediaInfo, FileRefreshResponse, FileTagAssignment, Tag } from '../types/api'
 import { FolderQuickActions } from './FolderQuickActions'
 import { VariantTagChip } from './LibraryCards'
 import { TagBadge } from './TagBadge'
@@ -52,6 +52,7 @@ interface FileInfoPanelProps {
   onMoved?: () => void
   onOpenPlayback?: () => void
   onTagsChanged?: () => void
+  onFileRefreshed?: (file: FileEntry) => void
   hasPrev?: boolean
   hasNext?: boolean
   onPrev?: () => void
@@ -86,6 +87,7 @@ export function FileInfoPanel({
   onMoved,
   onOpenPlayback,
   onTagsChanged,
+  onFileRefreshed,
   hasPrev,
   hasNext,
   onPrev,
@@ -100,6 +102,7 @@ export function FileInfoPanel({
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [mediaInfo, setMediaInfo] = useState<FileMediaInfo | null>(null)
   const [mediaInfoLoading, setMediaInfoLoading] = useState(true)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const [tags, setTags] = useState<FileTagAssignment[]>([])
   const [tagsLoading, setTagsLoading] = useState(true)
   const [tagInput, setTagInput] = useState('')
@@ -145,6 +148,7 @@ export function FileInfoPanel({
     let cancelled = false
     setMediaInfo(null)
     setMediaInfoLoading(true)
+    setRefreshError(null)
     tryApi<FileMediaInfo>(`/api/files/${file.id}/media-info`)
       .then((data) => {
         if (!cancelled) {
@@ -161,20 +165,26 @@ export function FileInfoPanel({
     }
   }, [file.id])
 
-  // Manual re-probe (user request): the initial fetch above can come back
-  // empty for a reason that isn't permanent -- a transient share hiccup, a
-  // file still being copied, a backend that only just regained access to the
-  // source -- so this lets the user retry from the panel itself instead of
-  // closing and reopening it.
+  // Manual refresh (user request): the initial fetch above is cache-first and
+  // can be empty or stale -- a transient share hiccup, or a file converted on
+  // disk whose DB row never got the conversion's update -- so this re-reads
+  // the file from the source (size, fresh probe, inferred conversion status)
+  // and hands the updated row up so the card's indicators follow.
   const refreshMediaInfo = useCallback(async () => {
     setMediaInfoLoading(true)
+    setRefreshError(null)
     try {
-      const data = await tryApi<FileMediaInfo>(`/api/files/${file.id}/media-info`)
-      setMediaInfo(data)
+      const data = await api<FileRefreshResponse>(`/api/files/${file.id}/refresh`, { method: 'POST' })
+      setMediaInfo(data.media_info)
+      onFileRefreshed?.({ ...file, ...data.file })
+    } catch (err) {
+      setRefreshError(
+        t(err instanceof ApiError && err.code === 'file_missing_on_source' ? 'library.mediaInfoFileMissing' : 'library.mediaInfoRefreshError'),
+      )
     } finally {
       setMediaInfoLoading(false)
     }
-  }, [file.id])
+  }, [file, onFileRefreshed, t])
 
   useEffect(() => {
     let cancelled = false
@@ -574,9 +584,10 @@ export function FileInfoPanel({
                 <RefreshCw size={13} className={mediaInfoLoading ? 'file-info-panel__media-refresh-icon--spinning' : undefined} />
               </button>
             </div>
-            {mediaInfo?.probe_failed && !mediaInfoLoading && (
+            {mediaInfo?.probe_failed && !mediaInfoLoading && !refreshError && (
               <p className="file-info-panel__media-warning">{t('library.mediaInfoProbeFailed')}</p>
             )}
+            {refreshError && !mediaInfoLoading && <p className="file-info-panel__media-warning">{refreshError}</p>}
             <dl className={`file-info-panel__media-grid ${mediaInfoLoading ? 'file-info-panel__media-grid--loading' : ''}`}>
               {mediaFields.map((field) => (
                 <div key={field.label} className="file-info-panel__media-field">
