@@ -16,8 +16,14 @@ from PIL import Image, ImageDraw, ImageFont
 JPEG_QUALITY = 85
 MARGIN_PX = 6
 GAP_PX = 4
-CAPTION_HEIGHT_PX = 40
-CAPTION_COLOR = (230, 230, 230)
+# File-name caption, drawn over the top-left of the grid (chat 2026-10-26):
+# white with a black outline so it reads on both light and dark frames. Size
+# is 3x Pillow's default font (10px), which was unreadable on a large canvas.
+CAPTION_FONT_SIZE_PX = 30
+CAPTION_STROKE_PX = 3
+CAPTION_PADDING_PX = 12
+CAPTION_COLOR = (255, 255, 255)
+CAPTION_STROKE_COLOR = (0, 0, 0)
 
 GIF_MAX_WIDTH = 640
 GIF_DEFAULT_COLORS = 64
@@ -63,13 +69,14 @@ def render_collage(
     quality: int = JPEG_QUALITY,
 ) -> None:
     """Compose `images[i]` into `tiles[i]`'s cell on a `width` x `height`
-    black canvas (the layout preset's `canvas_width`/`canvas_height`) with a
-    caption bar (Specification §9.2.1). `tiles`/`images` must be the same
-    length and in matching order."""
+    black canvas (the layout preset's `canvas_width`/`canvas_height`); the grid
+    fills the full height and the caption is overlaid on the top-left corner
+    (Specification §9.2.1). `tiles`/`images` must be the same length and in
+    matching order."""
     canvas = Image.new("RGB", (width, height), (0, 0, 0))
 
     grid_area_width = width - 2 * MARGIN_PX
-    grid_area_height = height - CAPTION_HEIGHT_PX - 2 * MARGIN_PX
+    grid_area_height = height - 2 * MARGIN_PX
     cell_w = (grid_area_width - (grid_cols - 1) * GAP_PX) / grid_cols
     cell_h = (grid_area_height - (grid_rows - 1) * GAP_PX) / grid_rows
 
@@ -84,15 +91,17 @@ def render_collage(
         canvas.paste(fitted, (round(x), round(y)))
 
     draw = ImageDraw.Draw(canvas)
-    font = ImageFont.load_default()
-    caption_top = height - CAPTION_HEIGHT_PX
-    text_bbox = draw.textbbox((0, 0), caption, font=font)
-    text_w, text_h = text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1]
+    font = ImageFont.load_default(CAPTION_FONT_SIZE_PX)
+    # `anchor="la"` pins the text's left/ascender corner, so the padding is
+    # measured to the glyphs' top regardless of the file name's letters.
     draw.text(
-        ((width - text_w) / 2, caption_top + (CAPTION_HEIGHT_PX - text_h) / 2),
+        (MARGIN_PX + CAPTION_PADDING_PX, MARGIN_PX + CAPTION_PADDING_PX),
         caption,
         fill=CAPTION_COLOR,
         font=font,
+        anchor="la",
+        stroke_width=CAPTION_STROKE_PX,
+        stroke_fill=CAPTION_STROKE_COLOR,
     )
 
     dest_path.parent.mkdir(parents=True, exist_ok=True)

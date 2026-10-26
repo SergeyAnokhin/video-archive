@@ -937,3 +937,26 @@ def test_migration_51_moves_canvas_size_into_presets(tmp_path):
 
     assert sizes == {"custom": (2048, 1280), "builtin": (4000, 1848)}
     assert not {"aspect_ratio", "aspect_ratio_custom_width", "aspect_ratio_custom_height"} & settings_columns
+
+
+def test_render_collage_overlays_caption_top_left_on_full_height_grid(tmp_path):
+    import numpy as np
+
+    tiles = preview_layouts.compute_layout_tiles(2, 2, [])
+    grey = [np.full((120, 160, 3), 128, dtype=np.uint8) for _ in tiles]
+    dest = tmp_path / "collage.jpg"
+    preview_render.render_collage(
+        grey, tiles, "caption.mp4", dest, width=800, height=400, grid_rows=2, grid_cols=2
+    )
+
+    with Image.open(dest) as img:
+        pixels = np.asarray(img.convert("L"))
+    # No caption bar: the grid reaches the bottom edge, so a pixel just above
+    # the bottom margin is still frame content, not black.
+    assert abs(int(pixels[-12, 200]) - 128) < 12
+    # The caption lives in the top-left corner, over the first tile: white
+    # glyphs with a black outline on mid-grey.
+    corner = pixels[:80, :400]
+    assert (corner > 235).any() and (corner < 20).sum() > 200
+    # ...and nowhere near the opposite (bottom-right) corner.
+    assert not (pixels[-80:, -400:] > 235).any()

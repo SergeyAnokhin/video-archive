@@ -17,8 +17,10 @@
 }
 
 /* Collage appearance is fixed for V1 (Specification §9.2.1): black
-   background, thin gaps between tiles, file-name caption bar. */
+   background, thin gaps between tiles, file-name caption overlaid on the
+   top-left corner (white with a black outline). */
 .preview-canvas {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -56,12 +58,18 @@ button.preview-canvas__tile:hover {
 }
 
 .preview-canvas__caption {
-  flex-shrink: 0;
-  padding: 4px 0;
-  color: #e6e6e6;
-  font-size: 11px;
-  text-align: center;
-  background: #000;
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
 }
 
 .preview-canvas--mini {
